@@ -97,9 +97,9 @@ Cada módulo puede ser instalado, activado y configurado de forma independiente.
     </authors>
     <versions>
         <version>
-            <num>2.18.2</num>
+            <num>2.19.0</num>
             <compatibility>~11.0.0</compatibility>
-            <download_url>https://github.com/RPGMais/nextool/releases/download/2.18.2/nextool-2.18.2.tar.gz</download_url>
+            <download_url>https://github.com/RPGMais/nextool/releases/download/2.19.0/nextool-2.19.0.tar.gz</download_url>
         </version>
     </versions>
     <langs>
