@@ -193,27 +193,21 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/modulecardhelper.class.php';
 
 $manager = PluginNextoolModuleManager::getInstance();
 $loadedModules = $manager->getAllModules();
+
+// Catálogo agora vem direto do banco (fonte única da verdade)
+// PluginNextoolModuleCatalog::all() já lê de glpi_plugin_nextool_main_modules
 $catalogMeta = PluginNextoolModuleCatalog::all();
+
 $contactModuleOptions = [];
 foreach ($catalogMeta as $moduleKey => $meta) {
    $contactModuleOptions[$moduleKey] = $meta['name'] ?? ucfirst($moduleKey);
 }
 ksort($contactModuleOptions);
 
-$dbModules = [];
-if ($DB->tableExists('glpi_plugin_nextool_main_modules')) {
-   $iterator = $DB->request([
-      'FROM'  => 'glpi_plugin_nextool_main_modules',
-      'ORDER' => 'name'
-   ]);
-   foreach ($iterator as $row) {
-      $dbModules[$row['module_key']] = $row;
-   }
-}
-
+// Verifica se pelo menos um módulo foi liberado (is_available = 1)
 $modulesUnlocked = false;
-foreach ($dbModules as $row) {
-   if ((int)($row['is_available'] ?? 0) === 1) {
+foreach ($catalogMeta as $moduleKey => $meta) {
+   if (!empty($meta['is_available'])) {
       $modulesUnlocked = true;
       break;
    }
@@ -240,21 +234,19 @@ $stats = [
    'disabled'  => 0,
 ];
 
-$allModuleKeys = array_unique(array_merge(array_keys($catalogMeta), array_keys($dbModules)));
-if (empty($allModuleKeys)) {
-   $allModuleKeys = array_keys($catalogMeta);
-}
+// Catálogo já contém todos os módulos do banco
+$allModuleKeys = array_keys($catalogMeta);
 PluginNextoolPermissionManager::syncModuleRights($allModuleKeys);
 
 foreach ($allModuleKeys as $moduleKey) {
    $meta = $catalogMeta[$moduleKey] ?? [];
-   $dbRow = $dbModules[$moduleKey] ?? null;
 
-   if ($dbRow === null && empty($meta)) {
+   if (empty($meta)) {
       continue;
    }
 
-   $catalogIsEnabled = ($dbRow !== null) && ((int) ($dbRow['is_available'] ?? 0) === 1);
+   // Catálogo já vem com is_available do banco
+   $catalogIsEnabled = (bool)($meta['is_available'] ?? false);
    if (!$catalogIsEnabled) {
       // Não exibe módulos desativados no catálogo remoto.
       continue;
@@ -263,17 +255,32 @@ foreach ($allModuleKeys as $moduleKey) {
    $stats['total']++;
 
    $moduleInstance = $loadedModules[$moduleKey] ?? null;
-   $isInstalled = (bool) ($dbRow['is_installed'] ?? 0);
-   $isEnabled   = (bool) ($dbRow['is_enabled'] ?? 0);
-   $installedVersion = $dbRow['version'] ?? null;
-   $availableVersion = $dbRow['available_version'] ?? ($meta['version'] ?? null);
+   $isInstalled = (bool)($meta['is_installed'] ?? false);
+   $isEnabled   = (bool)($meta['is_enabled'] ?? false);
+   $installedVersion = $meta['version'] ?? null;
+   $availableVersion = $meta['version'] ?? null; // Catálogo já retorna available_version
    $moduleDownloaded = is_dir(GLPI_ROOT . '/plugins/nextool/modules/' . $moduleKey);
    $requiresRemoteDownload = !$moduleDownloaded && $catalogIsEnabled;
-   $billingTier = strtoupper($dbRow['billing_tier'] ?? ($meta['billing_tier'] ?? 'FREE'));
+   $billingTier = strtoupper($meta['billing_tier'] ?? 'FREE');
    $isPaid = $billingTier !== 'FREE';
-   $updateAvailable = ($isInstalled && $availableVersion && $installedVersion)
-      ? version_compare($availableVersion, $installedVersion, '>')
-      : false;
+   
+   // Para detectar update, precisamos buscar version instalada do banco
+   $updateAvailable = false;
+   if ($isInstalled && $DB->tableExists('glpi_plugin_nextool_main_modules')) {
+      $rowCheck = $DB->request([
+         'FROM'  => 'glpi_plugin_nextool_main_modules',
+         'WHERE' => ['module_key' => $moduleKey],
+         'LIMIT' => 1
+      ]);
+      if (count($rowCheck)) {
+         $row = $rowCheck->current();
+         $installedVersion = $row['version'] ?? null;
+         $availableVersion = $row['available_version'] ?? $installedVersion;
+         $updateAvailable = ($installedVersion && $availableVersion)
+            ? version_compare($availableVersion, $installedVersion, '>')
+            : false;
+      }
+   }
 
    if ($isInstalled) {
       $stats['installed']++;
@@ -299,7 +306,7 @@ foreach ($allModuleKeys as $moduleKey) {
       $canUseModule = false;
    }
 
-   $hasModuleData = $manager->moduleHasData($moduleKey);
+   $hasModuleData = $manager->moduleHasData($moduleKey) || $moduleDownloaded;
    $moduleHasConfig = $moduleInstance && $moduleInstance->hasConfig();
    $configUrl = ($moduleHasConfig && $moduleInstance) ? $moduleInstance->getConfigPage() : null;
    $moduleCanView = PluginNextoolPermissionManager::canViewModule($moduleKey);
@@ -490,18 +497,18 @@ foreach ($tabsRegistry as $key => $meta) {
                               <br>
                               <span class="small text-warning fw-semibold d-inline-flex align-items-center gap-1">
                                  <i class="ti ti-bolt"></i>
-                                 Atualize e desbloqueie módulos premium em minutos &mdash; por tempo limitado.
+                                 Desbloqueie módulos pagos, integrações avançadas e automações sob demanda.
                               </span>
                               <br>
                               <span class="small text-info fw-semibold d-inline-flex align-items-center gap-1">
                                  <i class="ti ti-plug-connected"></i>
-                                 Integrações e automações sob medida para o seu GLPI.
-                                 <a href="https://nextoolsolutions.ai/contato" target="_blank" class="text-white text-decoration-underline">Fale com o time</a>.
+                                 Precisa de um módulo específico ou integração personalizada?
+                                 <a href="https://outlook.office.com/bookwithme/user/e52b9e3c38254d21b172fd4f08c18d8e%40jmbasolucoes.com.br?anonymous&ismsaljsauthenabled" target="_blank" class="text-white text-decoration-underline">Agende uma reunião.</a>
                               </span>
                               <br>
                               <span class="small text-licensing-hero fw-semibold d-inline-flex align-items-center gap-1">
                                  <i class="ti ti-lifebuoy"></i>
-                                 Planos premium com 12 meses de suporte oficial e acesso às novas funcionalidades sem custo extra.
+                                 Planos de licenciamento com suporte oficial, atualizações contínuas e acompanhamento técnico.
                               </span>
                            </p>
 
@@ -522,17 +529,22 @@ foreach ($tabsRegistry as $key => $meta) {
                           class="btn btn-hero-validate fw-semibold mb-2"
                           onclick="nextoolValidateLicense(this);"
                           <?php echo $canViewAdminTabs ? '' : ' disabled'; ?>>
-                     <i class="ti ti-arrow-up-right me-1"></i>
-                     Validar Licença
+                     <i class="ti ti-refresh me-1"></i>
+                     Sincronizar
                   </button>
                   <div class="small text-white-50">
-                     <a href="https://nextoolsolutions.ai/" target="_blank" class="text-white text-decoration-underline">
-                        Atualizar agora com desconto
+                     <a href="https://api.whatsapp.com/send?phone=5532984692962&text=Ol%C3%A1%2C%20gostaria%20de%20falar%20sobre%20os%20produtos%20da%20Nextools." target="_blank" class="text-white text-decoration-underline">
+                        Atendimento rápido via WhatsApp
                      </a>
                   </div>
                   <div class="small mt-2">
-                     <a href="https://nextoolsolutions.ai/" target="_blank" class="text-white text-decoration-underline me-2">Conheça a NexTool Solutions</a>
-                     <a href="https://github.com/RPGMais/nextool/blob/main/POLICIES_OF_USE.md" target="_blank" class="text-white-50 text-decoration-underline">Termos de uso</a>
+                     <a href="https://ritech.site/" target="_blank" class="text-white text-decoration-underline">RITECH</a>
+                     <span class="text-white-50 mx-1">/</span>
+                     <a href="https://jmbasolucoes.com.br/" target="_blank" class="text-white text-decoration-underline">JMBA Soluções</a>
+                     <span class="text-white-50 mx-1">/</span>
+                     <a href="https://www.linkedin.com/in/richard-ti/" target="_blank" class="text-white text-decoration-underline">LinkedIn</a>
+                     <span class="text-white-50 mx-1">/</span>
+                     <a href="https://github.com/RPGMais/nextool/blob/main/POLICIES_OF_USE.md" target="_blank" class="text-white text-decoration-underline">Termos de uso</a>
                   </div>
                </div>
 

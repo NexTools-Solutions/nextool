@@ -48,7 +48,9 @@ class PluginNextoolAiassistReplyService {
          'limit_followups' => 6
       ]);
 
-      if (empty($context['text'])) {
+      $contextText = $this->buildCompactContext($ticket, $context);
+
+      if ($contextText === '') {
          return [
             'success' => false,
             'message' => __('Não há histórico suficiente para sugerir uma resposta.', 'nextool'),
@@ -79,7 +81,7 @@ class PluginNextoolAiassistReplyService {
          }
       }
 
-      $estimatedTokens = $this->module->estimateTokensFromText($context['text']);
+      $estimatedTokens = $this->module->estimateTokensFromText($contextText);
       if (!$this->module->hasTokensAvailable($estimatedTokens)) {
          return [
             'success' => false,
@@ -104,11 +106,11 @@ class PluginNextoolAiassistReplyService {
          ],
          [
             'role' => 'user',
-            'content' => $instructions . "\n\n" . $context['text']
+            'content' => $instructions . "\n\n" . $contextText
          ],
       ], [
          'model' => $this->module->getFeatureModel(PluginNextoolAiassist::FEATURE_REPLY),
-         'max_tokens' => 500,
+         'max_tokens' => 2000,
          'temperature' => 0.4,
          'metadata' => [
             'feature' => PluginNextoolAiassist::FEATURE_REPLY,
@@ -128,6 +130,13 @@ class PluginNextoolAiassistReplyService {
       ]);
 
       if (!empty($response['success'])) {
+         $finishReason = $response['raw']['candidates'][0]['finishReason'] ?? null;
+         if ($finishReason === 'MAX_TOKENS') {
+            Toolbox::logInFile('plugin_nextool_aiassist', sprintf(
+               '[REPLY] Resposta interrompida por MAX_TOKENS - Ticket #%d',
+               $ticketId
+            ));
+         }
          $this->module->saveReplyData($ticketId, [
             'reply_text' => $response['content'],
             'last_followup_id' => $context['last_followup_id']
@@ -135,5 +144,110 @@ class PluginNextoolAiassistReplyService {
       }
 
       return $response;
+   }
+
+   /**
+    * Monta um contexto compacto para a sugestão de resposta.
+    * Prioriza descrição inicial, últimos followups públicos e solução.
+    */
+   private function buildCompactContext(Ticket $ticket, array $context): string {
+      $maxTotalChars = 3500;
+      $maxDescriptionChars = 1200;
+      $maxFollowupChars = 800;
+      $maxSolutionChars = 800;
+      $maxFollowups = 3;
+
+      $parts = [];
+      $parts[] = sprintf(
+         "Chamado #%d - %s\nStatus: %s | Prioridade: %s",
+         (int)$ticket->getID(),
+         trim((string)($ticket->fields['name'] ?? '')),
+         trim((string)($ticket->fields['status'] ?? '')),
+         trim((string)($ticket->fields['priority'] ?? ''))
+      );
+
+      $description = trim(strip_tags((string)($ticket->fields['content'] ?? '')));
+      if ($description !== '') {
+         if (mb_strlen($description) > $maxDescriptionChars) {
+            $description = mb_substr($description, 0, $maxDescriptionChars - 3) . '...';
+         }
+         $parts[] = "Descrição inicial:\n" . $description;
+      }
+
+      $followupsText = $this->extractFollowupsFromContext($context['text'] ?? '', $maxFollowups, $maxFollowupChars);
+      if ($followupsText !== '') {
+         $parts[] = "Últimas interações:\n" . $followupsText;
+      }
+
+      $solutionText = $this->extractSolutionFromContext($context['text'] ?? '', $maxSolutionChars);
+      if ($solutionText !== '') {
+         $parts[] = "Solução registrada:\n" . $solutionText;
+      }
+
+      $compact = trim(implode("\n\n", $parts));
+      if (mb_strlen($compact) > $maxTotalChars) {
+         $compact = mb_substr($compact, 0, $maxTotalChars - 3) . '...';
+      }
+
+      return trim($compact);
+   }
+
+   private function extractFollowupsFromContext(string $contextText, int $limit, int $maxCharsPerItem): string {
+      if ($contextText === '') {
+         return '';
+      }
+
+      $sections = explode("Interações:\n", $contextText);
+      if (count($sections) < 2) {
+         return '';
+      }
+
+      $interactionsText = trim($sections[1]);
+      if ($interactionsText === '') {
+         return '';
+      }
+
+      $items = preg_split('/\n{2,}/', $interactionsText);
+      $items = array_values(array_filter($items, function ($item) {
+         return trim($item) !== '';
+      }));
+
+      if (empty($items)) {
+         return '';
+      }
+
+      $slice = array_slice($items, max(0, count($items) - $limit));
+      $normalized = [];
+      foreach ($slice as $item) {
+         $item = trim($item);
+         if (mb_strlen($item) > $maxCharsPerItem) {
+            $item = mb_substr($item, 0, $maxCharsPerItem - 3) . '...';
+         }
+         $normalized[] = $item;
+      }
+
+      return trim(implode("\n\n", $normalized));
+   }
+
+   private function extractSolutionFromContext(string $contextText, int $maxChars): string {
+      if ($contextText === '') {
+         return '';
+      }
+
+      $sections = explode("Solução registrada:\n", $contextText);
+      if (count($sections) < 2) {
+         return '';
+      }
+
+      $solutionText = trim($sections[1]);
+      if ($solutionText === '') {
+         return '';
+      }
+
+      if (mb_strlen($solutionText) > $maxChars) {
+         $solutionText = mb_substr($solutionText, 0, $maxChars - 3) . '...';
+      }
+
+      return $solutionText;
    }
 }

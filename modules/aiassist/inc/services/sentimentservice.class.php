@@ -94,40 +94,10 @@ class PluginNextoolAiassistSentimentService {
       $maxChars = (int)($this->module->getSettings()['payload_max_chars'] ?? 6000);
       $maxChars = max(1000, $maxChars);
 
-      $historyText = '';
-      if (!empty($requesterUpdates)) {
-         $historyText = "Histórico recente do solicitante (considere a evolução do sentimento aqui):\n" . implode("\n---\n", $requesterUpdates);
-      }
-
-      // Priorizamos: Título > Histórico recente > Descrição inicial
-      $reservedChars = mb_strlen($title) + mb_strlen($historyText) + 200;
-      $availableForDesc = $maxChars - $reservedChars;
-
-      if ($availableForDesc < 500) {
-         $availableForDesc = 500;
-      }
-
-      if (mb_strlen($description) > $availableForDesc) {
-         $description = mb_substr($description, 0, $availableForDesc) . '... [truncado]';
-      }
-
-      $payloadParts = [];
-      if ($title !== '') {
-         $payloadParts[] = "Título do chamado:\n" . $title;
-      }
-      if ($description !== '') {
-         $payloadParts[] = "Descrição inicial:\n" . $description;
-      }
-      if ($historyText !== '') {
-         $payloadParts[] = $historyText;
-      }
-
-      $payloadText = implode("\n\n", $payloadParts);
-
-      // Corte de segurança
-      if (mb_strlen($payloadText) > $maxChars) {
-         $payloadText = mb_substr($payloadText, 0, $maxChars - 3) . '...';
-      }
+      $payloadText = $this->buildSentimentPayload($title, $description, $requesterUpdates, [
+         'max_chars' => $maxChars,
+         'followups_limit' => 5,
+      ]);
 
       // Estimativa de tokens e verificação de quota
       $estimatedTokens = $this->module->estimateTokensFromText($payloadText);
@@ -162,8 +132,9 @@ JSON;
          ],
       ], [
          'model' => $this->module->getFeatureModel(PluginNextoolAiassist::FEATURE_SENTIMENT),
-         'max_tokens' => 350,
+         'max_tokens' => 800,
          'temperature' => 0.1,
+         'response_mime_type' => 'application/json',
          'metadata' => [
             'feature' => PluginNextoolAiassist::FEATURE_SENTIMENT,
             'ticket_id' => $ticketId,
@@ -186,6 +157,45 @@ JSON;
       if (!empty($response['success'])) {
          $rawContent = $response['content'] ?? '';
          $decoded = $this->decodeSentimentPayload($rawContent);
+
+         if (!is_array($decoded)) {
+            $finishReason = $response['finish_reason'] ?? ($response['raw']['candidates'][0]['finishReason'] ?? null);
+            if ($finishReason === 'MAX_TOKENS') {
+               $fallbackText = $this->buildSentimentPayload($title, $description, $requesterUpdates, [
+                  'max_chars' => min(2500, (int)floor($maxChars * 0.6)),
+                  'followups_limit' => 2,
+               ]);
+
+               Toolbox::logInFile('plugin_nextool_aiassist', sprintf(
+                  '[SENTIMENT] Reprocessando com payload compacto (finish=MAX_TOKENS) - Ticket #%d',
+                  $ticketId
+               ));
+
+               $response = $this->provider->chat([
+                  [
+                     'role' => 'system',
+                     'content' => 'Analise o sentimento de tickets em português do Brasil.'
+                  ],
+                  [
+                     'role' => 'user',
+                     'content' => $instructions . "\n\n" . $fallbackText
+                  ],
+               ], [
+                  'model' => $this->module->getFeatureModel(PluginNextoolAiassist::FEATURE_SENTIMENT),
+                  'max_tokens' => 800,
+                  'temperature' => 0.1,
+                  'response_mime_type' => 'application/json',
+                  'metadata' => [
+                     'feature' => PluginNextoolAiassist::FEATURE_SENTIMENT,
+                     'ticket_id' => $ticketId,
+                  ]
+               ]);
+
+               $rawContent = $response['content'] ?? '';
+               $decoded = $this->decodeSentimentPayload($rawContent);
+            }
+         }
+
          if (is_array($decoded)) {
             $lastFollowupId = $this->module->getLatestFollowupId($ticketId);
             $this->module->saveSentimentData($ticketId, [
@@ -207,9 +217,12 @@ JSON;
          } else {
             $response['success'] = false;
             $response['error'] = __('Não foi possível interpretar a resposta da IA.', 'nextool');
+            $finishReason = $response['finish_reason'] ?? ($response['raw']['candidates'][0]['finishReason'] ?? null);
             Toolbox::logInFile('plugin_nextool_aiassist', sprintf(
-               '[SENTIMENT] ❌ Erro ao interpretar resposta - Ticket #%d. Conteúdo bruto: %s',
+               '[SENTIMENT] ❌ Erro ao interpretar resposta - Ticket #%d (finish=%s, len=%d). Conteúdo bruto: %s',
                $ticketId,
+               $finishReason ?: 'n/a',
+               mb_strlen($rawContent),
                mb_substr($rawContent, 0, 500)
             ));
          }
@@ -266,6 +279,50 @@ JSON;
       }
 
       return null;
+   }
+
+   private function buildSentimentPayload(string $title, string $description, array $requesterUpdates, array $options = []): string {
+      $maxChars = max(1000, (int)($options['max_chars'] ?? 6000));
+      $followupsLimit = max(0, (int)($options['followups_limit'] ?? 5));
+
+      $historyText = '';
+      if (!empty($requesterUpdates)) {
+         $updates = $requesterUpdates;
+         if ($followupsLimit > 0 && count($updates) > $followupsLimit) {
+            $updates = array_slice($updates, -$followupsLimit);
+         }
+         $historyText = "Histórico recente do solicitante (considere a evolução do sentimento aqui):\n" . implode("\n---\n", $updates);
+      }
+
+      // Priorizamos: Título > Histórico recente > Descrição inicial
+      $reservedChars = mb_strlen($title) + mb_strlen($historyText) + 200;
+      $availableForDesc = $maxChars - $reservedChars;
+      if ($availableForDesc < 500) {
+         $availableForDesc = 500;
+      }
+
+      $normalizedDesc = $description;
+      if (mb_strlen($normalizedDesc) > $availableForDesc) {
+         $normalizedDesc = mb_substr($normalizedDesc, 0, $availableForDesc) . '... [truncado]';
+      }
+
+      $payloadParts = [];
+      if ($title !== '') {
+         $payloadParts[] = "Título do chamado:\n" . $title;
+      }
+      if ($normalizedDesc !== '') {
+         $payloadParts[] = "Descrição inicial:\n" . $normalizedDesc;
+      }
+      if ($historyText !== '') {
+         $payloadParts[] = $historyText;
+      }
+
+      $payloadText = trim(implode("\n\n", $payloadParts));
+      if (mb_strlen($payloadText) > $maxChars) {
+         $payloadText = mb_substr($payloadText, 0, $maxChars - 3) . '...';
+      }
+
+      return $payloadText;
    }
 }
 

@@ -24,7 +24,8 @@ $error = '';
 
 // Define variáveis que serão usadas tanto no processamento quanto na exibição
 $settings = $module->getSettings();
-$useProxy = !empty($settings['use_proxy_mode']);
+$useProxy = ($settings['provider_mode'] ?? PluginNextoolAiassist::PROVIDER_MODE_DIRECT) === PluginNextoolAiassist::PROVIDER_MODE_PROXY;
+$providerKey = $settings['provider'] ?? PluginNextoolAiassist::PROVIDER_OPENAI;
 
 // Processa o formulário
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['test_message'])) {
@@ -170,7 +171,10 @@ if ($provider) {
       $connectionDebug['api_key_length'] = isset($testSettings['api_key']) ? strlen($testSettings['api_key']) : 0;
       $connectionDebug['api_key_prefix'] = isset($testSettings['api_key']) ? substr($testSettings['api_key'], 0, 10) : 'vazio';
       $connectionDebug['model'] = $testSettings['model'] ?? 'não definido';
-      $connectionDebug['endpoint'] = $testSettings['openai_endpoint'] ?? 'padrão';
+      $connectionDebug['endpoint'] = $module->getProviderEndpointForDisplay(
+         $providerKey,
+         $testSettings['model'] ?? $module->getDefaultModelForProvider($providerKey)
+      );
       $connectionDebug['provider_mode'] = $testSettings['provider_mode'] ?? 'não definido';
       
       $connectionTest = $module->testProviderConnection();
@@ -193,11 +197,11 @@ $apiKeySuffix = $apiKeyConfigured ? substr($settingsWithSecret['api_key'], -4) :
 echo '<table class="table table-sm">';
 echo '<tr><td><strong>Módulo Ativo:</strong></td><td>' . ($module->isEnabled() ? '✅ Sim' : '❌ Não') . '</td></tr>';
 echo '<tr><td><strong>Provedor Configurado:</strong></td><td>' . ($provider ? '✅ Sim' : '❌ Não') . '</td></tr>';
-echo '<tr><td><strong>Tipo de Provedor:</strong></td><td>' . ($settings['provider_type'] ?? 'OpenAI') . '</td></tr>';
+echo '<tr><td><strong>Tipo de Provedor:</strong></td><td>' . Html::entities_deep($module->getProviderLabel($providerKey)) . '</td></tr>';
 echo '<tr><td><strong>Modo:</strong></td><td>' . ($useProxy ? 'Proxy NexTool Solutions' : 'API Direta') . '</td></tr>';
 echo '<tr><td><strong>API Key configurada:</strong></td><td>' . ($apiKeyConfigured ? '✅ Sim (***' . $apiKeySuffix . ')' : '❌ Não') . '</td></tr>';
-echo '<tr><td><strong>Model:</strong></td><td>' . ($settingsWithSecret['model'] ?? 'gpt-4o-mini') . '</td></tr>';
-echo '<tr><td><strong>Endpoint:</strong></td><td>' . ($settingsWithSecret['openai_endpoint'] ?? 'https://api.openai.com/v1/chat/completions') . '</td></tr>';
+echo '<tr><td><strong>Model:</strong></td><td>' . Html::entities_deep($settingsWithSecret['model'] ?? $module->getDefaultModelForProvider($providerKey)) . '</td></tr>';
+echo '<tr><td><strong>Endpoint:</strong></td><td>' . Html::entities_deep($module->getProviderEndpointForDisplay($providerKey, $settingsWithSecret['model'] ?? $module->getDefaultModelForProvider($providerKey))) . '</td></tr>';
 echo '<tr><td><strong>Teste de Conexão:</strong></td><td>' . ($connectionTest['success'] ? '✅ OK' : '❌ ' . ($connectionTest['message'] ?? 'Falhou')) . '</td></tr>';
 echo '</table>';
 

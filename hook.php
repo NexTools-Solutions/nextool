@@ -32,6 +32,15 @@ function plugin_nextool_install() {
       $DB->runFile($sqlfile);
    }
 
+   $modulesTable = 'glpi_plugin_nextool_main_modules';
+   if ($DB->tableExists($modulesTable) && !$DB->fieldExists($modulesTable, 'description')) {
+      $DB->doQuery(
+         "ALTER TABLE `{$modulesTable}`
+          ADD COLUMN `description` text DEFAULT NULL
+          COMMENT 'Descrição do módulo' AFTER `name`"
+      );
+   }
+
    $configfile = GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
    if (file_exists($configfile)) {
       require_once $configfile;

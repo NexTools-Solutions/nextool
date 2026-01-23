@@ -562,6 +562,20 @@ class PluginNextoolLicenseValidator {
          $schemaUpdated = true;
       }
 
+      if (!$DB->fieldExists($table, 'description')) {
+         $migration->addField(
+            $table,
+            'description',
+            'text',
+            [
+               'value'   => null,
+               'comment' => 'Descrição do módulo',
+               'after'   => 'name',
+            ]
+         );
+         $schemaUpdated = true;
+      }
+
       if ($schemaUpdated) {
          $migration->executeMigration();
       }
@@ -573,6 +587,7 @@ class PluginNextoolLicenseValidator {
          }
 
          $name        = isset($entry['name']) ? trim((string)$entry['name']) : '';
+         $description = array_key_exists('description', $entry) ? trim((string)$entry['description']) : null;
          $version     = isset($entry['version']) ? trim((string)$entry['version']) : '';
          $billingTier = isset($entry['billing_tier']) ? strtoupper(trim((string)$entry['billing_tier'])) : '';
          $isEnabled   = !empty($entry['is_enabled']);
@@ -593,6 +608,7 @@ class PluginNextoolLicenseValidator {
             $row = $iterator->current();
             $updateData = [
                'name'              => $name !== '' ? $name : $moduleKey,
+               'description'       => $description !== null ? ($description !== '' ? $description : null) : ($row['description'] ?? null),
                'billing_tier'      => $billingTier,
                'is_available'      => $isAvailable,
                'available_version' => $version !== '' ? $version : null,
@@ -613,6 +629,7 @@ class PluginNextoolLicenseValidator {
                [
                   'module_key'    => $moduleKey,
                   'name'          => $name !== '' ? $name : $moduleKey,
+                  'description'   => $description !== '' ? $description : null,
                   'version'       => null,
                   'available_version' => $version !== '' ? $version : null,
                   'is_installed'  => 0,

@@ -152,6 +152,8 @@ class PluginNextoolModuleManager {
          return $this->modules;
       }
 
+      // PluginNextoolModuleCatalog::all() agora lê do banco (fonte única da verdade)
+      // Fallback para bootstrap modules apenas na primeira instalação
       foreach (PluginNextoolModuleCatalog::all() as $moduleKey => $meta) {
           $dir = $this->modulesPath . '/' . $moduleKey;
           $classFile = $dir . '/inc/' . $moduleKey . '.class.php';
@@ -331,19 +333,26 @@ class PluginNextoolModuleManager {
 
       if (count($existing)) {
          $row = $existing->current();
+         $updateData = [
+            'name'               => $module->getName(),
+            'version'            => $module->getVersion(),
+            'billing_tier'       => $this->getBillingTier($moduleKey),
+            'is_installed'       => 1,
+            // Não alteramos is_enabled aqui; ativação é responsabilidade do enableModule()
+            'is_available' => isset($row['is_available']) ? $row['is_available'] : 0,
+            'config'       => json_encode($module->getDefaultConfig()),
+            'date_mod'     => date('Y-m-d H:i:s'),
+         ];
+         
+         // Só atualiza available_version se ainda não existir (primeiro install)
+         // Caso contrário, mantém a versão do catálogo oficial
+         if (empty($row['available_version'])) {
+            $updateData['available_version'] = $module->getVersion();
+         }
+         
          $result = $DB->update(
             'glpi_plugin_nextool_main_modules',
-            [
-               'name'               => $module->getName(),
-               'version'            => $module->getVersion(),
-               'available_version'  => $module->getVersion(),
-               'billing_tier'       => $this->getBillingTier($moduleKey),
-               'is_installed'       => 1,
-               // Não alteramos is_enabled aqui; ativação é responsabilidade do enableModule()
-               'is_available' => isset($row['is_available']) ? $row['is_available'] : 0,
-               'config'       => json_encode($module->getDefaultConfig()),
-               'date_mod'     => date('Y-m-d H:i:s'),
-            ],
+            $updateData,
             ['id' => $row['id']]
          );
       } else {
@@ -505,6 +514,8 @@ class PluginNextoolModuleManager {
          // Limpa cache de memória para forçar recarregamento
          // Cache de arquivo permanece (módulos não mudaram)
          $this->modules = [];
+
+         $module->onEnable();
          
          return $this->buildModuleActionResult(
             $moduleKey,
@@ -560,6 +571,8 @@ class PluginNextoolModuleManager {
          // Limpa cache de memória para forçar recarregamento
          // Cache de arquivo permanece (módulos não mudaram)
          $this->modules = [];
+
+         $module->onDisable();
          
          return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo desativado com sucesso', $baseContext);
       }
@@ -736,6 +749,23 @@ class PluginNextoolModuleManager {
          return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo não encontrado no diretório local.', $baseContext);
       }
 
+      $currentVersion = $row['version'] ?? null;
+      $availableVersion = $row['available_version'] ?? null;
+      $localVersion = $module->getVersion();
+      if ($localVersion !== null && $availableVersion !== null && version_compare($localVersion, $availableVersion, '>=')) {
+         $DB->update(
+            'glpi_plugin_nextool_main_modules',
+            [
+               'version'           => $localVersion,
+               'available_version' => $localVersion,
+               'date_mod'          => date('Y-m-d H:i:s'),
+            ],
+            ['module_key' => $moduleKey]
+         );
+         $this->clearCache();
+         return $this->buildModuleActionResult($moduleKey, $action, true, 'Versão local já é a mais recente. Sincronização concluída.', $baseContext);
+      }
+
       $download = $this->downloadModuleFromDistribution($moduleKey);
       if (!$download['success']) {
          return $this->buildModuleActionResult($moduleKey, $action, false, $download['message'], $baseContext);
@@ -747,10 +777,19 @@ class PluginNextoolModuleManager {
          return $this->buildModuleActionResult($moduleKey, $action, false, 'Não foi possível carregar o módulo após o download.', $baseContext);
       }
 
-      $currentVersion = $row['version'] ?? null;
       $targetVersion = $module->getVersion();
       if ($targetVersion !== null && $currentVersion !== null && version_compare($targetVersion, $currentVersion, '<=')) {
-         return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo já está na versão mais recente.', $baseContext);
+         $DB->update(
+            'glpi_plugin_nextool_main_modules',
+            [
+               'version'           => $currentVersion,
+               'available_version' => $currentVersion,
+               'date_mod'          => date('Y-m-d H:i:s'),
+            ],
+            ['module_key' => $moduleKey]
+         );
+         $this->clearCache();
+         return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo já está na versão mais recente. Versão sincronizada.', $baseContext);
       }
 
       $upgradeOk = $module->upgrade($currentVersion, $targetVersion);
@@ -829,6 +868,7 @@ class PluginNextoolModuleManager {
       $action = 'purge_data';
       $module = $this->getModule($moduleKey);
       $customPurgeSuccess = false;
+      $directoryRemoved = false;
       $message = '';
 
       if ($module !== null && $this->moduleDirectoryExists($moduleKey)) {
@@ -840,13 +880,30 @@ class PluginNextoolModuleManager {
          }
       }
 
+      if ($this->moduleDirectoryExists($moduleKey)) {
+         try {
+            $directoryRemoved = $this->deleteModuleDirectory($moduleKey);
+         } catch (RuntimeException $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf('Falha ao remover diretório do módulo %s: %s', $moduleKey, $e->getMessage()));
+            $directoryRemoved = false;
+         }
+      }
+
       $tablesDropped = $this->dropTablesForModule($moduleKey);
-      $success = $customPurgeSuccess || $tablesDropped;
+      $success = $customPurgeSuccess || $tablesDropped || $directoryRemoved;
 
       if ($success) {
-         $message = __('Dados do módulo removidos com sucesso.', 'nextool');
+         if ($directoryRemoved && !$tablesDropped && !$customPurgeSuccess) {
+            $message = __('Arquivos do módulo removidos com sucesso.', 'nextool');
+         } else {
+            $message = __('Dados do módulo removidos com sucesso.', 'nextool');
+         }
       } else {
          $message = __('Não há dados para remover ou ocorreu uma falha.', 'nextool');
+      }
+
+      if ($directoryRemoved) {
+         $this->clearCache();
       }
 
       return $this->buildModuleActionResult($moduleKey, $action, $success, $message, ['origin' => 'module_data_management']);
@@ -859,6 +916,45 @@ class PluginNextoolModuleManager {
    private function moduleDirectoryExists(string $moduleKey): bool {
       $path = GLPI_ROOT . '/plugins/nextool/modules/' . $moduleKey;
       return is_dir($path);
+   }
+
+   private function deleteModuleDirectory(string $moduleKey): bool {
+      $dir = GLPI_ROOT . '/plugins/nextool/modules/' . $moduleKey;
+      if (!is_dir($dir)) {
+         return false;
+      }
+
+      $items = new RecursiveIteratorIterator(
+         new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
+         RecursiveIteratorIterator::CHILD_FIRST
+      );
+
+      foreach ($items as $item) {
+         if ($item->isDir()) {
+            if (!@rmdir($item->getRealPath())) {
+               throw new RuntimeException(sprintf(
+                  __('Falha ao remover diretório %s. Verifique permissões.', 'nextool'),
+                  $item->getRealPath()
+               ));
+            }
+         } else {
+            if (!@unlink($item->getRealPath())) {
+               throw new RuntimeException(sprintf(
+                  __('Falha ao remover arquivo %s. Verifique permissões.', 'nextool'),
+                  $item->getRealPath()
+               ));
+            }
+         }
+      }
+
+      if (!@rmdir($dir)) {
+         throw new RuntimeException(sprintf(
+            __('Falha ao limpar diretório %s. Verifique permissões.', 'nextool'),
+            $dir
+         ));
+      }
+
+      return true;
    }
 
    private function dropTablesForModule(string $moduleKey): bool {

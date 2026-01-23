@@ -23,6 +23,34 @@ $module = new PluginNextoolAiassist();
 $settings = $module->getSettings();
 $quota = $module->getQuotaData();
 $isProxyMode = ($settings['provider_mode'] ?? PluginNextoolAiassist::PROVIDER_MODE_DIRECT) === PluginNextoolAiassist::PROVIDER_MODE_PROXY;
+$provider = $settings['provider'] ?? PluginNextoolAiassist::PROVIDER_OPENAI;
+
+$providers = [
+   PluginNextoolAiassist::PROVIDER_OPENAI => [
+      'label' => __('OpenAI', 'nextool'),
+      'api_key_label' => __('Chave API OpenAI', 'nextool'),
+      'api_key_placeholder' => 'sk-...',
+      'description' => __('Requisições diretas na OpenAI com sua própria chave.', 'nextool'),
+      'models' => [
+         'gpt-4o-mini' => 'gpt-4o-mini (recomendado)',
+         'gpt-4o'      => 'gpt-4o',
+         'o4-mini'     => 'o4-mini',
+         'gpt-4.1-mini'=> 'gpt-4.1-mini'
+      ],
+      'default_model' => 'gpt-4o-mini',
+   ],
+   PluginNextoolAiassist::PROVIDER_GEMINI => [
+      'label' => __('Gemini', 'nextool'),
+      'api_key_label' => __('Chave API Gemini', 'nextool'),
+      'api_key_placeholder' => 'AIza...',
+      'description' => __('Requisições diretas na API Gemini com sua própria chave.', 'nextool'),
+      'models' => [
+         'gemini-3-flash-preview' => 'gemini-3-flash-preview (gratuito)',
+         'gemini-2.0-flash'       => 'gemini-2.0-flash'
+      ],
+      'default_model' => 'gemini-3-flash-preview',
+   ],
+];
 
 // Verifica se pode editar configurações (UPDATE necessário)
 $canEdit = $module->canEditConfig();
@@ -55,9 +83,9 @@ if (isset($_POST['save_aiassist_config']) || isset($_POST['reset_quota']) || iss
    $input = [
       'client_identifier'  => $_POST['client_identifier'] ?? '',
       'provider_mode'      => $_POST['provider_mode'] ?? PluginNextoolAiassist::PROVIDER_MODE_DIRECT,
-      'provider'           => PluginNextoolAiassist::PROVIDER_OPENAI,
+      'provider'           => $_POST['provider'] ?? PluginNextoolAiassist::PROVIDER_OPENAI,
       'proxy_identifier'   => $_POST['proxy_identifier'] ?? '',
-      'model'              => trim($_POST['model'] ?? 'gpt-4o-mini'),
+      'model'              => trim($_POST['model'] ?? ''),
       'api_key'            => trim($_POST['api_key'] ?? ''),
       'allow_sensitive'    => isset($_POST['allow_sensitive']) ? 1 : 0,
       'payload_max_chars'  => (int)($_POST['payload_max_chars'] ?? 6000),
@@ -124,7 +152,6 @@ $tabs = [
          echo Html::hidden('_glpi_csrf_token', ['value' => $csrf]);
          echo Html::hidden('forcetab', ['value' => 'PluginNextoolSetup$1']);
       ?>
-      <input type="hidden" name="provider" value="<?php echo PluginNextoolAiassist::PROVIDER_OPENAI; ?>">
 
       <ul class="nav nav-tabs mb-3" id="aiassist-nav" role="tablist">
          <?php foreach ($tabs as $key => $tab): ?>
@@ -198,19 +225,15 @@ $tabs = [
                            </div>
                            <div class="mt-3">
                               <label class="form-label small fw-semibold"><?php echo __('Modelo específico (opcional)', 'nextool'); ?></label>
-                              <select name="feature_summary_model" class="form-select form-select-sm">
+                              <select name="feature_summary_model" class="form-select form-select-sm aiassist-model-select" data-model-scope="summary">
                                  <option value=""><?php echo __('Usar modelo padrão', 'nextool'); ?></option>
                                  <?php
-                                    $models = [
-                                       'gpt-4o-mini' => 'gpt-4o-mini (recomendado)',
-                                       'gpt-4o'      => 'gpt-4o',
-                                       'o4-mini'     => 'o4-mini',
-                                       'gpt-4.1-mini'=> 'gpt-4.1-mini'
-                                    ];
                                     $currentModel = $settings['feature_summary_model'] ?? '';
-                                    foreach ($models as $value => $label) {
-                                       $selected = ($currentModel === $value) ? 'selected' : '';
-                                       echo "<option value=\"{$value}\" {$selected}>{$label}</option>";
+                                    foreach ($providers as $providerKey => $providerInfo) {
+                                       foreach ($providerInfo['models'] as $value => $label) {
+                                          $selected = ($currentModel === $value) ? 'selected' : '';
+                                          echo "<option value=\"{$value}\" data-provider=\"{$providerKey}\" {$selected}>{$label}</option>";
+                                       }
                                     }
                                  ?>
                               </select>
@@ -260,19 +283,15 @@ $tabs = [
                            </div>
                            <div class="mt-3">
                               <label class="form-label small fw-semibold"><?php echo __('Modelo específico (opcional)', 'nextool'); ?></label>
-                              <select name="feature_reply_model" class="form-select form-select-sm">
+                              <select name="feature_reply_model" class="form-select form-select-sm aiassist-model-select" data-model-scope="reply">
                                  <option value=""><?php echo __('Usar modelo padrão', 'nextool'); ?></option>
                                  <?php
-                                    $models = [
-                                       'gpt-4o-mini' => 'gpt-4o-mini (recomendado)',
-                                       'gpt-4o'      => 'gpt-4o',
-                                       'o4-mini'     => 'o4-mini',
-                                       'gpt-4.1-mini'=> 'gpt-4.1-mini'
-                                    ];
                                     $currentModel = $settings['feature_reply_model'] ?? '';
-                                    foreach ($models as $value => $label) {
-                                       $selected = ($currentModel === $value) ? 'selected' : '';
-                                       echo "<option value=\"{$value}\" {$selected}>{$label}</option>";
+                                    foreach ($providers as $providerKey => $providerInfo) {
+                                       foreach ($providerInfo['models'] as $value => $label) {
+                                          $selected = ($currentModel === $value) ? 'selected' : '';
+                                          echo "<option value=\"{$value}\" data-provider=\"{$providerKey}\" {$selected}>{$label}</option>";
+                                       }
                                     }
                                  ?>
                               </select>
@@ -322,19 +341,15 @@ $tabs = [
                            </div>
                            <div class="mt-3">
                               <label class="form-label small fw-semibold"><?php echo __('Modelo específico (opcional)', 'nextool'); ?></label>
-                              <select name="feature_sentiment_model" class="form-select form-select-sm">
+                              <select name="feature_sentiment_model" class="form-select form-select-sm aiassist-model-select" data-model-scope="sentiment">
                                  <option value=""><?php echo __('Usar modelo padrão', 'nextool'); ?></option>
                                  <?php
-                                    $models = [
-                                       'gpt-4o-mini' => 'gpt-4o-mini (recomendado)',
-                                       'gpt-4o'      => 'gpt-4o',
-                                       'o4-mini'     => 'o4-mini',
-                                       'gpt-4.1-mini'=> 'gpt-4.1-mini'
-                                    ];
                                     $currentModel = $settings['feature_sentiment_model'] ?? '';
-                                    foreach ($models as $value => $label) {
-                                       $selected = ($currentModel === $value) ? 'selected' : '';
-                                       echo "<option value=\"{$value}\" {$selected}>{$label}</option>";
+                                    foreach ($providers as $providerKey => $providerInfo) {
+                                       foreach ($providerInfo['models'] as $value => $label) {
+                                          $selected = ($currentModel === $value) ? 'selected' : '';
+                                          echo "<option value=\"{$value}\" data-provider=\"{$providerKey}\" {$selected}>{$label}</option>";
+                                       }
                                     }
                                  ?>
                               </select>
@@ -463,10 +478,26 @@ $tabs = [
 
                <div class="alert alert-info mb-4">
                   <i class="ti ti-bulb me-2"></i>
-                  <?php echo __('Alterne entre “Chave própria” (OpenAI direta) ou “Proxy NexTool Solutions” para centralizar consumo e quotas.', 'nextool'); ?>
+                  <?php echo __('Alterne entre “Chave própria” (API direta) ou “Proxy NexTool Solutions” para centralizar consumo e quotas.', 'nextool'); ?>
                </div>
 
                <!-- Campos globais removidos da tela do módulo por solicitação -->
+
+               <div class="row g-3 mt-1">
+                  <div class="col-md-6">
+                     <label class="form-label fw-semibold"><?php echo __('Provedor de IA', 'nextool'); ?></label>
+                     <select name="provider" class="form-select aiassist-provider-select">
+                        <?php foreach ($providers as $providerKey => $providerInfo): ?>
+                           <option value="<?php echo $providerKey; ?>" <?php echo $provider === $providerKey ? 'selected' : ''; ?>>
+                              <?php echo $providerInfo['label']; ?>
+                           </option>
+                        <?php endforeach; ?>
+                     </select>
+                     <small class="text-muted">
+                        <?php echo __('Escolha o provedor usado nas chamadas de IA. Outros provedores serão adicionados futuramente.', 'nextool'); ?>
+                     </small>
+                  </div>
+               </div>
 
                <hr class="my-4">
 
@@ -474,7 +505,7 @@ $tabs = [
                <div class="btn-group mb-3" role="group">
                   <input class="btn-check" type="radio" name="provider_mode" id="aiassist-mode-direct" value="direct" <?php echo !$isProxyMode ? 'checked' : ''; ?>>
                   <label class="btn btn-outline-primary" for="aiassist-mode-direct">
-                     <?php echo __('Chave própria (OpenAI)', 'nextool'); ?>
+                     <?php echo __('Chave própria (API direta)', 'nextool'); ?>
                   </label>
                   <input class="btn-check" type="radio" name="provider_mode" id="aiassist-mode-proxy" value="proxy" <?php echo $isProxyMode ? 'checked' : ''; ?>>
                   <label class="btn btn-outline-primary" for="aiassist-mode-proxy">
@@ -484,7 +515,7 @@ $tabs = [
 
                <div class="alert alert-secondary aiassist-direct-only" style="<?php echo $isProxyMode ? 'display:none;' : ''; ?>">
                   <i class="ti ti-key me-2"></i>
-                  <?php echo __('As requisições usam diretamente sua conta OpenAI. Quotas e resets são controlados pela própria OpenAI.', 'nextool'); ?>
+                  <?php echo __('As requisições usam diretamente sua conta no provedor selecionado. Quotas e resets seguem as regras do provedor.', 'nextool'); ?>
                </div>
 
                <div class="alert alert-secondary aiassist-proxy-only" style="<?php echo $isProxyMode ? '' : 'display:none;'; ?>">
@@ -494,17 +525,31 @@ $tabs = [
 
                <div class="row g-3 mt-1 aiassist-direct-only" style="<?php echo $isProxyMode ? 'display:none;' : ''; ?>">
                   <div class="col-12">
-                     <label class="form-label fw-semibold"><?php echo __('Chave API OpenAI', 'nextool'); ?></label>
-                     <input type="password" name="api_key" class="form-control" placeholder="sk-..." autocomplete="off">
+                     <label class="form-label fw-semibold">
+                        <?php foreach ($providers as $providerKey => $providerInfo): ?>
+                           <span class="aiassist-provider-label" data-provider="<?php echo $providerKey; ?>" style="<?php echo $provider === $providerKey ? '' : 'display:none;'; ?>">
+                              <?php echo $providerInfo['api_key_label']; ?>
+                           </span>
+                        <?php endforeach; ?>
+                     </label>
+                     <input type="password"
+                            name="api_key"
+                            class="form-control aiassist-api-key"
+                            placeholder="<?php echo $providers[$provider]['api_key_placeholder'] ?? ''; ?>"
+                            data-openai-placeholder="<?php echo $providers[PluginNextoolAiassist::PROVIDER_OPENAI]['api_key_placeholder']; ?>"
+                            data-gemini-placeholder="<?php echo $providers[PluginNextoolAiassist::PROVIDER_GEMINI]['api_key_placeholder']; ?>"
+                            autocomplete="off">
                      <?php if ($hasApiKey): ?>
                         <small class="text-muted">
                            <i class="ti ti-lock me-1 text-success"></i>
                            <?php echo __('Chave armazenada com segurança. Deixe em branco para manter.', 'nextool'); ?>
                         </small>
                      <?php else: ?>
-                        <small class="text-muted">
-                           <?php echo __('Obrigatória para consumir a API direta da OpenAI.', 'nextool'); ?>
-                        </small>
+                        <?php foreach ($providers as $providerKey => $providerInfo): ?>
+                           <small class="text-muted aiassist-provider-hint" data-provider="<?php echo $providerKey; ?>" style="<?php echo $provider === $providerKey ? '' : 'display:none;'; ?>">
+                              <?php echo $providerInfo['description']; ?>
+                           </small>
+                        <?php endforeach; ?>
                      <?php endif; ?>
                   </div>
                </div>
@@ -512,21 +557,18 @@ $tabs = [
                <div class="row g-3 mt-1">
                   <div class="col-md-6">
                      <label class="form-label fw-semibold"><?php echo __('Modelo preferencial', 'nextool'); ?></label>
-                     <select name="model" class="form-select">
+                     <select name="model" class="form-select aiassist-model-select" data-model-scope="default">
                         <?php
-                           $models = [
-                              'gpt-4o-mini' => 'gpt-4o-mini (recomendado)',
-                              'gpt-4o'      => 'gpt-4o',
-                              'o4-mini'     => 'o4-mini',
-                              'gpt-4.1-mini'=> 'gpt-4.1-mini'
-                           ];
-                           foreach ($models as $value => $label) {
-                              $selected = ($settings['model'] ?? 'gpt-4o-mini') === $value ? 'selected' : '';
-                              echo "<option value=\"{$value}\" {$selected}>{$label}</option>";
+                           $currentModel = $settings['model'] ?? $providers[$provider]['default_model'];
+                           foreach ($providers as $providerKey => $providerInfo) {
+                              foreach ($providerInfo['models'] as $value => $label) {
+                                 $selected = ($currentModel === $value) ? 'selected' : '';
+                                 echo "<option value=\"{$value}\" data-provider=\"{$providerKey}\" {$selected}>{$label}</option>";
+                              }
                            }
                         ?>
                      </select>
-                     <small class="text-muted"><?php echo __('Você pode informar outro modelo manualmente, se disponível.', 'nextool'); ?></small>
+                     <small class="text-muted"><?php echo __('Selecione o modelo conforme a disponibilidade do provedor escolhido.', 'nextool'); ?></small>
                   </div>
                   <div class="col-md-6 aiassist-proxy-only" style="<?php echo $isProxyMode ? '' : 'display:none;'; ?>">
                      <label class="form-label fw-semibold"><?php echo __('Limite mensal de tokens (proxy)', 'nextool'); ?></label>
@@ -1003,12 +1045,73 @@ function aiassistUpdateProviderModeUI() {
    });
 }
 
+function aiassistUpdateProviderUI() {
+   const providerSelect = document.querySelector('.aiassist-provider-select');
+   const provider = providerSelect ? providerSelect.value : '<?php echo PluginNextoolAiassist::PROVIDER_OPENAI; ?>';
+
+   document.querySelectorAll('.aiassist-provider-label').forEach((el) => {
+      el.style.display = el.dataset.provider === provider ? '' : 'none';
+   });
+
+   document.querySelectorAll('.aiassist-provider-hint').forEach((el) => {
+      el.style.display = el.dataset.provider === provider ? '' : 'none';
+   });
+
+   const apiKeyInput = document.querySelector('.aiassist-api-key');
+   if (apiKeyInput) {
+      const placeholder = provider === '<?php echo PluginNextoolAiassist::PROVIDER_GEMINI; ?>'
+         ? apiKeyInput.dataset.geminiPlaceholder
+         : apiKeyInput.dataset.openaiPlaceholder;
+      if (placeholder) {
+         apiKeyInput.placeholder = placeholder;
+      }
+   }
+
+   const providerDefaults = {
+      '<?php echo PluginNextoolAiassist::PROVIDER_OPENAI; ?>': '<?php echo $providers[PluginNextoolAiassist::PROVIDER_OPENAI]['default_model']; ?>',
+      '<?php echo PluginNextoolAiassist::PROVIDER_GEMINI; ?>': '<?php echo $providers[PluginNextoolAiassist::PROVIDER_GEMINI]['default_model']; ?>'
+   };
+
+   document.querySelectorAll('.aiassist-model-select').forEach((select) => {
+      let hasValidSelection = false;
+      Array.from(select.options).forEach((option) => {
+         const optionProvider = option.getAttribute('data-provider');
+         if (!optionProvider) {
+            option.hidden = false;
+            return;
+         }
+         const isMatch = optionProvider === provider;
+         option.hidden = !isMatch;
+         if (isMatch && option.selected) {
+            hasValidSelection = true;
+         }
+      });
+
+      if (!hasValidSelection) {
+         if (select.dataset.modelScope === 'default') {
+            const defaultValue = providerDefaults[provider] || '';
+            if (defaultValue) {
+               select.value = defaultValue;
+            }
+         } else {
+            select.value = '';
+         }
+      }
+   });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
    const providerRadios = document.querySelectorAll('input[name="provider_mode"]');
    providerRadios.forEach((radio) => {
       radio.addEventListener('change', aiassistUpdateProviderModeUI);
    });
    aiassistUpdateProviderModeUI();
+
+   const providerSelect = document.querySelector('.aiassist-provider-select');
+   if (providerSelect) {
+      providerSelect.addEventListener('change', aiassistUpdateProviderUI);
+   }
+   aiassistUpdateProviderUI();
 
    // Atualiza badges de status das funcionalidades
    function updateFeatureStatus(feature, enabled) {

@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_modules` (
    `id` int unsigned NOT NULL AUTO_INCREMENT,
    `module_key` varchar(100) NOT NULL COMMENT 'Chave única do módulo (ex: emailtools)',
    `name` varchar(255) NOT NULL COMMENT 'Nome amigável do módulo',
+   `description` text DEFAULT NULL COMMENT 'Descrição do módulo',
    `version` varchar(20) DEFAULT NULL COMMENT 'Versão instalada do módulo (semantic versioning)',
    `available_version` varchar(20) DEFAULT NULL COMMENT 'Última versão disponível no catálogo oficial',
    `is_installed` tinyint NOT NULL DEFAULT '0' COMMENT 'Módulo instalado (0=não, 1=sim)',

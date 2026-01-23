@@ -3,9 +3,13 @@
  * -------------------------------------------------------------------------
  * NexTool Solutions - Module Catalog
  * -------------------------------------------------------------------------
- * Catálogo interno de módulos do NexTool Solutions, usado para
- * montar os cards na UI e definir metadados como nome, descrição,
- * versão, ícone, billing tier e se cada módulo é baixável/configurável.
+ * Manager de catálogo que usa o banco como fonte única da verdade.
+ * As constantes PHP servem apenas para bootstrap inicial.
+ * 
+ * ARQUITETURA:
+ * - ritecadmin → ContainerAPI → nextool (banco)
+ * - Este manager lê de glpi_plugin_nextool_main_modules
+ * - Fallback para BOOTSTRAP_MODULES apenas na primeira instalação
  * -------------------------------------------------------------------------
  * @author    Richard Loureiro
  * @copyright 2025 Richard Loureiro
@@ -20,11 +24,16 @@ if (!defined('GLPI_ROOT')) {
 
 class PluginNextoolModuleCatalog {
 
-   private const MODULES = [
+   /**
+    * Módulos de bootstrap (usados apenas na primeira instalação)
+    * IMPORTANTE: Esta constante NÃO é a fonte da verdade!
+    * A fonte oficial é glpi_plugin_nextool_main_modules (sincronizado via ContainerAPI)
+    */
+   private const BOOTSTRAP_MODULES = [
       'aiassist' => [
          'name'        => 'AI Assist',
          'description' => 'Utiliza IA para analisar o sentimento do solicitante, sugerir automaticamente a urgência mais adequada e gerar resumos claros dos chamados, agilizando a triagem e priorização de cada atendimento pela equipe de suporte.',
-         'version'     => '1.3.6-beta',
+         'version'     => '1.5.0',
          'icon'        => 'ti ti-robot',
          'billing_tier'=> 'FREE',
          'has_config'  => true,
@@ -52,6 +61,32 @@ class PluginNextoolModuleCatalog {
          'description' => 'Permite interações completas por e-mail, possibilitando que usuários aprovem solicitações, validem entregas e respondam pesquisas de satisfação diretamente da caixa de entrada, sem necessidade de acessar o sistema.',
          'version'     => '2.0.1',
          'icon'        => 'ti ti-mail',
+         'billing_tier'=> 'PAID',
+         'has_config'  => true,
+         'downloadable'=> true,
+         'author'      => [
+            'name' => 'Richard Loureiro',
+            'url'  => 'https://linkedin.com/in/richard-ti/',
+         ],
+      ],
+      'mailanalyzer' => [
+         'name'        => 'Mail Analyzer',
+         'description' => 'Analisa conversas por e-mail, combina respostas relacionadas em um único ticket e evita duplicidades causadas por CC.',
+         'version'     => '3.3.0',
+         'icon'        => 'ti ti-mail',
+         'billing_tier'=> 'FREE',
+         'has_config'  => true,
+         'downloadable'=> true,
+         'author'      => [
+            'name' => 'NexTool Solutions',
+            'url'  => 'https://nextoolsolutions.ai',
+         ],
+      ],
+      'orderservice' => [
+         'name'        => 'Ordem de Serviço',
+         'description' => 'Gera a Ordem de Serviço em PDF a partir do chamado, com cabeçalho configurável e dados do prestador.',
+         'version'     => '2.3.2',
+         'icon'        => 'ti ti-file-type-pdf',
          'billing_tier'=> 'PAID',
          'has_config'  => true,
          'downloadable'=> true,
@@ -99,14 +134,106 @@ class PluginNextoolModuleCatalog {
             'url'  => 'https://linkedin.com/in/richard-ti/',
          ],
       ],
+      'geolocation' => [
+         'name'        => 'Geolocalização',
+         'description' => 'Captura e registra a localização geográfica do usuário ao adicionar acompanhamentos ou soluções em tickets.',
+         'version'     => '1.0.2',
+         'icon'        => 'ti ti-map-pin',
+         'billing_tier'=> 'PAID',
+         'has_config'  => true,
+         'downloadable'=> true,
+         'author'      => [
+            'name' => 'NexTool Solutions',
+            'url'  => 'https://nextoolsolutions.ai',
+         ],
+      ],
+      'template' => [
+         'name'        => 'Template Module',
+         'description' => 'Módulo template base para criação de novos módulos do NexTool.',
+         'version'     => '1.1.0',
+         'icon'        => 'ti ti-template',
+         'billing_tier'=> 'PAID',
+         'has_config'  => true,
+         'downloadable'=> true,
+         'author'      => [
+            'name' => 'NexTool Solutions',
+            'url'  => 'https://nextoolsolutions.ai',
+         ],
+      ],
    ];
 
+   /**
+    * Retorna todos os módulos do banco (fonte única da verdade)
+    * Fallback para BOOTSTRAP_MODULES apenas se banco estiver vazio
+    * 
+    * @return array
+    */
    public static function all(): array {
-      return self::MODULES;
+      global $DB;
+      
+      $table = 'glpi_plugin_nextool_main_modules';
+      if (!$DB->tableExists($table)) {
+         // Bootstrap: banco ainda não foi criado
+         return self::BOOTSTRAP_MODULES;
+      }
+
+      $modules = [];
+      $iterator = $DB->request([
+         'FROM'  => $table,
+         'ORDER' => 'name'
+      ]);
+
+      if (count($iterator) === 0) {
+         // Bootstrap: banco vazio, usar constantes para primeiro acesso
+         return self::BOOTSTRAP_MODULES;
+      }
+
+      foreach ($iterator as $row) {
+         $moduleKey = $row['module_key'];
+         
+         // Pega metadados extras de BOOTSTRAP_MODULES se existir (ícone, descrição, author)
+         $bootstrap = self::BOOTSTRAP_MODULES[$moduleKey] ?? [];
+         
+         $modules[$moduleKey] = [
+            'name'         => $row['name'],
+            'description'  => $row['description'] ?? ($bootstrap['description'] ?? ''),
+            'version'      => $row['available_version'] ?? $row['version'], // Prioriza available_version
+            'icon'         => $bootstrap['icon'] ?? 'ti ti-puzzle',
+            'billing_tier' => $row['billing_tier'] ?? 'FREE',
+            'has_config'   => $bootstrap['has_config'] ?? true,
+            'downloadable' => $bootstrap['downloadable'] ?? true,
+            'author'       => $bootstrap['author'] ?? [
+               'name' => 'NexTool Solutions',
+               'url'  => 'https://nextoolsolutions.ai',
+            ],
+            // Dados do banco (runtime)
+            'is_installed'  => (bool)($row['is_installed'] ?? 0),
+            'is_enabled'    => (bool)($row['is_enabled'] ?? 0),
+            'is_available'  => (bool)($row['is_available'] ?? 0),
+         ];
+      }
+
+      return $modules;
    }
 
+   /**
+    * Busca um módulo específico pelo module_key
+    * 
+    * @param string $moduleKey
+    * @return array|null
+    */
    public static function find(string $moduleKey): ?array {
-      return self::MODULES[$moduleKey] ?? null;
+      $all = self::all();
+      return $all[$moduleKey] ?? null;
+   }
+
+   /**
+    * Retorna módulos de bootstrap (apenas para uso interno)
+    * 
+    * @return array
+    */
+   public static function getBootstrapModules(): array {
+      return self::BOOTSTRAP_MODULES;
    }
 }
 

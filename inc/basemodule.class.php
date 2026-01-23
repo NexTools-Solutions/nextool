@@ -168,6 +168,24 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Hook executado após ativação do módulo.
+    *
+    * @return void
+    */
+   public function onEnable() {
+      // Implementação opcional nos módulos filhos
+   }
+
+   /**
+    * Hook executado após desativação do módulo.
+    *
+    * @return void
+    */
+   public function onDisable() {
+      // Implementação opcional nos módulos filhos
+   }
+
+   /**
     * Verifica se o módulo tem dependências
     * 
     * @return array Lista de módulos necessários (module_key)

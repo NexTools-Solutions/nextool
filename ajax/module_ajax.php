@@ -92,14 +92,16 @@ if ($extension !== 'php') {
 }
 
 // Verifica se o arquivo é stateless (não requer sessão/login)
+// Restrito ao módulo mailinteractions para evitar exposição indevida
 // Arquivos stateless definem suas próprias constantes e incluem includes.php diretamente
 // Detecta padrões comuns: 'GLPI_ROOT', 'require __DIR__', 'NO_CHECK_FROMOUTSIDE', 'DO_NOT_CHECK_LOGIN'
+$allowStateless = ($moduleKey === 'mailinteractions');
 $fileContent = @file_get_contents($filePath);
-$isStateless = ($fileContent !== false && 
-                (strpos($fileContent, 'NO_CHECK_FROMOUTSIDE') !== false || 
-                 strpos($fileContent, 'DO_NOT_CHECK_LOGIN') !== false ||
-                 (strpos($fileContent, 'require GLPI_ROOT') !== false && strpos($fileContent, '/inc/includes.php') !== false) ||
-                 (strpos($fileContent, 'require __DIR__') !== false && strpos($fileContent, '/inc/includes.php') !== false)));
+$isStateless = ($allowStateless && $fileContent !== false &&
+               (strpos($fileContent, 'NO_CHECK_FROMOUTSIDE') !== false ||
+                strpos($fileContent, 'DO_NOT_CHECK_LOGIN') !== false ||
+                (strpos($fileContent, 'require GLPI_ROOT') !== false && strpos($fileContent, '/inc/includes.php') !== false) ||
+                (strpos($fileContent, 'require __DIR__') !== false && strpos($fileContent, '/inc/includes.php') !== false)));
 
 if ($isStateless) {
    // Para arquivos stateless, não inclui includes.php aqui

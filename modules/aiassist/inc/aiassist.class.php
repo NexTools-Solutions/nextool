@@ -25,6 +25,7 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
    public const PROVIDER_MODE_PROXY  = 'proxy';
 
    public const PROVIDER_OPENAI = 'openai';
+   public const PROVIDER_GEMINI = 'gemini';
 
    /** @var array|null */
    private $cachedSettings = null;
@@ -69,8 +70,8 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
     * {@inheritdoc}
     */
    public function getVersion() {
-      // 1.4.3: Formatação de sugestão corrigida + testes automatizados + botão X modal
-      return '1.4.3';
+      // 1.4.4: Suporte a múltiplos provedores (OpenAI + Gemini)
+      return '1.5.0';
    }
 
    /**
@@ -188,13 +189,14 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
     * @return array
     */
    public function getDefaultSettings() {
+      $defaultProvider = self::PROVIDER_OPENAI;
       return [
          'provider_mode'            => self::PROVIDER_MODE_DIRECT,
-         'provider'                 => self::PROVIDER_OPENAI,
-         'model'                    => 'gpt-4o-mini',
+         'provider'                 => $defaultProvider,
+         'model'                    => $this->getDefaultModelForProvider($defaultProvider),
          'allow_sensitive'          => 0,
-         'payload_max_chars'        => 6000,
-         'timeout_seconds'          => 25,
+         'payload_max_chars'        => 10000,
+         'timeout_seconds'          => 120,
          'rate_limit_minutes'       => 5,
          'tokens_limit_month'       => 100000,
          'feature_summary_enabled'  => 1,
@@ -206,6 +208,78 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
          'api_key'                  => '',
          'has_api_key'              => false,
       ];
+   }
+
+   /**
+    * Retorna o modelo padrão conforme o provedor.
+    *
+    * @param string $provider
+    * @return string
+    */
+   public function getDefaultModelForProvider($provider) {
+      switch ($provider) {
+         case self::PROVIDER_GEMINI:
+            return 'gemini-3-flash-preview';
+         case self::PROVIDER_OPENAI:
+         default:
+            return 'gpt-4o-mini';
+      }
+   }
+
+   /**
+    * Retorna a lista de modelos suportados por provedor.
+    *
+    * @param string $provider
+    * @return array
+    */
+   public function getProviderModels($provider) {
+      switch ($provider) {
+         case self::PROVIDER_GEMINI:
+            return [
+               'gemini-3-flash-preview',
+               'gemini-2.0-flash',
+            ];
+         case self::PROVIDER_OPENAI:
+         default:
+            return [
+               'gpt-4o-mini',
+               'gpt-4o',
+               'o4-mini',
+               'gpt-4.1-mini',
+            ];
+      }
+   }
+
+   /**
+    * Retorna o rótulo amigável do provedor.
+    *
+    * @param string $provider
+    * @return string
+    */
+   public function getProviderLabel($provider) {
+      switch ($provider) {
+         case self::PROVIDER_GEMINI:
+            return 'Gemini';
+         case self::PROVIDER_OPENAI:
+         default:
+            return 'OpenAI';
+      }
+   }
+
+   /**
+    * Retorna endpoint padrão de exibição para o provedor.
+    *
+    * @param string $provider
+    * @param string $model
+    * @return string
+    */
+   public function getProviderEndpointForDisplay($provider, $model) {
+      if ($provider === self::PROVIDER_GEMINI) {
+         $model = $model ?: $this->getDefaultModelForProvider(self::PROVIDER_GEMINI);
+         return 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent';
+      }
+
+      return 'https://api.openai.com/v1/chat/completions';
    }
 
    /**
@@ -319,11 +393,24 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
 
       $providerMode = $settings['provider_mode'] ?? self::PROVIDER_MODE_DIRECT;
       $targetIdentifier = $providerMode === self::PROVIDER_MODE_PROXY ? $clientIdentifier : 'default';
+      $provider = $settings['provider'] ?? self::PROVIDER_OPENAI;
+      if (!in_array($provider, [self::PROVIDER_OPENAI, self::PROVIDER_GEMINI], true)) {
+         $provider = self::PROVIDER_OPENAI;
+      }
+
+      $model = trim((string)($settings['model'] ?? ''));
+      if ($model === '') {
+         $model = $this->getDefaultModelForProvider($provider);
+      }
+      $allowedModels = $this->getProviderModels($provider);
+      if (!in_array($model, $allowedModels, true)) {
+         $model = $this->getDefaultModelForProvider($provider);
+      }
 
       $payload = [
          'provider_mode'            => $providerMode,
-         'provider'                 => $settings['provider'] ?? self::PROVIDER_OPENAI,
-         'model'                    => $settings['model'] ?? 'gpt-4o-mini',
+         'provider'                 => $provider,
+         'model'                    => $model,
          'proxy_identifier'         => $providerMode === self::PROVIDER_MODE_PROXY ? $proxyIdentifier : null,
          'allow_sensitive'          => !empty($settings['allow_sensitive']) ? 1 : 0,
          'payload_max_chars'        => (int)($settings['payload_max_chars'] ?? 6000),
@@ -385,6 +472,7 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
          $this->recordConfigChanges($configId, $oldSettings, $payload);
          
          $this->cachedSettings = null;
+         $this->providerInstance = null;
          if ($payload['provider_mode'] === self::PROVIDER_MODE_PROXY) {
             $this->syncQuotaLimit($clientIdentifier, $payload['tokens_limit_month']);
          } else {
@@ -849,6 +937,7 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
     */
    public function testProviderConnection() {
       $settings = $this->getSettings(['include_secret' => true]);
+      $provider = $settings['provider'] ?? self::PROVIDER_OPENAI;
 
       if (($settings['provider_mode'] ?? self::PROVIDER_MODE_DIRECT) !== self::PROVIDER_MODE_DIRECT) {
          return [
@@ -859,14 +948,15 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
       }
 
       if (empty($settings['api_key'])) {
+         $label = $this->getProviderLabel($provider);
          return [
             'success' => false,
-            'message' => __('Informe a chave da OpenAI antes de testar.', 'nextool'),
+            'message' => sprintf(__('Informe a chave do provedor %s antes de testar.', 'nextool'), $label),
             'details' => []
          ];
       }
 
-      $model = $settings['model'] ?? 'gpt-4o-mini';
+      $model = $settings['model'] ?? $this->getDefaultModelForProvider($provider);
 
       try {
          $client = new \GuzzleHttp\Client([
@@ -874,12 +964,36 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
             'verify'  => true,
          ]);
 
-         $response = $client->request('GET', 'https://api.openai.com/v1/models/' . urlencode($model), [
-            'headers' => [
-               'Authorization' => 'Bearer ' . $settings['api_key'],
-               'Content-Type'  => 'application/json',
-            ],
-         ]);
+         if ($provider === self::PROVIDER_GEMINI) {
+            $endpoint = sprintf(
+               'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent',
+               rawurlencode($model)
+            );
+
+            $response = $client->request('POST', $endpoint, [
+               'headers' => [
+                  'Content-Type' => 'application/json',
+                  'x-goog-api-key' => $settings['api_key'],
+               ],
+               'body' => json_encode([
+                  'contents' => [
+                     [
+                        'role' => 'user',
+                        'parts' => [
+                           ['text' => 'Ping'],
+                        ],
+                     ],
+                  ],
+               ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            ]);
+         } else {
+            $response = $client->request('GET', 'https://api.openai.com/v1/models/' . urlencode($model), [
+               'headers' => [
+                  'Authorization' => 'Bearer ' . $settings['api_key'],
+                  'Content-Type'  => 'application/json',
+               ],
+            ]);
+         }
 
          $status = $response->getStatusCode();
          if ($status >= 200 && $status < 300) {
@@ -894,7 +1008,7 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
 
          return [
             'success' => false,
-            'message' => sprintf(__('OpenAI respondeu com status %s.', 'nextool'), $status),
+            'message' => sprintf(__('%s respondeu com status %s.', 'nextool'), $this->getProviderLabel($provider), $status),
             'details' => [
                'status' => $status,
                'body'   => (string)$response->getBody()
@@ -905,13 +1019,14 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
          $body   = $e->hasResponse() ? (string)$e->getResponse()->getBody() : $e->getMessage();
 
          Toolbox::logInFile('plugin_nextool_aiassist', sprintf(
-            '[TEST] Falha ao testar OpenAI: %s',
+            '[TEST] Falha ao testar %s: %s',
+            $this->getProviderLabel($provider),
             $body
          ));
 
          return [
             'success' => false,
-            'message' => __('Falha ao conectar na API da OpenAI. Verifique a chave e permissões.', 'nextool'),
+            'message' => sprintf(__('Falha ao conectar na API do %s. Verifique a chave e permissões.', 'nextool'), $this->getProviderLabel($provider)),
             'details' => [
                'status' => $status,
                'body'   => $body
@@ -949,9 +1064,20 @@ class PluginNextoolAiassist extends PluginNextoolBaseModule {
     */
    public function getProviderInstance() {
       if ($this->providerInstance === null) {
-         require_once __DIR__ . '/providers/openaiprovider.class.php';
          $settings = $this->getSettings(['include_secret' => true]);
-         $this->providerInstance = new PluginNextoolAiassistOpenAiProvider($settings);
+         $provider = $settings['provider'] ?? self::PROVIDER_OPENAI;
+
+         switch ($provider) {
+            case self::PROVIDER_GEMINI:
+               require_once __DIR__ . '/providers/geminiprovider.class.php';
+               $this->providerInstance = new PluginNextoolAiassistGeminiProvider($settings);
+               break;
+            case self::PROVIDER_OPENAI:
+            default:
+               require_once __DIR__ . '/providers/openaiprovider.class.php';
+               $this->providerInstance = new PluginNextoolAiassistOpenAiProvider($settings);
+               break;
+         }
       }
 
       return $this->providerInstance;

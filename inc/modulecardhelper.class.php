@@ -52,18 +52,9 @@ class PluginNextoolModuleCardHelper {
          return implode('', $html);
       }
 
-      // Termos de uso sempre aparece antes da validação da licença/plano (somente para administradores)
+      // Antes da validação do plano, exibe apenas aviso
       if (!$state['has_validated_plan']) {
-         if ($canManageAdmin) {
-            $html[] = self::renderPlainButton(
-               __('Termos de uso', 'nextool'),
-               'btn btn-sm btn-outline-primary',
-               'ti ti-file-text',
-               "nextoolValidateLicense(this);"
-            );
-         } else {
-            $html[] = self::renderBadge(__('Plano não validado. Solicite a um administrador para realizar este passo.', 'nextool'));
-         }
+         $html[] = self::renderBadge(__('Plano não validado. Solicite a um administrador para realizar este passo.', 'nextool'));
          self::appendDataButtons($state, $html);
          return implode('', $html);
       }

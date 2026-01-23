@@ -7,8 +7,8 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_aiassist_config` (
   `api_key` TEXT NULL,
   `proxy_identifier` VARCHAR(191) DEFAULT NULL,
   `allow_sensitive` TINYINT(1) NOT NULL DEFAULT 0,
-  `payload_max_chars` INT NOT NULL DEFAULT 6000,
-  `timeout_seconds` INT NOT NULL DEFAULT 25,
+  `payload_max_chars` INT NOT NULL DEFAULT 10000,
+  `timeout_seconds` INT NOT NULL DEFAULT 120,
   `rate_limit_minutes` INT NOT NULL DEFAULT 5,
   `tokens_limit_month` INT NOT NULL DEFAULT 100000,
   `feature_summary_enabled` TINYINT(1) NOT NULL DEFAULT 1,
@@ -110,8 +110,8 @@ INSERT INTO `glpi_plugin_nextool_aiassist_config` (
   'openai',
   'gpt-4o-mini',
   0,
-  6000,
-  25,
+  10000,
+  120,
   5,
   100000
 ) ON DUPLICATE KEY UPDATE
