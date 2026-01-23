@@ -18,10 +18,10 @@ Ele foi pensado para administradores de GLPI que querem **adicionar funcionalida
 
 ### AI Assist
 
-- Analisa automaticamente o conteúdo dos tickets (incluindo sentimento: positivo/negativo/neutro).
-- Sugere nível de urgência com base na descrição do chamado.
-- Gera resumos automáticos para tickets longos.
-- Sugere respostas prontas para o técnico diretamente no formulário do ticket.
+- Gera **resumos automáticos** e **sugestões de resposta** para tickets.
+- Analisa o **sentimento** com base no histórico recente do solicitante.
+- Integra com provedores de IA (OpenAI e Gemini) e permite escolha de modelo.
+- Exibe ações diretamente na timeline e na aba do chamado.
 
 **Benefício:** acelera o atendimento e melhora a priorização de chamados.
 
@@ -42,6 +42,30 @@ Ele foi pensado para administradores de GLPI que querem **adicionar funcionalida
 - Processa automaticamente as respostas no GLPI (links seguros).
 
 **Benefício:** usuários interagem com o suporte diretamente pelo e-mail, sem acessar o sistema.
+
+### Mail Analyzer
+
+- Evita criação de tickets duplicados a partir de cadeias de e-mail em CC.
+- Identifica respostas legítimas às notificações do GLPI.
+- Notifica remetentes quando um e-mail é recusado.
+
+**Benefício:** reduz ruído na caixa de entrada e mantém o GLPI mais limpo.
+
+### Order Service (Ordem de Serviço)
+
+- Gera um PDF de Ordem de Serviço dentro do chamado.
+- Permite configurar cabeçalho, logo e dados do prestador.
+- Exibe followups públicos e fluxo de aprovação quando existirem.
+
+**Benefício:** padroniza entregas e facilita a formalização com o cliente.
+
+### Geolocation
+
+- Captura localização geográfica diretamente do navegador.
+- Insere endereço e coordenadas em acompanhamentos/soluções.
+- Mantém histórico completo por ticket.
+
+**Benefício:** melhora rastreabilidade e evidências de atendimento em campo.
 
 ### Pending Survey
 
@@ -79,7 +103,7 @@ Depois de instalado e ativado, será exibida a aba **Configurar → Geral → Ne
 1. **Instalar e ativar o plugin NexTool** pelo mecanismo padrão de plugins do GLPI.
 2. Acessar a tela de **configuração do NexTool** em **Configurar → Geral → NexTool Solutions**.
 3. Conferir o **status de licença** e o **identificador do ambiente**.
-4. Clicar em **Validar licença agora** (quando aplicável) para sincronizar o catálogo de módulos.
+4. Clicar em **Sincronizar** (quando aplicável) para atualizar o catálogo de módulos.
 5. Na tela de módulos, usar:
    - **Download** + **Instalar / Ativar** para habilitar um módulo.
    - **Acessar dados / Apagar dados** para gerenciar as informações de cada módulo.
@@ -103,7 +127,7 @@ Em instalações típicas, não é necessário nenhum ajuste manual além de gar
 Para que o NexTool Solutions consiga **baixar e atualizar módulos automaticamente**, o servidor web precisa ter **permissão de escrita** em dois diretórios do GLPI:
 
 - Pasta temporária do GLPI (ex.: `files/_tmp/`)
-- Pasta de módulos do plugin NexTool (ex.: `plugins/NexTool/modules/`)
+- Pasta de módulos do plugin NexTool (ex.: `plugins/nextool/modules/`)
 
 Se essas permissões não estiverem corretas, você poderá ver erros de download/extração, ou os botões de módulos podem não funcionar como esperado.
 
@@ -120,14 +144,14 @@ Se essas permissões não estiverem corretas, você poderá ver erros de downloa
 
    # Exemplos mais comuns:
    # Debian/Ubuntu (Apache/Nginx):
-   sudo chown -R www-data:www-data files/_tmp plugins/NexTool/modules
+   sudo chown -R www-data:www-data files/_tmp plugins/nextool/modules
 
    # AlmaLinux/CentOS/RHEL (Apache):
-   sudo chown -R apache:apache files/_tmp plugins/NexTool/modules
+   sudo chown -R apache:apache files/_tmp plugins/nextool/modules
    ```
 
 3. **Em ambientes Windows (XAMPP/WAMP/IIS)**  
-   Garanta, via **Propriedades → Segurança** das pastas `files` e `plugins\NexTool\modules`, que o usuário/grupo usado pelo servidor web tenha permissão de **Modificar** (leitura + escrita).  
+   Garanta, via **Propriedades → Segurança** das pastas `files` e `plugins\nextool\modules`, que o usuário/grupo usado pelo servidor web tenha permissão de **Modificar** (leitura + escrita).  
    Se tiver dúvida sobre qual usuário usar, peça ajuda ao responsável pela infraestrutura.
 
 ---
