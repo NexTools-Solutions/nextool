@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin NexTool Solutions v2.20.1 - Sistema Modular para GLPI 11
+ * Plugin NexTool Solutions v2.21.0 - Sistema Modular para GLPI 11
  * 
  * Plugin multiferramentas com arquitetura modular completa.
  * Cada ferramenta é um módulo independente que pode ser ativado/desativado.
@@ -12,7 +12,7 @@
  * 
  * Documentação completa em: docs/
  * 
- * @version 2.20.1
+ * @version 2.21.0
  * @author Richard Loureiro - linkedin.com/in/richard-ti
  * @license GPLv3+
  * @link https://linkedin.com/in/richard-ti
@@ -25,7 +25,7 @@ if (!defined('GLPI_ROOT')) {
 function plugin_version_nextool() {
    return [
       'name'           => 'NexTool Solutions',
-      'version'        => '2.20.1',
+      'version'        => '2.21.0',
       'license'        => 'GPLv3+',
       'author'         => 'Richard Loureiro - linkedin.com/in/richard-ti',
       'homepage'       => 'https://ritech.site',
@@ -86,17 +86,34 @@ function plugin_init_nextool() {
    
    if (file_exists($managerfile) && file_exists($basefile)) {
       global $DB;
-      
+
+      $hookdispatcherfile = GLPI_ROOT . '/plugins/nextool/inc/hookdispatcher.class.php';
+      if (file_exists($hookdispatcherfile)) {
+         require_once $hookdispatcherfile;
+      }
+
       // Só carrega módulos se plugin já foi instalado
       if ($DB->tableExists('glpi_plugin_nextool_main_modules')) {
          try {
             require_once $basefile;
             require_once $managerfile;
-            
+
             $manager = PluginNextoolModuleManager::getInstance();
             $manager->loadActiveModules();
             PluginNextoolPermissionManager::syncModuleRights();
-            
+
+            // Dispatcher central para Ticket: vários módulos registram via register*;
+            // registramos os handlers globais após loadActiveModules para que todos sejam chamados.
+            if (class_exists('PluginNextoolHookDispatcher')) {
+               $PLUGIN_HOOKS['pre_item_add']['nextool']['Ticket'] = [
+                  'PluginNextoolHookDispatcher',
+                  'dispatchPreItemAddTicket'
+               ];
+               $PLUGIN_HOOKS['item_add']['nextool']['Ticket'] = [
+                  'PluginNextoolHookDispatcher',
+                  'dispatchItemAddTicket'
+               ];
+            }
          } catch (Exception $e) {
             Toolbox::logInFile('plugin_nextool', "Erro ao carregar módulos: " . $e->getMessage());
          }
