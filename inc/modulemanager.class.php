@@ -376,6 +376,7 @@ class PluginNextoolModuleManager {
       if ($result) {
          // Limpa cache para refletir mudanças
          $this->clearCache();
+         $this->refreshModules();
 
          return $this->buildModuleActionResult(
             $moduleKey,
@@ -438,6 +439,7 @@ class PluginNextoolModuleManager {
       if ($result) {
          // Limpa cache para refletir mudanças
          $this->clearCache();
+         $this->refreshModules();
          
          return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo desinstalado com sucesso', $baseContext);
       }
@@ -763,6 +765,7 @@ class PluginNextoolModuleManager {
             ['module_key' => $moduleKey]
          );
          $this->clearCache();
+         $this->refreshModules();
          return $this->buildModuleActionResult($moduleKey, $action, true, 'Versão local já é a mais recente. Sincronização concluída.', $baseContext);
       }
 
@@ -777,7 +780,15 @@ class PluginNextoolModuleManager {
          return $this->buildModuleActionResult($moduleKey, $action, false, 'Não foi possível carregar o módulo após o download.', $baseContext);
       }
 
+      $downloadedVersion = $download['version'] ?? null;
       $targetVersion = $module->getVersion();
+      if (
+         $downloadedVersion !== null
+         && $downloadedVersion !== ''
+         && ($targetVersion === null || $targetVersion === '' || version_compare($downloadedVersion, $targetVersion, '>'))
+      ) {
+         $targetVersion = $downloadedVersion;
+      }
       if ($targetVersion !== null && $currentVersion !== null && version_compare($targetVersion, $currentVersion, '<=')) {
          $DB->update(
             'glpi_plugin_nextool_main_modules',
@@ -789,6 +800,7 @@ class PluginNextoolModuleManager {
             ['module_key' => $moduleKey]
          );
          $this->clearCache();
+         $this->refreshModules();
          return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo já está na versão mais recente. Versão sincronizada.', $baseContext);
       }
 
@@ -801,13 +813,14 @@ class PluginNextoolModuleManager {
          'glpi_plugin_nextool_main_modules',
          [
             'version'            => $targetVersion,
-            'available_version'  => $targetVersion,
+            'available_version'  => $downloadedVersion ?: $targetVersion,
             'date_mod'           => date('Y-m-d H:i:s'),
          ],
          ['module_key' => $moduleKey]
       );
 
       $this->clearCache();
+      $this->refreshModules();
 
       return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo atualizado com sucesso.', array_merge($baseContext, [
          'from_version' => $currentVersion,
@@ -904,6 +917,7 @@ class PluginNextoolModuleManager {
 
       if ($directoryRemoved) {
          $this->clearCache();
+         $this->refreshModules();
       }
 
       return $this->buildModuleActionResult($moduleKey, $action, $success, $message, ['origin' => 'module_data_management']);

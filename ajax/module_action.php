@@ -58,9 +58,10 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/licensevalidator.class.php';
 
 $manager = PluginNextoolModuleManager::getInstance();
 
-$actionsThatResetCache = ['download', 'install'];
+$actionsThatResetCache = ['download', 'install', 'uninstall', 'purge_data'];
 if (in_array($action, $actionsThatResetCache, true)) {
    $manager->clearCache();
+   $manager->refreshModules();
    PluginNextoolLicenseConfig::resetCache();
    if ($action === 'download') {
       PluginNextoolLicenseValidator::validateLicense([

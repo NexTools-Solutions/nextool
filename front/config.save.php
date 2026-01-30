@@ -154,6 +154,7 @@ if ($action === 'accept_policies') {
 
    $manager = PluginNextoolModuleManager::getInstance();
    $manager->clearCache();
+   $manager->refreshModules();
    PluginNextoolLicenseConfig::resetCache();
 
    $result = PluginNextoolLicenseValidator::validateLicense([
@@ -325,6 +326,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
 
    $manager = PluginNextoolModuleManager::getInstance();
    $manager->clearCache();
+   $manager->refreshModules();
    PluginNextoolLicenseConfig::resetCache();
 
    $result = PluginNextoolLicenseValidator::validateLicense([

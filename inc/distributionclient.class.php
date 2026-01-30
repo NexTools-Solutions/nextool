@@ -211,6 +211,7 @@ class PluginNextoolDistributionClient {
 
       $this->deleteDir($destination);
       $this->recursiveCopy($candidate, $destination);
+      $this->invalidateOpcache($destination, $moduleKey);
       $this->deleteDir($tmpExtract);
       @unlink($filePath);
    }
@@ -448,6 +449,20 @@ class PluginNextoolDistributionClient {
                ));
             }
          }
+      }
+   }
+
+   private function invalidateOpcache(string $destination, string $moduleKey): void {
+      if (!function_exists('opcache_invalidate')) {
+         return;
+      }
+
+      $classFile = rtrim($destination, DIRECTORY_SEPARATOR)
+         . DIRECTORY_SEPARATOR . 'inc'
+         . DIRECTORY_SEPARATOR . $moduleKey . '.class.php';
+
+      if (is_file($classFile)) {
+         @opcache_invalidate($classFile, true);
       }
    }
 
