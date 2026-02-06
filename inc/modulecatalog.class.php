@@ -78,8 +78,8 @@ class PluginNextoolModuleCatalog {
          'has_config'  => true,
          'downloadable'=> true,
          'author'      => [
-            'name' => 'NexTool Solutions',
-            'url'  => 'https://nextoolsolutions.ai',
+            'name' => 'Richard Loureiro',
+            'url'  => 'https://linkedin.com/in/richard-ti/',
          ],
       ],
       'orderservice' => [
@@ -152,6 +152,19 @@ class PluginNextoolModuleCatalog {
          'description' => 'Módulo template base para criação de novos módulos do NexTool.',
          'version'     => '1.1.0',
          'icon'        => 'ti ti-template',
+         'billing_tier'=> 'PAID',
+         'has_config'  => true,
+         'downloadable'=> true,
+         'author'      => [
+            'name' => 'NexTool Solutions',
+            'url'  => 'https://nextoolsolutions.ai',
+         ],
+      ],
+      'signaturepad' => [
+         'name'        => 'Assinatura Manual (PDF)',
+         'description' => 'Carrega um PDF padrão, gera link interno de assinatura (mouse/touch) e salva um novo PDF assinado como documento no GLPI.',
+         'version'     => '0.1.0',
+         'icon'        => 'ti ti-signature',
          'billing_tier'=> 'PAID',
          'has_config'  => true,
          'downloadable'=> true,

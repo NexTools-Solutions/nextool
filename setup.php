@@ -25,7 +25,7 @@ if (!defined('GLPI_ROOT')) {
 function plugin_version_nextool() {
    return [
       'name'           => 'NexTool Solutions',
-      'version'        => '2.21.1',
+      'version'        => '2.22.0',
       'license'        => 'GPLv3+',
       'author'         => 'Richard Loureiro - linkedin.com/in/richard-ti',
       'homepage'       => 'https://ritech.site',
@@ -46,6 +46,14 @@ function plugin_init_nextool() {
 
    // Define a página de configuração do plugin (adiciona botão "Configurar" na lista de plugins)
    $PLUGIN_HOOKS['config_page']['nextool'] = 'front/config.php';
+
+   // Habilita ações em massa (MassiveActions) para que o GLPI consulte:
+   // - plugin_nextool_MassiveActions()
+   // - plugin_nextool_MassiveActionsFieldsDisplay()
+   // (ex.: SmartAssign: alterar grupo responsável em massa na listagem Search)
+   if (Session::getLoginUserID()) {
+      $PLUGIN_HOOKS['use_massive_action']['nextool'] = 1;
+   }
 
    // Gera e persiste o Identificador do Cliente no momento em que o plugin é carregado (ativado)
    // em vez de depender apenas da primeira leitura preguiçosa da configuração.
@@ -100,6 +108,20 @@ function plugin_init_nextool() {
 
             $manager = PluginNextoolModuleManager::getInstance();
             $manager->loadActiveModules();
+
+            $hookfile = GLPI_ROOT . '/plugins/nextool/hook.php';
+            if (file_exists($hookfile)) {
+               require_once $hookfile;
+            }
+
+            // Registra classes necessárias para Search/MassiveActions via providers dos módulos ativos
+            $dispatcherFile = GLPI_ROOT . '/plugins/nextool/inc/hookprovidersdispatcher.class.php';
+            if (file_exists($dispatcherFile)) {
+               require_once $dispatcherFile;
+               if (class_exists('PluginNextoolHookProvidersDispatcher')) {
+                  PluginNextoolHookProvidersDispatcher::registerClasses();
+               }
+            }
             PluginNextoolPermissionManager::syncModuleRights();
 
             // Dispatcher central para Ticket: vários módulos registram via register*;

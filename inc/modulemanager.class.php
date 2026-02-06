@@ -84,7 +84,9 @@ class PluginNextoolModuleManager {
       ],
       'smartassign' => [
          'glpi_plugin_nextool_smartassign_assignments',
-         'glpi_plugin_nextool_smartassign_options',
+      ],
+      'signaturepad' => [
+         'glpi_plugin_nextool_signaturepad_signed_docs',
       ],
    ];
 

@@ -23,6 +23,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulemanager.class.php';
 require_once __DIR__ . '/inc/basemodule.class.php';
 require_once __DIR__ . '/inc/permissionmanager.class.php';
+require_once __DIR__ . '/inc/hookprovidersdispatcher.class.php';
 
 function plugin_nextool_install() {
    global $DB;
@@ -131,6 +132,45 @@ function plugin_nextool_uninstall() {
    PluginNextoolPermissionManager::removeRights();
 
    return true;
+}
+
+/**
+ * Hook MassiveActions - adiciona ações em massa customizadas por itemtype.
+ *
+ * O GLPI descobre essas ações via função global do plugin. Para evitar acoplamento
+ * com módulos específicos, delegamos para providers registrados pelos módulos ativos.
+ *
+ * @param string $type
+ * @return array<string,string>
+ */
+function plugin_nextool_MassiveActions($type) {
+   return PluginNextoolHookProvidersDispatcher::getMassiveActions((string) $type);
+}
+
+/**
+ * Hook MassiveActionsFieldsDisplay - exibe campos específicos no formulário de ação em massa "Atualizar".
+ * Alguns itemtypes de plugin exigem renderização manual para evitar 500 no core.
+ * Delegado para providers.
+ *
+ * @param array $options ['itemtype' => string, 'options' => array (search option)]
+ * @return bool True se tratou o campo, false para deixar o core processar
+ */
+function plugin_nextool_MassiveActionsFieldsDisplay($options = []) {
+   return PluginNextoolHookProvidersDispatcher::massiveActionsFieldsDisplay((array) $options);
+}
+
+/**
+ * Hook giveItem para Search - trata exibição de células de itemtypes de plugin.
+ * Delegado para providers (evita acoplamento com módulos).
+ *
+ * @param string|null $itemtype
+ * @param int $ID    ID da search option
+ * @param array $data Dados da linha
+ * @param int $num   Índice da coluna
+ * @return string|false Valor formatado ou false para usar o padrão
+ */
+function plugin_nextool_giveItem($itemtype, $ID, $data, $num) {
+   return PluginNextoolHookProvidersDispatcher::giveItem($itemtype, $ID, $data, $num);
 }
 
 function nextool_delete_dir(string $dir): void {

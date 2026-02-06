@@ -168,6 +168,19 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Providers de hooks globais do GLPI (Search/MassiveActions/etc.).
+    *
+    * Por padrão, módulos não expõem providers.
+    * Para implementar, sobrescreva e retorne uma lista de FQCNs (classes)
+    * que implementam PluginNextoolHookProviderInterface.
+    *
+    * @return array<int,string>
+    */
+   public function getHookProviders(): array {
+      return [];
+   }
+
+   /**
     * Hook executado após ativação do módulo.
     *
     * @return void
