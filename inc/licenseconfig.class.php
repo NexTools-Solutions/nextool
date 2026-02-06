@@ -67,6 +67,7 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
          'contract_active'        => null,
          'license_status'         => null,
          'expires_at'             => null,
+         'policies_accepted_at'   => null,
          'api_endpoint'           => null,
          'api_secret'             => null,
          'last_validation_date'   => null,
@@ -208,6 +209,20 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
                'value'   => null,
                'comment' => 'Snapshot consolidado das licenças (JSON)',
                'after'   => 'warnings',
+            ]
+         );
+         $schemaUpdated = true;
+      }
+
+      if (!$DB->fieldExists($table, 'policies_accepted_at')) {
+         $migration->addField(
+            $table,
+            'policies_accepted_at',
+            'timestamp',
+            [
+               'value'   => null,
+               'comment' => 'Data/hora do aceite das Políticas de Uso no ambiente operacional',
+               'after'   => 'expires_at',
             ]
          );
          $schemaUpdated = true;

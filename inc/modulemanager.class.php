@@ -753,6 +753,25 @@ class PluginNextoolModuleManager {
          return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo não encontrado no diretório local.', $baseContext);
       }
 
+      // Para atualizar (baixar + aplicar upgrade), sempre validar com force_refresh.
+      // Isso garante que um módulo não seja atualizado quando o contrato/status
+      // mudou recentemente no ContainerAPI.
+      $licenseCheck = $this->validateLicenseForModule($moduleKey, [
+         'force_refresh' => true,
+         'origin'        => 'module_update',
+      ]);
+      if (!$licenseCheck['success']) {
+         $this->logModuleAction($moduleKey, $action, array_merge(
+            $baseContext,
+            $this->extractLicenseAuditFields($licenseCheck['validation'] ?? null),
+            [
+               'result'  => 0,
+               'message' => $licenseCheck['message'] ?? 'Falha de licença',
+            ]
+         ));
+         return $licenseCheck;
+      }
+
       $currentVersion = $row['version'] ?? null;
       $availableVersion = $row['available_version'] ?? null;
       $localVersion = $module->getVersion();

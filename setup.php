@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin NexTool Solutions v2.21.1 - Sistema Modular para GLPI 11
+ * Plugin NexTool Solutions v2.22.2 - Sistema Modular para GLPI 11
  * 
  * Plugin multiferramentas com arquitetura modular completa.
  * Cada ferramenta é um módulo independente que pode ser ativado/desativado.
@@ -12,7 +12,7 @@
  * 
  * Documentação completa em: docs/
  * 
- * @version 2.21.1
+ * @version 2.22.2
  * @author Richard Loureiro - linkedin.com/in/richard-ti
  * @license GPLv3+
  * @link https://linkedin.com/in/richard-ti
@@ -25,7 +25,7 @@ if (!defined('GLPI_ROOT')) {
 function plugin_version_nextool() {
    return [
       'name'           => 'NexTool Solutions',
-      'version'        => '2.22.0',
+      'version'        => '2.22.2',
       'license'        => 'GPLv3+',
       'author'         => 'Richard Loureiro - linkedin.com/in/richard-ti',
       'homepage'       => 'https://ritech.site',

@@ -155,7 +155,12 @@ if ($action === 'accept_policies') {
    $manager = PluginNextoolModuleManager::getInstance();
    $manager->clearCache();
    $manager->refreshModules();
-   PluginNextoolLicenseConfig::resetCache();
+   PluginNextoolLicenseConfig::resetCache([
+      // Aceite é uma ação "one-time" do ambiente operacional.
+      // Não depende do sucesso da validação remota: o usuário já concordou
+      // com a política de uso/coleta para fins de licenciamento.
+      'policies_accepted_at' => date('Y-m-d H:i:s'),
+   ]);
 
    $result = PluginNextoolLicenseValidator::validateLicense([
       'force_refresh' => true,

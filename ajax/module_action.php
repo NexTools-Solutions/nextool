@@ -58,20 +58,29 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/licensevalidator.class.php';
 
 $manager = PluginNextoolModuleManager::getInstance();
 
-$actionsThatResetCache = ['download', 'install', 'uninstall', 'purge_data'];
-if (in_array($action, $actionsThatResetCache, true)) {
+// Importante:
+// Ações de módulo NÃO devem "desvalidar" o plano/licença do ambiente.
+// Resetar o cache de licença aqui fazia o UI cair para "Plano não validado"
+// após desinstalar um módulo, até o usuário clicar em "Sincronizar".
+//
+// Mantemos apenas a limpeza do cache de módulos (discovery) quando houver
+// impacto real em arquivos/estrutura local.
+$actionsThatResetModuleCache = ['download', 'purge_data'];
+if (in_array($action, $actionsThatResetModuleCache, true)) {
    $manager->clearCache();
    $manager->refreshModules();
-   PluginNextoolLicenseConfig::resetCache();
-   if ($action === 'download') {
-      PluginNextoolLicenseValidator::validateLicense([
-         'force_refresh' => true,
-         'context'       => [
-            'origin'            => 'module_action_download',
-            'requested_modules' => [$moduleKey],
-         ],
-      ]);
-   }
+}
+
+// Para download remoto, forçamos refresh do snapshot (ContainerAPI),
+// pois o fluxo de distribuição depende do estado mais recente.
+if ($action === 'download') {
+   PluginNextoolLicenseValidator::validateLicense([
+      'force_refresh' => true,
+      'context'       => [
+         'origin'            => 'module_action_download',
+         'requested_modules' => [$moduleKey],
+      ],
+   ]);
 }
 
 // Executa ação

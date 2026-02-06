@@ -212,12 +212,21 @@ foreach ($catalogMeta as $moduleKey => $meta) {
       break;
    }
 }
-$requiresPolicyAcceptance = !$modulesUnlocked;
+// Aceite das Políticas de Uso deve ser solicitado apenas uma vez por ambiente.
+// Usar "catálogo liberado" como proxy fazia o botão Sincronizar pedir confirmação
+// repetidamente (ex.: após falhas temporárias ou alterações locais).
+$policiesAcceptedAt = $licenseConfig['policies_accepted_at'] ?? null;
+$hasAcceptedPolicies = !empty($policiesAcceptedAt);
+$requiresPolicyAcceptance = !$hasAcceptedPolicies;
 
 if ($requiresPolicyAcceptance) {
    $heroPlanLabel = __('Não validado', 'nextool');
    $heroPlanBadgeClass = 'bg-secondary';
    $heroPlanDescription = __('Aceite as Políticas de Uso para sincronizar com o ContainerAPI, registrar seu ambiente e liberar o catálogo oficial de módulos.', 'nextool');
+} elseif (!$modulesUnlocked) {
+   $heroPlanLabel = __('Catálogo pendente', 'nextool');
+   $heroPlanBadgeClass = 'bg-secondary';
+   $heroPlanDescription = __('As Políticas de Uso já foram aceitas. Clique em Sincronizar para atualizar o catálogo oficial de módulos.', 'nextool');
 } else {
    $heroPlanLabel = $isLicenseActive ? $licensePlanLabel : 'Free';
    $heroPlanBadgeClass = $isLicenseActive ? $licensePlanBadgeClass : 'bg-teal';
@@ -1217,13 +1226,15 @@ function nextoolValidateLicense(btn) {
    if (!form) {
       return false;
    }
-   var msg = 'Ao validar a licença do Nextool, serão enviados dados técnicos do ambiente (domínio, ' +
-      'identificador do cliente, chave de licença, IP do servidor e versões de GLPI/PHP/plugin) ao servidor administrativo ' +
-      'apenas para fins de licenciamento, controle de ambientes e auditoria técnica. Nenhum dado de tickets, usuários finais ' +
-      'ou anexos é coletado.\n\nVocê concorda com esta política de uso e coleta de dados para validação de licença?';
-
-   if (!window.confirm(msg)) {
-      return false;
+   var hasAcceptedPolicies = <?php echo !empty($hasAcceptedPolicies) ? 'true' : 'false'; ?>;
+   if (!hasAcceptedPolicies) {
+      var msg = 'Ao validar a licença do Nextool pela primeira vez, serão enviados dados técnicos do ambiente (domínio, ' +
+         'identificador do cliente, chave de licença, IP do servidor e versões de GLPI/PHP/plugin) ao ContainerAPI ' +
+         'apenas para fins de licenciamento, controle de ambientes e auditoria técnica. Nenhum dado de tickets, usuários finais ' +
+         'ou anexos é coletado.\n\nVocê concorda com esta política de uso e coleta de dados?';
+      if (!window.confirm(msg)) {
+         return false;
+      }
    }
 
    var actionInput = form.querySelector('input[name="action"]');
@@ -1233,7 +1244,9 @@ function nextoolValidateLicense(btn) {
       actionInput.name = 'action';
       form.appendChild(actionInput);
    }
-   actionInput.value = 'validate_license';
+   // Se ainda não aceitou, registramos o aceite (one-time) e sincronizamos.
+   // Depois disso, o botão Sincronizar não deve voltar a perguntar.
+   actionInput.value = hasAcceptedPolicies ? 'validate_license' : 'accept_policies';
    form.submit();
    return false;
 }

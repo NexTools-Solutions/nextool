@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_license_config` (
   `contract_active` tinyint DEFAULT NULL COMMENT 'Último estado do contrato retornado pelo administrativo',
   `license_status` varchar(32) DEFAULT NULL COMMENT 'Último status retornado pelo administrativo',
   `expires_at` timestamp NULL DEFAULT NULL COMMENT 'Data de expiração retornada pelo administrativo',
+  `policies_accepted_at` timestamp NULL DEFAULT NULL COMMENT 'Data/hora do aceite das Políticas de Uso no ambiente operacional',
   `api_endpoint` varchar(500) DEFAULT NULL COMMENT 'URL do endpoint de validação',
   `api_secret` varchar(255) DEFAULT NULL COMMENT 'Secret para autenticação (opcional)',
   `last_validation_date` timestamp NULL DEFAULT NULL COMMENT 'Data da última validação bem-sucedida',
