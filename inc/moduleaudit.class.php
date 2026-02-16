@@ -94,9 +94,9 @@ class PluginNextoolModuleAudit extends CommonDBTM {
          'LIMIT' => 50,
       ]);
 
-      echo "<div class='table-responsive-lg'>";
-      echo "<table class='table card-table table-hover table-striped'>";
-      echo "<thead>";
+      echo "<div class='table-responsive' style='max-height: 400px; overflow-y: auto;'>";
+      echo "<table class='table table-sm table-hover table-striped'>";
+      echo "<thead class='table-light sticky-top'>";
       echo "<tr>";
       echo "<th>" . __('Data', 'nextool') . "</th>";
       echo "<th>" . __('Módulo', 'nextool') . "</th>";
@@ -212,6 +212,7 @@ class PluginNextoolModuleAudit extends CommonDBTM {
       echo "</tbody>";
       echo "</table>";
       echo "</div>";
+      echo "<p class='text-muted small mb-0 mt-2'>" . __('Exibindo até as 50 ações mais recentes.', 'nextool') . "</p>";
    }
 }
 

@@ -1,10 +1,15 @@
 <?php
 /**
  * -------------------------------------------------------------------------
- * NexTool Solutions - Profile Helper
+ * NexTool Solutions - Profile
  * -------------------------------------------------------------------------
- * Adiciona uma aba na tela de Perfis do GLPI para permitir que os direitos
- * do Nextool sejam configurados por perfil (READ/UPDATE/DELETE/PURGE).
+ * Adiciona aba na tela de Perfis do GLPI para configurar direitos do Nextool
+ * por perfil (READ/UPDATE/DELETE/PURGE).
+ * -------------------------------------------------------------------------
+ * @author    Richard Loureiro
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
  * -------------------------------------------------------------------------
  */
 
@@ -38,9 +43,13 @@ class PluginNextoolProfile extends Profile {
    }
 
    public function getRights($interface = 'central') {
-      $rights = parent::getRights($interface);
-      unset($rights[CREATE]);
-      return $rights;
+      $values = [
+         CREATE => __('Criar', 'nextool'),
+         READ   => __('Ler', 'nextool'),
+         UPDATE => __('Atualizar', 'nextool'),
+         DELETE => __('Apagar', 'nextool'),
+      ];
+      return $values;
    }
 
    private function showFormNextool(int $profiles_id): void {
@@ -50,6 +59,11 @@ class PluginNextoolProfile extends Profile {
 
       $canEdit = Session::haveRight(self::$rightname, UPDATE);
       PluginNextoolPermissionManager::syncModuleRights();
+
+      // Detecta se o perfil sendo editado é de interface simplificada (helpdesk)
+      $profile = new Profile();
+      $profile->getFromDB($profiles_id);
+      $isHelpdesk = ($profile->fields['interface'] ?? 'central') === 'helpdesk';
 
       echo "<div class='spaced'>";
       if ($canEdit) {
@@ -61,21 +75,52 @@ class PluginNextoolProfile extends Profile {
          'canedit' => $canEdit,
       ];
 
-      $rights = [
-         [
+      $rights = [];
+
+      // Para perfis central: exibe tudo (módulos + abas admin + todos os módulos)
+      // Para perfis helpdesk: exibe apenas módulos ativos (sem abas admin, sem módulos inativos)
+      if (!$isHelpdesk) {
+         $rights[] = [
             'itemtype' => self::class,
             'label'    => __('Módulos do NexTool', 'nextool'),
             'field'    => PluginNextoolPermissionManager::RIGHT_MODULES,
-         ],
-         [
+         ];
+         $rights[] = [
             'itemtype' => self::class,
             'label'    => __('Abas administrativas (Licença, Contato, Logs)', 'nextool'),
             'field'    => PluginNextoolPermissionManager::RIGHT_ADMIN_TABS,
-         ],
-      ];
+         ];
+      }
+
+      // Obter lista de módulos instalados (e ativos, para helpdesk)
+      $installedModuleKeys = [];
+      $activeModuleKeys = [];
+      if (class_exists('PluginNextoolModuleManager')) {
+         try {
+            $manager = PluginNextoolModuleManager::getInstance();
+            foreach ($manager->getAllModules() as $mk => $mod) {
+               if ($mod->isInstalled()) {
+                  $installedModuleKeys[] = $mk;
+                  if ($mod->isEnabled()) {
+                     $activeModuleKeys[] = $mk;
+                  }
+               }
+            }
+         } catch (Throwable $e) {
+            // Fallback: sem filtro
+         }
+      }
 
       $moduleRights = PluginNextoolPermissionManager::getModuleRightsMetadata();
       foreach ($moduleRights as $moduleRight) {
+         // Exibir apenas módulos instalados
+         if (!empty($installedModuleKeys) && !in_array($moduleRight['key'], $installedModuleKeys, true)) {
+            continue;
+         }
+         // Para helpdesk: exibir apenas módulos ativos (instalados + habilitados)
+         if ($isHelpdesk && !in_array($moduleRight['key'], $activeModuleKeys, true)) {
+            continue;
+         }
          $rights[] = [
             'itemtype' => self::class,
             'label'    => sprintf(__('Módulo: %s', 'nextool'), $moduleRight['label']),
@@ -86,6 +131,9 @@ class PluginNextoolProfile extends Profile {
       echo "<div id='nextool-rights-matrix'>";
       $this->displayRightsChoiceMatrix($rights, $matrixOptions);
       echo "</div>";
+
+      // Para perfis helpdesk: linhas administrativas já são ocultadas no PHP (acima).
+      // Todas as colunas CRUD ficam disponíveis para os módulos exibidos.
 
       if ($canEdit) {
          echo Html::hidden('id', ['value' => $profiles_id]);

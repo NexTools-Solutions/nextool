@@ -90,7 +90,8 @@ class PluginNextoolDistributionClient {
 
       $zipPath = $this->downloadPackage($downloadUrl, $moduleKey, $version);
       $this->verifyHash($zipPath, $hashExpected);
-      $destination = GLPI_ROOT . '/plugins/nextool/modules/' . $moduleKey;
+      require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+      $destination = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
       $this->extractPackage($zipPath, $destination, $moduleKey);
 
       return [
@@ -261,7 +262,19 @@ class PluginNextoolDistributionClient {
 
       if ($response['http_code'] >= 300) {
          $message = $data['message'] ?? $data['error'] ?? __('Erro desconhecido', 'nextool');
-         throw new RuntimeException(sprintf(__('Falha ao solicitar manifesto de distribuição: %s', 'nextool'), $message));
+         if (($data['error'] ?? '') === 'nextool_upgrade_required') {
+            $minVer = $data['min_version_nextools'] ?? null;
+            $message = $minVer !== null && $minVer !== ''
+               ? sprintf(
+                  __('Para atualizar é necessário estar utilizando o Nextool versão %s ou superior.', 'nextool'),
+                  $minVer
+               )
+               : __('É necessário atualizar o plugin Nextool para a versão mais recente para baixar ou atualizar módulos.', 'nextool');
+            $message .= ' ' . __('Atualize em:', 'nextool') . ' https://nextoolsolutions.ai/produtos/plugin-nextools-glpi';
+         } else {
+            $message = sprintf(__('Falha ao solicitar manifesto de distribuição: %s', 'nextool'), $message);
+         }
+         throw new RuntimeException($message);
       }
 
       return $data;
@@ -343,6 +356,13 @@ class PluginNextoolDistributionClient {
       return hash_hmac('sha256', $body . '|' . $timestamp, $this->clientSecret);
    }
 
+   /**
+    * Obtém o domínio do servidor para envio ao ContainerAPI (identificação do ambiente).
+    * Best effort: em proxies/load balancers, HTTP_HOST ou SERVER_NAME podem ser
+    * configurados ou manipulados; em setups críticos, considerar variável de ambiente.
+    *
+    * @return string
+    */
    private function getServerDomain(): string {
       if (!empty($_SERVER['HTTP_HOST'])) {
          return (string) $_SERVER['HTTP_HOST'];
@@ -387,36 +407,8 @@ class PluginNextoolDistributionClient {
    }
 
    private function deleteDir(string $dir): void {
-      if (!is_dir($dir)) {
-         return;
-      }
-      $items = new RecursiveIteratorIterator(
-         new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
-         RecursiveIteratorIterator::CHILD_FIRST
-      );
-      foreach ($items as $item) {
-         if ($item->isDir()) {
-            if (!@rmdir($item->getRealPath())) {
-               throw new RuntimeException(sprintf(
-                  __('Falha ao remover diretório %s. Verifique permissões.', 'nextool'),
-                  $item->getRealPath()
-               ));
-            }
-         } else {
-            if (!@unlink($item->getRealPath())) {
-               throw new RuntimeException(sprintf(
-                  __('Falha ao remover arquivo %s. Verifique permissões.', 'nextool'),
-                  $item->getRealPath()
-               ));
-            }
-         }
-      }
-      if (!@rmdir($dir)) {
-         throw new RuntimeException(sprintf(
-            __('Falha ao limpar diretório %s. Verifique permissões.', 'nextool'),
-            $dir
-         ));
-      }
+      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      PluginNextoolFileHelper::deleteDirectory($dir, true);
    }
 
    private function recursiveCopy(string $source, string $dest): void {
@@ -485,6 +477,31 @@ class PluginNextoolDistributionClient {
       }
 
       return null;
+   }
+
+   /**
+    * Obtém ou reutiliza o segredo HMAC de um ambiente.
+    *
+    * Tenta bootstrap via ContainerAPI; se falhar, reutiliza segredo existente
+    * na tabela de segredos do ambiente.
+    *
+    * @param string $baseUrl URL base do ContainerAPI
+    * @param string $clientIdentifier Identificador do ambiente
+    * @param bool|null &$reused Preenchido com true se reutilizou segredo existente
+    * @return string|null Segredo HMAC ou null se não obtido
+    */
+   public static function obtainOrReuseClientSecret(string $baseUrl, string $clientIdentifier, ?bool &$reused = null): ?string {
+      $reused = false;
+      $secret = self::bootstrapClientSecret($baseUrl, $clientIdentifier);
+      if ($secret === null) {
+         $row = self::getEnvSecretRow($clientIdentifier);
+         if ($row && !empty($row['client_secret'])) {
+            $secret = (string)$row['client_secret'];
+            $reused = true;
+            Toolbox::logInFile('plugin_nextool', sprintf('HMAC reutilizado a partir do registro existente para %s.', $clientIdentifier));
+         }
+      }
+      return $secret;
    }
 
    public static function deleteEnvSecret(?string $clientIdentifier): bool {

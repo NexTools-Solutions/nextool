@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_modules` (
    `description` text DEFAULT NULL COMMENT 'Descrição do módulo',
    `version` varchar(20) DEFAULT NULL COMMENT 'Versão instalada do módulo (semantic versioning)',
    `available_version` varchar(20) DEFAULT NULL COMMENT 'Última versão disponível no catálogo oficial',
+   `min_version_nextools` varchar(50) DEFAULT NULL COMMENT 'Versão mínima do plugin Nextool para este módulo',
    `is_installed` tinyint NOT NULL DEFAULT '0' COMMENT 'Módulo instalado (0=não, 1=sim)',
    `billing_tier` varchar(16) DEFAULT 'FREE' COMMENT 'Modelo de cobrança (FREE/PAID/...)',
    `is_enabled` tinyint NOT NULL DEFAULT '0' COMMENT 'Módulo ativo (0=não, 1=sim)',
@@ -128,4 +129,9 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_config_audit` (
   KEY `event_date` (`event_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-
+-- Tabela para página de config standalone (abas verticais: Módulos, Contato, Licenciamento, Logs)
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_config_display` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+INSERT IGNORE INTO `glpi_plugin_nextool_main_config_display` (`id`) VALUES (1);

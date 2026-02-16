@@ -10,9 +10,9 @@
  * URLs diretas para arquivos dentro de modules/[nome]/front/.
  * 
  * Uso: 
- * - PHP: /plugins/nextool/front/modules.php?module=helloworld&file=helloworld.php
- * - CSS: /plugins/nextool/front/modules.php?module=pendingsurvey&file=pendingsurvey.css.php
- * - JS:  /plugins/nextool/front/modules.php?module=pendingsurvey&file=pendingsurvey.js.php
+ * - PHP: /plugins/nextool/front/modules.php?module=[module_key]&file=[arquivo].php
+ * - CSS: /plugins/nextool/front/modules.php?module=[module_key]&file=[module_key].css.php
+ * - JS:  /plugins/nextool/front/modules.php?module=[module_key]&file=[module_key].js.php
  * -------------------------------------------------------------------------
  * @author    Richard Loureiro
  * @copyright 2025 Richard Loureiro
@@ -45,10 +45,12 @@ if (empty($moduleKey) || empty($filename)) {
 
 // Sanitiza parâmetros (segurança)
 $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
-$filename = basename($filename); // Remove caminhos
+// Remove query string se vier colada no file (ex.: file=config.form.php?id=1)
+$filename = basename(explode('?', $filename)[0]);
 
 // Verifica se módulo existe
-$modulePath = GLPI_ROOT . '/plugins/nextool/modules/' . $moduleKey;
+require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+$modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
 $filePath = $modulePath . '/front/' . $filename;
 
 if (!file_exists($filePath)) {
@@ -60,10 +62,8 @@ if (!file_exists($filePath)) {
 $extension = pathinfo($filename, PATHINFO_EXTENSION);
 $basename = pathinfo($filename, PATHINFO_FILENAME);
 
-// Arquivos CSS/JS (pendingsurvey.css.php, pendingsurvey.js.php)
-// Devem ser servidos diretamente SEM incluir o HTML do GLPI
-if (($extension === 'php' && ($basename === 'pendingsurvey.css' || $basename === 'pendingsurvey.js')) ||
-    preg_match('/\.(css|js)\.php$/', $filename)) {
+// Arquivos CSS/JS (.css.php, .js.php) — servidos diretamente SEM incluir o HTML do GLPI
+if (preg_match('/\.(css|js)\.php$/', $filename)) {
    
    // Para arquivos CSS/JS, não inclui includes.php (evita headers HTML)
    // Carrega o arquivo diretamente (ele já define seus próprios headers)

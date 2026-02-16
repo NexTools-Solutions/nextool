@@ -63,15 +63,10 @@ class PluginNextoolLogMaintenance {
          if (!$DB->tableExists($entry['table'])) {
             continue;
          }
-         $quotedThreshold = $DB->quoteValue($threshold);
-         $query = sprintf(
-            "DELETE FROM `%s` WHERE `%s` < %s",
-            $entry['table'],
-            $entry['column'],
-            $quotedThreshold
-         );
-         $DB->doQuery($query);
-         if (method_exists($DB, 'affectedRows')) {
+         $result = $DB->delete($entry['table'], [
+            $entry['column'] => ['<', $threshold]
+         ]);
+         if ($result && method_exists($DB, 'affectedRows')) {
             $affected += (int)$DB->affectedRows();
          }
       }

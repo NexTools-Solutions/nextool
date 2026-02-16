@@ -1,14 +1,31 @@
 <?php
 /**
- * Salva as configurações do plugin
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Config Save
+ * -------------------------------------------------------------------------
+ * Processa POST do formulário de configuração: salvar opções, validar licença,
+ * regenerar HMAC, aceitar políticas. Requer sessão e CSRF.
+ * -------------------------------------------------------------------------
+ * @author    Richard Loureiro
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 include ('../../../inc/includes.php');
 
 Session::checkRight("config", UPDATE);
 
-// CSRF token é verificado automaticamente pelo GLPI 11
-// Não precisa chamar Session::checkCSRF() explicitamente
+// Validação CSRF para todas as ações POST (não afeta endpoints stateless dos módulos)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+   if (!isset($_POST['_glpi_csrf_token'])) {
+      Session::addMessageAfterRedirect(__('Token CSRF ausente.', 'nextool'), false, ERROR);
+      Html::back();
+      exit;
+   }
+   Session::validateCSRF($_POST['_glpi_csrf_token']);
+}
 
 // Inclui classes adicionais
 require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
@@ -28,23 +45,6 @@ if ($action === 'validate_license') {
 } else {
    // Outras ações requerem UPDATE (modificar)
    PluginNextoolPermissionManager::assertCanManageAdminTabs();
-}
-
-if (!function_exists('nextool_obtain_or_reuse_client_secret')) {
-   function nextool_obtain_or_reuse_client_secret(string $baseUrl, string $clientIdentifier, ?bool &$reused = null): ?string {
-      $reused = false;
-      $secret = PluginNextoolDistributionClient::bootstrapClientSecret($baseUrl, $clientIdentifier);
-      if ($secret === null) {
-         $row = PluginNextoolDistributionClient::getEnvSecretRow($clientIdentifier);
-         if ($row && !empty($row['client_secret'])) {
-            $secret = (string)$row['client_secret'];
-            $reused = true;
-            Toolbox::logInFile('plugin_nextool', sprintf('HMAC reutilizado a partir do registro existente para %s.', $clientIdentifier));
-         }
-      }
-
-      return $secret;
-   }
 }
 
 // Ações específicas
@@ -71,7 +71,7 @@ if ($action === 'regenerate_hmac') {
    ]));
 
    $reusedSecret = false;
-   $secret = nextool_obtain_or_reuse_client_secret($baseUrl, $clientIdentifier, $reusedSecret);
+   $secret = PluginNextoolDistributionClient::obtainOrReuseClientSecret($baseUrl, $clientIdentifier, $reusedSecret);
 
    if ($secret === null) {
       Session::addMessageAfterRedirect(
@@ -128,7 +128,7 @@ if ($action === 'accept_policies') {
    $needsBootstrap = $baseUrl !== '' && $clientIdentifier !== '' && empty($distributionSettings['client_secret']);
    if ($needsBootstrap) {
       $reusedSecret = false;
-      $secret = nextool_obtain_or_reuse_client_secret($baseUrl, $clientIdentifier, $reusedSecret);
+      $secret = PluginNextoolDistributionClient::obtainOrReuseClientSecret($baseUrl, $clientIdentifier, $reusedSecret);
       if ($secret !== null) {
          Config::setConfigurationValues('plugin:nextool_distribution', array_merge($distributionSettings, [
             'client_secret' => $secret,
@@ -214,9 +214,15 @@ if ($newEndpoint === '') {
    $newEndpoint = null;
 }
 
-// Salva configuração global
-$config  = new PluginNextoolConfig();
-$success = $config->saveConfig($_POST);
+// Salva configuração global (whitelist: apenas is_active e endpoint_url)
+$configData = [
+   'is_active'    => isset($_POST['is_active']) && $_POST['is_active'] == '1' ? 1 : 0,
+   'endpoint_url' => isset($_POST['endpoint_url']) ? trim((string)$_POST['endpoint_url']) : null,
+];
+if (($configData['endpoint_url'] ?? '') === '') {
+   $configData['endpoint_url'] = null;
+}
+$success = PluginNextoolConfig::saveConfig($configData);
 
 // Auditoria dos ajustes globais
 $globalChanges = [];
@@ -290,7 +296,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
 
    if ($needsBootstrap) {
       $reusedSecret = false;
-      $secret = nextool_obtain_or_reuse_client_secret(
+      $secret = PluginNextoolDistributionClient::obtainOrReuseClientSecret(
          $distributionSettings['base_url'],
          $distributionSettings['client_identifier'],
          $reusedSecret
@@ -380,9 +386,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
          );
       }
 
-      // Após uma validação inválida ou com contrato suspenso/inativo,
-      // força o ambiente para modo FREE desativando/desinstalando
-      // logicamente todos os módulos pagos já instalados.
+      // Ambiente em modo FREE: não desinstala nem desativa módulos já instalados;
+      // eles permanecem utilizáveis. Apenas atualizações e novos downloads
+      // de módulos pagos ficam bloqueados até vincular uma licença.
       try {
          $manager = PluginNextoolModuleManager::getInstance();
          $manager->enforceFreeTierForPaidModules();

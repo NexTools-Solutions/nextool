@@ -4,11 +4,13 @@
  * NexTool Solutions - Permission Manager
  * -------------------------------------------------------------------------
  * Camada de conveniência para registrar e validar os direitos nativos do GLPI
- * utilizados pelo Nextool. O objetivo é centralizar a definição dos direitos
- * e expor helpers reutilizáveis na UI e nos endpoints.
+ * utilizados pelo Nextool. Centraliza a definição dos direitos e expõe
+ * helpers reutilizáveis na UI e nos endpoints.
  * -------------------------------------------------------------------------
  * @author    Richard Loureiro
+ * @copyright 2025 Richard Loureiro
  * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
  * -------------------------------------------------------------------------
  */
 
@@ -22,10 +24,17 @@ class PluginNextoolPermissionManager {
    public const RIGHT_ADMIN_TABS = 'plugin_nextool_admin';
 
    private const MODULE_RIGHT_PREFIX = 'plugin_nextool_module_';
-   private const NEXTTOOL_RIGHT_MASK = READ | UPDATE | DELETE | PURGE;
+   private const NEXTTOOL_RIGHT_MASK = CREATE | READ | UPDATE | DELETE | PURGE;
 
    /** @var array<string,bool> */
    private static array $syncedModuleRights = [];
+
+   /**
+    * Cache local de direitos carregados do banco para perfis helpdesk.
+    * Chave = "profiles_id:rightName", valor = int (bitmask).
+    * @var array<string,int>
+    */
+   private static array $helpdeskRightsCache = [];
 
    /**
     * Registra o direito principal do Nextool e garante que perfis com acesso
@@ -57,25 +66,25 @@ class PluginNextoolPermissionManager {
    }
 
    public static function canViewModules(): bool {
-      return Session::haveRight(self::RIGHT_MODULES, READ) || self::hasGlobalAdminAccess();
+      return self::haveRight(self::RIGHT_MODULES, READ) || self::hasGlobalAdminAccess();
    }
 
    public static function canManageModules(): bool {
-      return Session::haveRight(self::RIGHT_MODULES, UPDATE) || self::hasGlobalAdminAccess();
+      return self::haveRight(self::RIGHT_MODULES, UPDATE) || self::hasGlobalAdminAccess();
    }
 
    public static function canPurgeModuleData(): bool {
-      return Session::haveRight(self::RIGHT_MODULES, DELETE)
-         || Session::haveRight(self::RIGHT_MODULES, PURGE)
+      return self::haveRight(self::RIGHT_MODULES, DELETE)
+         || self::haveRight(self::RIGHT_MODULES, PURGE)
          || self::hasGlobalAdminAccess();
    }
 
    public static function canAccessAdminTabs(): bool {
-      return Session::haveRight(self::RIGHT_ADMIN_TABS, READ) || self::hasGlobalAdminAccess();
+      return self::haveRight(self::RIGHT_ADMIN_TABS, READ) || self::hasGlobalAdminAccess();
    }
 
    public static function canManageAdminTabs(): bool {
-      return Session::haveRight(self::RIGHT_ADMIN_TABS, UPDATE) || self::hasGlobalAdminAccess();
+      return self::haveRight(self::RIGHT_ADMIN_TABS, UPDATE) || self::hasGlobalAdminAccess();
    }
 
    public static function assertCanViewModules(): void {
@@ -108,17 +117,47 @@ class PluginNextoolPermissionManager {
       }
    }
 
+   /**
+    * Verifica se o usuário tem permissão READ no módulo específico.
+    * Usa apenas o bit READ do direito por módulo + bypass admin.
+    * NÃO faz fallback para permissões globais de visualização.
+    */
    public static function canViewModule(string $moduleKey): bool {
       $right = self::getModuleRightName($moduleKey);
-      return self::canViewModules()
-         || Session::haveRight($right, READ)
+      return self::haveRight($right, READ)
          || self::hasGlobalAdminAccess();
    }
 
+   /**
+    * Verifica se o usuário tem permissão UPDATE no módulo específico.
+    * Usa apenas o bit UPDATE do direito por módulo + bypass admin.
+    * NÃO faz fallback para permissões globais de gerenciamento.
+    */
    public static function canManageModule(string $moduleKey): bool {
       $right = self::getModuleRightName($moduleKey);
-      return self::canManageModules()
-         || Session::haveRight($right, UPDATE)
+      return self::haveRight($right, UPDATE)
+         || self::hasGlobalAdminAccess();
+   }
+
+   /**
+    * Verifica se o usuário tem permissão CREATE no módulo específico.
+    * Usa apenas o bit CREATE do direito por módulo + bypass admin.
+    * NÃO faz fallback para permissões globais de gerenciamento.
+    */
+   public static function canCreateInModule(string $moduleKey): bool {
+      $right = self::getModuleRightName($moduleKey);
+      return self::haveRight($right, CREATE)
+         || self::hasGlobalAdminAccess();
+   }
+
+   /**
+    * Verifica se o usuário tem permissão DELETE no módulo específico.
+    * Usa apenas o bit DELETE do direito por módulo + bypass admin.
+    * NÃO faz fallback para permissões globais de gerenciamento.
+    */
+   public static function canDeleteInModule(string $moduleKey): bool {
+      $right = self::getModuleRightName($moduleKey);
+      return self::haveRight($right, DELETE)
          || self::hasGlobalAdminAccess();
    }
 
@@ -138,7 +177,7 @@ class PluginNextoolPermissionManager {
       $moduleKeys = self::getModuleKeysFromDatabase();
       foreach ($moduleKeys as $moduleKey) {
          $right = self::getModuleRightName($moduleKey);
-         if (Session::haveRight($right, READ)) {
+         if (self::haveRight($right, READ)) {
             return true;
          }
       }
@@ -149,8 +188,8 @@ class PluginNextoolPermissionManager {
    public static function canPurgeModuleDataForModule(string $moduleKey): bool {
       $right = self::getModuleRightName($moduleKey);
       return self::canPurgeModuleData()
-         || Session::haveRight($right, DELETE)
-         || Session::haveRight($right, PURGE)
+         || self::haveRight($right, DELETE)
+         || self::haveRight($right, PURGE)
          || self::hasGlobalAdminAccess();
    }
 
@@ -314,15 +353,63 @@ class PluginNextoolPermissionManager {
       return self::MODULE_RIGHT_PREFIX . self::normalizeModuleKey($moduleKey);
    }
 
+   /**
+    * Verifica se o perfil ativo possui determinado direito do NexTool.
+    *
+    * Para perfis "central", Session::haveRight() funciona normalmente.
+    * Para perfis "helpdesk", o GLPI remove da sessão todos os rights que
+    * não estejam na whitelist Profile::$helpdesk_rights (cleanProfile()),
+    * então os direitos de plugins são perdidos. Nesse caso, consultamos
+    * diretamente a tabela glpi_profilerights com cache local.
+    *
+    * @param string $rightName Nome do direito (ex: plugin_nextool_module_[module_key])
+    * @param int    $rightBit  Bitmask a verificar (READ, UPDATE, DELETE, PURGE)
+    * @return bool
+    */
+   private static function haveRight(string $rightName, int $rightBit): bool {
+      // Tentativa rápida via sessão (funciona para perfis central)
+      if (Session::haveRight($rightName, $rightBit)) {
+         return true;
+      }
+
+      // Se não é helpdesk, não há fallback — realmente não tem permissão
+      if (($_SESSION['glpiactiveprofile']['interface'] ?? 'central') !== 'helpdesk') {
+         return false;
+      }
+
+      // Helpdesk: consulta diretamente o banco (com cache)
+      $profilesId = (int) ($_SESSION['glpiactiveprofile']['id'] ?? 0);
+      if ($profilesId <= 0) {
+         return false;
+      }
+
+      $cacheKey = $profilesId . ':' . $rightName;
+      if (!isset(self::$helpdeskRightsCache[$cacheKey])) {
+         global $DB;
+         $row = $DB->request([
+            'SELECT' => ['rights'],
+            'FROM'   => 'glpi_profilerights',
+            'WHERE'  => [
+               'profiles_id' => $profilesId,
+               'name'        => $rightName,
+            ],
+            'LIMIT'  => 1,
+         ])->current();
+         self::$helpdeskRightsCache[$cacheKey] = (int) ($row['rights'] ?? 0);
+      }
+
+      return (bool) (self::$helpdeskRightsCache[$cacheKey] & $rightBit);
+   }
+
    private static function normalizeModuleKey(string $moduleKey): string {
       return strtolower(trim($moduleKey));
    }
 
    /**
-    * Garante que nenhum direito do Nextool permaneça com o bit CREATE ligado.
+    * Garante que nenhum direito do Nextool tenha bits fora da máscara NEXTTOOL_RIGHT_MASK.
     */
    private static function sanitizeRegisteredRights(): void {
-      self::stripCreateBit(self::getAllRegisteredRightNames());
+      self::sanitizeBits(self::getAllRegisteredRightNames());
    }
 
    /**
@@ -356,9 +443,13 @@ class PluginNextoolPermissionManager {
    }
 
    /**
+    * Remove bits fora da máscara NEXTTOOL_RIGHT_MASK dos direitos Nextool em glpi_profilerights.
+    * Uso de $DB->update: ProfileRight não expõe API para alterar bits individuais;
+    * esta atualização em lote é exceção documentada (ver PERMISSIONS.md / knowledge base).
+    *
     * @param array<int,string> $rightNames
     */
-   private static function stripCreateBit(array $rightNames): void {
+   private static function sanitizeBits(array $rightNames): void {
       global $DB;
 
       if (

@@ -27,6 +27,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
    ]);
    exit;
 }
+if (!isset($_POST['_glpi_csrf_token'])) {
+   echo json_encode([
+      'success' => false,
+      'message' => __('Token CSRF ausente.', 'nextool'),
+   ]);
+   exit;
+}
+Session::validateCSRF($_POST['_glpi_csrf_token']);
 
 require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
@@ -91,9 +99,6 @@ if ($reason === '' || !in_array($reason, $allowedReasons, true)) {
 }
 if ($source === '') {
    $errors[] = __('Selecione onde nos encontrou.', 'nextool');
-}
-if (empty($modules) && $modulesOther === '') {
-   $errors[] = __('Informe ao menos um módulo de interesse ou preencha "Outros módulos".', 'nextool');
 }
 if ($message === '') {
    $errors[] = __('Descreva sua necessidade no campo de mensagem.', 'nextool');

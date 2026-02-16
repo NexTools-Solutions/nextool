@@ -115,15 +115,12 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
       $payload['date_mod'] = date('Y-m-d H:i:s');
 
       $existing = self::getDefaultConfig();
+      $obj = new self();
       if (!empty($existing['id'])) {
-         $DB->update(
-            $table,
-            $payload,
-            ['id' => (int)$existing['id']]
-         );
+         $obj->update(array_merge($payload, ['id' => (int)$existing['id']]));
       } else {
          $payload['date_creation'] = date('Y-m-d H:i:s');
-         $DB->insert($table, $payload);
+         $obj->add($payload);
       }
    }
 

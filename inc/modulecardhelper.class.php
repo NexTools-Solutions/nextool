@@ -124,14 +124,38 @@ class PluginNextoolModuleCardHelper {
          }
 
          if (!empty($state['update_available'])) {
-            $html[] = self::renderActionForm(
-               $state,
-               'update',
-               __('Atualizar', 'nextool'),
-               'btn btn-sm btn-outline-primary module-action',
-               'ti ti-arrow-up',
-               !$state['can_use_module'] || $catalogDisabled
-            );
+            $pluginVersion = $state['plugin_version'] ?? '';
+            $minVerNextool = isset($state['min_version_nextools']) && $state['min_version_nextools'] !== '' && $state['min_version_nextools'] !== null
+               ? trim((string) $state['min_version_nextools']) : null;
+            $updateBlockedByNextoolVersion = false;
+            if ($minVerNextool !== null) {
+               $updateBlockedByNextoolVersion = $pluginVersion === '' || version_compare($pluginVersion, $minVerNextool, '<');
+            }
+            if ($updateBlockedByNextoolVersion) {
+               $msg = $minVerNextool !== null
+                  ? sprintf(
+                     __('Para atualizar é necessário estar utilizando o Nextool versão %s ou superior.', 'nextool'),
+                     $minVerNextool
+                  )
+                  : __('Atualize o Nextool para a versão mais recente para continuar.', 'nextool');
+               $html[] = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . ' </span>';
+               $html[] = self::renderLink(
+                  __('Atualizar Nextool', 'nextool'),
+                  'btn btn-sm btn-outline-warning',
+                  'ti ti-external-link',
+                  'https://nextoolsolutions.ai/produtos/plugin-nextools-glpi',
+                  true
+               );
+            } else {
+               $html[] = self::renderActionForm(
+                  $state,
+                  'update',
+                  __('Atualizar', 'nextool'),
+                  'btn btn-sm btn-outline-primary module-action',
+                  'ti ti-arrow-up',
+                  !$state['can_use_module'] || $catalogDisabled
+               );
+            }
          }
 
          if ($state['is_enabled']) {
@@ -179,8 +203,11 @@ class PluginNextoolModuleCardHelper {
    }
 
    private static function appendDataButtons(array $state, array &$html): void {
-      if (!$state['is_installed'] && !empty($state['has_module_data'])) {
-         if (!empty($state['can_purge_module'] ?? $state['can_purge_modules'])) {
+      if (!$state['is_installed']) {
+         $hasDataToPurge = !empty($state['has_module_data']);
+         $hasDbDataToView = !empty($state['has_module_db_data'] ?? $state['has_module_data']);
+
+         if ($hasDataToPurge && !empty($state['can_purge_module'] ?? $state['can_purge_modules'])) {
             $html[] = self::renderActionForm(
                $state,
                'purge_data',
@@ -192,7 +219,7 @@ class PluginNextoolModuleCardHelper {
             );
          }
 
-         if (!empty($state['can_view_module'] ?? $state['can_view_modules'])) {
+         if ($hasDbDataToView && !empty($state['can_view_module'] ?? $state['can_view_modules'])) {
             $html[] = self::renderLink(
                __('Acessar dados', 'nextool'),
                'btn btn-sm btn-outline-secondary',

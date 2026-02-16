@@ -24,6 +24,10 @@ class PluginNextoolConfig extends CommonDBTM {
 
    static $rightname = 'config';
 
+   public static function getTable($classname = null) {
+      return 'glpi_plugin_nextool_main_configs';
+   }
+
    // Sem alterações de schema em runtime (GLPI não permite queries diretas aqui).
    // Campos novos devem ser criados via install/upgrade (Migration) e aqui apenas detectados.
 
@@ -149,27 +153,24 @@ class PluginNextoolConfig extends CommonDBTM {
          }
       } else {
          // cria registro base se não existir
-         $DB->insert(
-            'glpi_plugin_nextool_main_configs',
-            [
-               'id' => 1,
-               'is_active' => 0,
-               'date_creation' => date('Y-m-d H:i:s')
-            ]
-         );
+         $configObj = new self();
+         $configObj->add([
+            'id' => 1,
+            'is_active' => 0,
+            'date_creation' => date('Y-m-d H:i:s')
+         ]);
       }
 
       // Gera identificador se estiver vazio
       if (empty($config['client_identifier']) && $DB->fieldExists('glpi_plugin_nextool_main_configs', 'client_identifier')) {
          $id = self::generateClientIdentifier();
-         $DB->update(
-            'glpi_plugin_nextool_main_configs',
-            [
-               'client_identifier' => $id,
-               'date_mod' => date('Y-m-d H:i:s')
-            ],
-            ['id' => 1]
-         );
+         $configObj = new self();
+         $configObj->getFromDB(1);
+         $configObj->update([
+            'id' => 1,
+            'client_identifier' => $id,
+            'date_mod' => date('Y-m-d H:i:s')
+         ]);
          $config['client_identifier'] = $id;
       }
 
@@ -191,36 +192,25 @@ class PluginNextoolConfig extends CommonDBTM {
          $endpoint_url = null;
       }
 
-      // Verifica se registro existe
-      $iterator = $DB->request([
-         'FROM'  => 'glpi_plugin_nextool_main_configs',
-         'WHERE' => ['id' => 1],
-         'LIMIT' => 1
-      ]);
+      $configObj = new self();
+      $exists = $configObj->getFromDB(1);
 
-      if (count($iterator)) {
-         // Atualiza
-         $payload = [
-            'is_active' => $is_active,
-            'date_mod' => date('Y-m-d H:i:s')
-         ];
-         if ($DB->fieldExists('glpi_plugin_nextool_main_configs', 'endpoint_url')) {
-            $payload['endpoint_url'] = $endpoint_url;
-         }
-         return $DB->update('glpi_plugin_nextool_main_configs', $payload, ['id' => 1]);
-      } else {
-         // Insere
-         $payload = [
-            'id' => 1,
-            'is_active' => $is_active,
-            'date_creation' => date('Y-m-d H:i:s')
-         ];
-         // se o campo existir, armazena
-         if ($DB->fieldExists('glpi_plugin_nextool_main_configs', 'endpoint_url')) {
-            $payload['endpoint_url'] = $endpoint_url;
-         }
-         return $DB->insert('glpi_plugin_nextool_main_configs', $payload);
+      $payload = [
+         'is_active' => $is_active,
+         'date_mod' => date('Y-m-d H:i:s')
+      ];
+      if ($DB->fieldExists('glpi_plugin_nextool_main_configs', 'endpoint_url')) {
+         $payload['endpoint_url'] = $endpoint_url;
       }
+
+      if ($exists) {
+         $payload['id'] = 1;
+         return $configObj->update($payload);
+      }
+      $payload['id'] = 1;
+      $payload['date_creation'] = date('Y-m-d H:i:s');
+      unset($payload['date_mod']);
+      return $configObj->add($payload) !== false;
    }
 
    /**

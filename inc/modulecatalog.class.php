@@ -33,7 +33,7 @@ class PluginNextoolModuleCatalog {
       'aiassist' => [
          'name'        => 'AI Assist',
          'description' => 'Utiliza IA para analisar o sentimento do solicitante, sugerir automaticamente a urgência mais adequada e gerar resumos claros dos chamados, agilizando a triagem e priorização de cada atendimento pela equipe de suporte.',
-         'version'     => '1.5.0',
+         'version'     => '1.7.1',
          'icon'        => 'ti ti-robot',
          'billing_tier'=> 'FREE',
          'has_config'  => true,
@@ -46,7 +46,7 @@ class PluginNextoolModuleCatalog {
       'autentique' => [
          'name'        => 'Autentique',
          'description' => 'Integra assinatura digital aos chamados, permitindo enviar documentos diretamente pelo sistema, controlar quem deve assinar e acompanhar em tempo real o status de cada assinatura até a conclusão do processo.',
-         'version'     => '1.9.0',
+         'version'     => '1.11.1',
          'icon'        => 'ti ti-signature',
          'billing_tier'=> 'PAID',
          'has_config'  => true,
@@ -59,7 +59,7 @@ class PluginNextoolModuleCatalog {
       'mailinteractions' => [
          'name'        => 'Mail Interactions',
          'description' => 'Permite interações completas por e-mail, possibilitando que usuários aprovem solicitações, validem entregas e respondam pesquisas de satisfação diretamente da caixa de entrada, sem necessidade de acessar o sistema.',
-         'version'     => '2.0.1',
+         'version'     => '2.2.4',
          'icon'        => 'ti ti-mail',
          'billing_tier'=> 'PAID',
          'has_config'  => true,
@@ -72,7 +72,7 @@ class PluginNextoolModuleCatalog {
       'mailanalyzer' => [
          'name'        => 'Mail Analyzer',
          'description' => 'Analisa conversas por e-mail, combina respostas relacionadas em um único ticket e evita duplicidades causadas por CC.',
-         'version'     => '3.3.0',
+         'version'     => '3.4.5',
          'icon'        => 'ti ti-mail',
          'billing_tier'=> 'FREE',
          'has_config'  => true,
@@ -85,7 +85,7 @@ class PluginNextoolModuleCatalog {
       'orderservice' => [
          'name'        => 'Ordem de Serviço',
          'description' => 'Gera a Ordem de Serviço em PDF a partir do chamado, com cabeçalho configurável e dados do prestador.',
-         'version'     => '2.3.2',
+         'version'     => '2.5.1',
          'icon'        => 'ti ti-file-type-pdf',
          'billing_tier'=> 'PAID',
          'has_config'  => true,
@@ -98,7 +98,7 @@ class PluginNextoolModuleCatalog {
       'pendingsurvey' => [
          'name'        => 'Pending Survey',
          'description' => 'Exibe pop-ups alertando o usuário sobre pesquisas de satisfação pendentes e, opcionalmente, bloqueia a abertura de novos chamados quando a quantidade de pesquisas não respondidas ultrapassar o limite configurado (X).',
-         'version'     => '1.0.1',
+         'version'     => '1.1.5',
          'icon'        => 'ti ti-message-question',
          'billing_tier'=> 'PAID',
          'has_config'  => true,
@@ -111,7 +111,7 @@ class PluginNextoolModuleCatalog {
       'smartassign' => [
          'name'        => 'Smart Assign',
          'description' => 'Distribui novos chamados automaticamente entre os técnicos, aplicando regras de balanceamento de carga ou rodízio configurável, para evitar sobrecarga em alguns atendentes e garantir um fluxo de trabalho mais equilibrado.',
-         'version'     => '1.2.0',
+         'version'     => '1.5.4',
          'icon'        => 'ti ti-user-check',
          'billing_tier'=> 'PAID',
          'has_config'  => true,
@@ -124,7 +124,7 @@ class PluginNextoolModuleCatalog {
       'helloworld' => [
          'name'        => 'Hello World (PoC)',
          'description' => 'Demonstração da distribuição remota de módulos via ContainerAPI.',
-         'version'     => '1.0.1',
+         'version'     => '1.0.2',
          'icon'        => 'ti ti-code',
          'billing_tier'=> 'FREE',
          'has_config'  => true,
@@ -137,7 +137,7 @@ class PluginNextoolModuleCatalog {
       'geolocation' => [
          'name'        => 'Geolocalização',
          'description' => 'Captura e registra a localização geográfica do usuário ao adicionar acompanhamentos ou soluções em tickets.',
-         'version'     => '1.0.2',
+         'version'     => '1.1.5',
          'icon'        => 'ti ti-map-pin',
          'billing_tier'=> 'PAID',
          'has_config'  => true,
@@ -150,8 +150,47 @@ class PluginNextoolModuleCatalog {
       'template' => [
          'name'        => 'Template Module',
          'description' => 'Módulo template base para criação de novos módulos do NexTool.',
-         'version'     => '1.1.0',
+         'version'     => '1.2.5',
          'icon'        => 'ti ti-template',
+         'billing_tier'=> 'PAID',
+         'has_config'  => true,
+         'downloadable'=> true,
+         'author'      => [
+            'name' => 'NexTool Solutions',
+            'url'  => 'https://nextoolsolutions.ai',
+         ],
+      ],
+      'ticketflow' => [
+         'name'        => 'Fluxo de chamados',
+         'description' => 'Automatiza abertura de chamados com base em critérios configuráveis (categoria + evento), acionando modelos de chamado nativos do GLPI.',
+         'version'     => '1.0.0',
+         'icon'        => 'ti ti-route',
+         'billing_tier'=> 'PAID',
+         'has_config'  => true,
+         'downloadable'=> true,
+         'author'      => [
+            'name' => 'NexTool Solutions',
+            'url'  => 'https://nextoolsolutions.ai',
+         ],
+      ],
+      'approvalflow' => [
+         'name'        => 'Escalonamento de Aprovação',
+         'description' => 'Fluxos de aprovação multinível por categoria de chamado, com ações configuráveis para aprovação e recusa.',
+         'version'     => '1.0.0',
+         'icon'        => 'ti ti-arrows-up',
+         'billing_tier'=> 'PAID',
+         'has_config'  => true,
+         'downloadable'=> true,
+         'author'      => [
+            'name' => 'NexTool Solutions',
+            'url'  => 'https://nextoolsolutions.ai',
+         ],
+      ],
+      'tabs' => [
+         'name'        => 'Abas',
+         'description' => 'Adiciona um menu de primeiro nível na barra principal do GLPI, com submenus para Configuração e Dashboard.',
+         'version'     => '1.0.3',
+         'icon'        => 'ti ti-layout-navbar',
          'billing_tier'=> 'PAID',
          'has_config'  => true,
          'downloadable'=> true,
@@ -163,9 +202,22 @@ class PluginNextoolModuleCatalog {
       'signaturepad' => [
          'name'        => 'Assinatura Manual (PDF)',
          'description' => 'Carrega um PDF padrão, gera link interno de assinatura (mouse/touch) e salva um novo PDF assinado como documento no GLPI.',
-         'version'     => '0.1.0',
+         'version'     => '1.2.1',
          'icon'        => 'ti ti-signature',
          'billing_tier'=> 'PAID',
+         'has_config'  => true,
+         'downloadable'=> true,
+         'author'      => [
+            'name' => 'NexTool Solutions',
+            'url'  => 'https://nextoolsolutions.ai',
+         ],
+      ],
+      'estoque' => [
+         'name'        => 'Gestão de Estoque',
+         'description' => 'Debita insumos do estoque a partir de chamados. Adiciona aba no Ticket e no Insumo para registrar saídas com rastreabilidade bidirecional.',
+         'version'     => '1.0.0',
+         'icon'        => 'ti ti-packages',
+         'billing_tier'=> 'DEV',
          'has_config'  => true,
          'downloadable'=> true,
          'author'      => [
@@ -207,6 +259,12 @@ class PluginNextoolModuleCatalog {
          // Pega metadados extras de BOOTSTRAP_MODULES se existir (ícone, descrição, author)
          $bootstrap = self::BOOTSTRAP_MODULES[$moduleKey] ?? [];
          
+         $minVerNextool = $row['min_version_nextools'] ?? null;
+         if ($minVerNextool !== null && trim((string)$minVerNextool) === '') {
+            $minVerNextool = null;
+         } else {
+            $minVerNextool = $minVerNextool !== null ? trim((string)$minVerNextool) : null;
+         }
          $modules[$moduleKey] = [
             'name'         => $row['name'],
             'description'  => $row['description'] ?? ($bootstrap['description'] ?? ''),
@@ -220,9 +278,10 @@ class PluginNextoolModuleCatalog {
                'url'  => 'https://nextoolsolutions.ai',
             ],
             // Dados do banco (runtime)
-            'is_installed'  => (bool)($row['is_installed'] ?? 0),
-            'is_enabled'    => (bool)($row['is_enabled'] ?? 0),
-            'is_available'  => (bool)($row['is_available'] ?? 0),
+            'is_installed'       => (bool)($row['is_installed'] ?? 0),
+            'is_enabled'         => (bool)($row['is_enabled'] ?? 0),
+            'is_available'       => (bool)($row['is_available'] ?? 0),
+            'min_version_nextools' => $minVerNextool,
          ];
       }
 

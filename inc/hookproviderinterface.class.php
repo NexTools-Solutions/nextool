@@ -4,18 +4,14 @@
  * NexTool Solutions - Hook Provider Interface
  * -------------------------------------------------------------------------
  * Contrato para módulos fornecerem integrações com hooks globais do GLPI
- * (Search/giveItem, MassiveActions, MassiveActionsFieldsDisplay, etc.).
- *
- * Motivo:
- * - O GLPI descobre hooks por funções globais no plugin (plugin_nextool_*),
- *   então o plugin base precisa manter essas funções.
- * - Para evitar acoplamento do plugin base com módulos específicos
- *   (ex.: smartassign), essas funções delegam para providers registrados
- *   pelos módulos ativos.
- *
- * IMPORTANTE:
- * - Implementações devem ser idempotentes e defensivas (verificações de
- *   permissão, itemtype, etc.).
+ * (Search/giveItem, MassiveActions, MassiveActionsFieldsDisplay). O plugin
+ * base mantém as funções plugin_nextool_* e delega para providers dos módulos
+ * ativos. Implementações devem ser idempotentes e defensivas.
+ * -------------------------------------------------------------------------
+ * @author    Richard Loureiro
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
  * -------------------------------------------------------------------------
  */
 if (!defined('GLPI_ROOT')) {
@@ -37,7 +33,7 @@ interface PluginNextoolHookProviderInterface {
    /**
     * Retorna ações em massa adicionais para um itemtype específico.
     *
-    * @param string $type Itemtype alvo (ex.: PluginNextoolSmartassignCategoryAssignment)
+    * @param string $type Itemtype alvo (ex.: PluginNextool[Module]Item)
     * @return array<string,string> action => label
     */
    public function getMassiveActions(string $type): array;

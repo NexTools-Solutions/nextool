@@ -57,45 +57,20 @@ class PluginNextoolModuleManager {
    /** @var int Tempo de expiração do cache em segundos (1 hora) */
    private $cacheExpiration = 3600;
 
-   /** @var array<string, string[]> Mapeamento de tabelas utilizadas por cada módulo */
-   private $moduleDataTables = [
-      'helloworld' => [
-         'glpi_plugin_nextool_helloworld',
-      ],
-      'aiassist' => [
-         'glpi_plugin_nextool_aiassist_config',
-         'glpi_plugin_nextool_aiassist_ticketdata',
-         'glpi_plugin_nextool_aiassist_requests',
-         'glpi_plugin_nextool_aiassist_quota',
-         'glpi_plugin_nextool_aiassist_config_history',
-      ],
-      'autentique' => [
-         'glpi_plugin_nextool_autentique_configs',
-         'glpi_plugin_nextool_autentique_docs',
-         'glpi_plugin_nextool_autentique_signers',
-      ],
-      'mailinteractions' => [
-         'glpi_plugin_nextool_mailinteractions_tokens',
-         'glpi_plugin_nextool_mailinteractions_configs',
-         'glpi_plugin_nextool_mailinteractions_configs_logs',
-         'glpi_plugin_nextool_mailinteractions_approvals',
-         'glpi_plugin_nextool_mailinteractions_validations',
-         'glpi_plugin_nextool_mailinteractions_satisfaction',
-      ],
-      'smartassign' => [
-         'glpi_plugin_nextool_smartassign_assignments',
-      ],
-      'signaturepad' => [
-         'glpi_plugin_nextool_signaturepad_signed_docs',
-      ],
-   ];
+   /**
+    * Cache local de tabelas descobertas via BaseModule::getDataTables().
+    * Populado sob demanda por getModuleDataTables().
+    * @var array<string, string[]>
+    */
+   private $moduleDataTablesCache = [];
 
    /**
     * Construtor privado (padrão Singleton)
     */
    private function __construct() {
-      // Nova estrutura: modules/[nome]/inc/[nome].class.php
-      $this->modulesPath = GLPI_ROOT . '/plugins/nextool/modules';
+      require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+      // Nova estrutura: modules em GLPI_PLUGIN_DOC_DIR/nextool/modules (files/_plugins/nextool/modules)
+      $this->modulesPath = NEXTOOL_MODULES_BASE;
       
       // Usa diretório de cache do GLPI se disponível, senão usa /tmp
       if (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR)) {
@@ -179,6 +154,9 @@ class PluginNextoolModuleManager {
 
       // Salva no cache
       $this->saveCache();
+
+      // Atualiza cache de módulos stateless (usado no boot antes do GLPI carregar)
+      $this->refreshStatelessCache();
 
       return $this->modules;
    }
@@ -687,6 +665,28 @@ class PluginNextoolModuleManager {
 
    public function downloadRemoteModule($moduleKey) {
       $action = 'download';
+      $baseContext = ['origin' => 'remote_distribution'];
+
+      // Em modo FREE, não permitir novo download de módulos pagos (já instalados continuam utilizáveis).
+      if (class_exists('PluginNextoolLicenseConfig')) {
+         $config = PluginNextoolLicenseConfig::getDefaultConfig();
+         $plan = isset($config['plan']) && $config['plan'] !== '' && $config['plan'] !== null
+            ? strtoupper(trim((string)$config['plan']))
+            : 'FREE';
+         if ($plan === 'FREE') {
+            $billingTier = $this->getBillingTier($moduleKey);
+            if ($billingTier !== 'FREE') {
+               return $this->buildModuleActionResult(
+                  $moduleKey,
+                  $action,
+                  false,
+                  __('No modo FREE não é possível baixar novos módulos pagos. Os módulos já instalados continuam utilizáveis; atualizações e novos downloads ficam indisponíveis até vincular uma licença.', 'nextool'),
+                  $baseContext
+               );
+            }
+         }
+      }
+
       $result = $this->downloadModuleFromDistribution($moduleKey);
 
       return $this->buildModuleActionResult(
@@ -694,7 +694,7 @@ class PluginNextoolModuleManager {
          $action,
          $result['success'],
          $result['message'],
-         ['origin' => 'remote_distribution']
+         $baseContext
       );
    }
 
@@ -751,6 +751,26 @@ class PluginNextoolModuleManager {
       $module = $this->getModule($moduleKey);
       if ($module === null) {
          return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo não encontrado no diretório local.', $baseContext);
+      }
+
+      // Em modo FREE, não permitir atualização de módulos pagos (já instalados continuam utilizáveis).
+      if (class_exists('PluginNextoolLicenseConfig')) {
+         $config = PluginNextoolLicenseConfig::getDefaultConfig();
+         $plan = isset($config['plan']) && $config['plan'] !== '' && $config['plan'] !== null
+            ? strtoupper(trim((string)$config['plan']))
+            : 'FREE';
+         if ($plan === 'FREE') {
+            $billingTier = $this->getBillingTier($moduleKey);
+            if ($billingTier !== 'FREE') {
+               return $this->buildModuleActionResult(
+                  $moduleKey,
+                  $action,
+                  false,
+                  __('No modo FREE não há acesso a atualizações de módulos pagos. Os módulos já instalados continuam utilizáveis.', 'nextool'),
+                  $baseContext
+               );
+            }
+         }
       }
 
       // Para atualizar (baixar + aplicar upgrade), sempre validar com force_refresh.
@@ -926,9 +946,13 @@ class PluginNextoolModuleManager {
       $tablesDropped = $this->dropTablesForModule($moduleKey);
       $success = $customPurgeSuccess || $tablesDropped || $directoryRemoved;
 
+      $messageType = null;
       if ($success) {
          if ($directoryRemoved && !$tablesDropped && !$customPurgeSuccess) {
             $message = __('Arquivos do módulo removidos com sucesso.', 'nextool');
+         } elseif ($this->moduleDirectoryExists($moduleKey)) {
+            $message = __('Dados MySQL removidos, porém o diretório do módulo não pôde ser excluído. Verifique permissões em files/_plugins/nextool/modules/ e remova manualmente se necessário.', 'nextool');
+            $messageType = WARNING;
          } else {
             $message = __('Dados do módulo removidos com sucesso.', 'nextool');
          }
@@ -936,25 +960,45 @@ class PluginNextoolModuleManager {
          $message = __('Não há dados para remover ou ocorreu uma falha.', 'nextool');
       }
 
-      if ($directoryRemoved) {
+      if ($success) {
          $this->clearCache();
          $this->refreshModules();
       }
 
-      return $this->buildModuleActionResult($moduleKey, $action, $success, $message, ['origin' => 'module_data_management']);
+      $result = $this->buildModuleActionResult($moduleKey, $action, $success, $message, ['origin' => 'module_data_management']);
+      if ($messageType !== null) {
+         $result['message_type'] = $messageType;
+      }
+      return $result;
    }
 
    public function getModuleDataTables(string $moduleKey): array {
-      return $this->moduleDataTables[$moduleKey] ?? [];
+      if (isset($this->moduleDataTablesCache[$moduleKey])) {
+         return $this->moduleDataTablesCache[$moduleKey];
+      }
+
+      $module = $this->getModule($moduleKey);
+      if ($module && method_exists($module, 'getDataTables')) {
+         $tables = $module->getDataTables();
+         if (!empty($tables)) {
+            $this->moduleDataTablesCache[$moduleKey] = $tables;
+            return $tables;
+         }
+      }
+
+      // Fallback: convenção de nome — tabelas com prefixo glpi_plugin_nextool_{moduleKey}_
+      // Permite funcionar mesmo se o módulo não sobrescreveu getDataTables()
+      $this->moduleDataTablesCache[$moduleKey] = [];
+      return [];
    }
 
    private function moduleDirectoryExists(string $moduleKey): bool {
-      $path = GLPI_ROOT . '/plugins/nextool/modules/' . $moduleKey;
+      $path = $this->modulesPath . '/' . $moduleKey;
       return is_dir($path);
    }
 
    private function deleteModuleDirectory(string $moduleKey): bool {
-      $dir = GLPI_ROOT . '/plugins/nextool/modules/' . $moduleKey;
+      $dir = $this->modulesPath . '/' . $moduleKey;
       if (!is_dir($dir)) {
          return false;
       }
@@ -1006,72 +1050,16 @@ class PluginNextoolModuleManager {
          if (!$DB->tableExists($table)) {
             continue;
          }
-
-         $sql = "DROP TABLE IF EXISTS `$table`";
-
-         // GLPI 11: queries diretas devem usar doQuery() ao invés de query/queryOrDie()
-         if (!$DB->doQuery($sql)) {
-            Toolbox::logInFile(
-               'plugin_nextool',
-               sprintf(
-                  'Falha ao remover tabela de dados do módulo %s (%s): %s',
-                  $moduleKey,
-                  $table,
-                  method_exists($DB, 'error') ? $DB->error() : 'erro desconhecido'
-               )
-            );
-            continue;
-         }
-
+         // Usa DROP TABLE IF EXISTS direto para evitar erro quando purgeData/uninstall.sql já removeu a tabela
+         $DB->doQuery("DROP TABLE IF EXISTS `" . $DB->escape($table) . "`");
          $droppedAny = true;
       }
 
       return $droppedAny;
    }
 
-   /**
-    * Instala todos os módulos disponíveis
-    * 
-    * @deprecated Não usado atualmente. Mantido para uso futuro/scripts.
-    * @note A instalação do plugin usa loop manual em hook.php::plugin_nextool_install()
-    *       para ter controle granular de erros por módulo.
-    * @see plugin_nextool_install() em hook.php para implementação manual
-    * 
-    * @return array Resultado das instalações
-    */
-   public function installAllModules() {
-      $results = [];
-      
-      foreach ($this->getAllModules() as $moduleKey => $module) {
-         if (!$module->isInstalled()) {
-            $results[$moduleKey] = $this->installModule($moduleKey);
-         }
-      }
-      
-      return $results;
-   }
-
-   /**
-    * Desinstala todos os módulos
-    * 
-    * @deprecated Não usado atualmente. Mantido para uso futuro/scripts.
-    * @note A desinstalação do plugin usa loop manual em hook.php::plugin_nextool_uninstall()
-    *       para ter controle granular de erros por módulo com try/catch individual.
-    * @see plugin_nextool_uninstall() em hook.php (linhas 78-94) para implementação manual
-    * 
-    * @return array Resultado das desinstalações
-    */
-   public function uninstallAllModules() {
-      $results = [];
-      
-      foreach ($this->getAllModules() as $moduleKey => $module) {
-         if ($module->isInstalled()) {
-            $results[$moduleKey] = $this->uninstallModule($moduleKey);
-         }
-      }
-      
-      return $results;
-   }
+   // installAllModules() e uninstallAllModules() removidos (deprecated, não utilizados).
+   // A instalação/desinstalação usa loop manual em hook.php com try/catch individual.
 
    /**
     * Valida se a licença atual permite instalar/ativar um módulo.
@@ -1103,15 +1091,46 @@ class PluginNextoolModuleManager {
       ]);
 
       $plan         = isset($validation['plan']) ? strtoupper((string)$validation['plan']) : null;
+      if ($plan === 'STARTER') {
+         $plan = 'DESENVOLVIMENTO';
+      }
       $isFreeTier   = ($plan === 'FREE');
       $billingTier  = $this->getBillingTier($moduleKey);
       $isFreeModule = ($billingTier === 'FREE');
+      $isDevModule  = ($billingTier === 'DEV');
 
       // Módulos FREE devem sempre ser permitidos, independentemente do plano
       // Se o módulo é FREE, bypass completo (não valida licença/contrato/allowed_modules)
       if ($isFreeModule) {
          return [
             'success'    => true,
+            'validation' => $validation,
+         ];
+      }
+
+      // Módulos DEV: apenas plano DESENVOLVIMENTO pode usar (Enterprise e demais não têm acesso)
+      if ($isDevModule && $plan !== 'DESENVOLVIMENTO') {
+         return [
+            'success' => false,
+            'message' => 'Módulos de desenvolvimento (DEV) estão disponíveis apenas para o plano Desenvolvimento.',
+            'validation' => $validation,
+         ];
+      }
+
+      // Em modo FREE: módulos pagos já instalados permanecem utilizáveis (enable/uso);
+      // apenas download e update são bloqueados.
+      if ($isFreeTier && $billingTier !== 'FREE') {
+         $row = $this->getModuleRow($moduleKey);
+         $isInstalled = $row !== null && ((int)($row['is_installed'] ?? 0) === 1);
+         if ($isInstalled) {
+            return [
+               'success'    => true,
+               'validation'  => $validation,
+            ];
+         }
+         return [
+            'success' => false,
+            'message' => __('No modo FREE não é possível instalar novos módulos pagos. Os módulos já instalados continuam utilizáveis; vincule uma licença para novos downloads.', 'nextool'),
             'validation' => $validation,
          ];
       }
@@ -1168,84 +1187,20 @@ class PluginNextoolModuleManager {
    }
 
    /**
-    * Força o modo FREE para módulos pagos já instalados/ativos.
+    * Chamado quando o ambiente passa a operar em modo FREE (ex.: falha de
+    * comunicação com o ContainerAPI ou licença inválida).
     *
-    * Cenário de uso principal:
-    * - Após validação de licença que retorna inválida, cancelada ou com
-    *   contrato inativo, todos os módulos PAID devem ser desinstalados
-    *   logicamente (desativados e marcados como não instalados), mantendo
-    *   apenas os dados para eventual recontratação futura.
-    *
-    * Importante:
-    * - NÃO chama uninstall() dos módulos para evitar rotinas destrutivas;
-    *   apenas ajusta flags na tabela glpi_plugin_nextool_main_modules.
+    * Comportamento: não desinstala nem desativa módulos já instalados.
+    * Módulos já instalados permanecem utilizáveis. Apenas atualizações e
+    * novos downloads de módulos pagos ficam bloqueados em modo FREE.
     *
     * @return void
     */
    public function enforceFreeTierForPaidModules(): void {
-      global $DB;
-
-      if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
-         return;
-      }
-
-      $iterator = $DB->request([
-         'FROM'  => 'glpi_plugin_nextool_main_modules',
-         'WHERE' => [],
-      ]);
-
-      foreach ($iterator as $row) {
-         $moduleKey = $row['module_key'] ?? null;
-         if ($moduleKey === null || $moduleKey === '') {
-            continue;
-         }
-
-         // Determina o billing_tier efetivo (linha do banco com fallback
-         // para o comportamento legado/getBillingTier()).
-         $rowTier = isset($row['billing_tier']) && $row['billing_tier'] !== ''
-            ? strtoupper((string)$row['billing_tier'])
-            : null;
-         $billingTier = $rowTier ?? $this->getBillingTier($moduleKey);
-
-         if ($billingTier === 'FREE') {
-            // Módulos FREE permanecem disponíveis mesmo em modo FREE tier.
-            continue;
-         }
-
-         $isInstalled = (int)($row['is_installed'] ?? 0) === 1;
-         $isEnabled   = (int)($row['is_enabled'] ?? 0) === 1;
-
-         if (!$isInstalled && !$isEnabled) {
-            // Nada para fazer se já está completamente desativado/desinstalado.
-            continue;
-         }
-
-         // Marca módulo pago como não instalado e desativado,
-         // preservando dados em banco.
-         $DB->update(
-            'glpi_plugin_nextool_main_modules',
-            [
-               'is_installed' => 0,
-               'is_enabled'   => 0,
-               'date_mod'     => date('Y-m-d H:i:s'),
-            ],
-            ['id' => $row['id']]
-         );
-
-         // Garante que não será carregado nesta requisição.
-         unset($this->loadedModules[$moduleKey]);
-
-         // Registra auditoria da mudança automática, se possível.
-         $this->logModuleAction($moduleKey, 'auto_disable_free_tier', [
-            'origin'            => 'license_free_tier',
-            'requested_modules' => [$moduleKey],
-            'result'            => 1,
-            'message'           => 'Módulo pago desativado automaticamente por ambiente em modo FREE/contrato inativo.',
-         ]);
-      }
-
-      // Limpa cache de disco/memória para refletir novo estado.
-      $this->clearCache();
+      // Não altera is_installed nem is_enabled. Módulos já instalados
+      // continuam utilizáveis; só bloqueamos download e update quando
+      // o plano é FREE (ver downloadRemoteModule/updateModule e
+      // validateLicenseForModule para módulo já instalado).
    }
 
    /**
@@ -1277,11 +1232,11 @@ class PluginNextoolModuleManager {
 
    /**
     * Obtém o billing tier (FREE/PAID/...) de um módulo a partir da tabela
-    * glpi_plugin_nextool_main_modules.billing_tier, com fallback para o
-    * comportamento legado (helloworld/aiassist como FREE).
+    * glpi_plugin_nextool_main_modules.billing_tier, com fallback para
+    * getBillingTier() do módulo ou FREE como padrão.
     *
     * @param string $moduleKey
-    * @return string 'FREE' ou outro valor (por padrão, 'PAID')
+    * @return string 'FREE' ou outro valor (por padrão, 'FREE')
     */
    public function getBillingTier($moduleKey) {
       global $DB;
@@ -1308,13 +1263,6 @@ class PluginNextoolModuleManager {
          if ($declaredTier !== '') {
             return $declaredTier;
          }
-      }
-
-      // Fallback legado: antes da coluna billing_tier, os módulos helloworld e aiassist
-      // eram considerados sempre FREE e os demais tratados como pagos/licenciados.
-      $legacyFreeModules = ['helloworld', 'aiassist'];
-      if (in_array($moduleKey, $legacyFreeModules, true)) {
-         return 'FREE';
       }
 
       return 'FREE';
@@ -1559,6 +1507,31 @@ class PluginNextoolModuleManager {
     * 
     * @return array Módulos descobertos
     */
+   /**
+    * Regenera o cache JSON de módulos stateless (getStatelessFiles()).
+    *
+    * Chamado automaticamente por discoverModules() e refreshModules().
+    * O cache é lido pelo boot (setup.php) e pelo roteador AJAX (module_ajax.php)
+    * antes que o GLPI esteja completamente carregado.
+    */
+   public function refreshStatelessCache(): void {
+      require_once GLPI_ROOT . '/plugins/nextool/inc/statelessmodules.inc.php';
+
+      $statelessMap = [];
+      foreach ($this->modules as $moduleKey => $module) {
+         if (method_exists($module, 'getStatelessFiles')) {
+            $files = $module->getStatelessFiles();
+            if (!empty($files)) {
+               $statelessMap[$moduleKey] = $files;
+            }
+         }
+      }
+
+      $cacheFile = plugin_nextool_stateless_cache_path();
+      $json = json_encode($statelessMap, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+      @file_put_contents($cacheFile, $json, LOCK_EX);
+   }
+
    public function refreshModules() {
       $this->clearCache();
       return $this->discoverModules(true);

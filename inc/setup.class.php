@@ -23,7 +23,7 @@ class PluginNextoolSetup extends CommonGLPI {
 
    /**
     * Retorna nome da aba que será exibida em "Configurar → Geral"
-    * Usa mesmo estilo do ritecmailinteractions (ícone + nome)
+    * Usa mesmo estilo dos plugins NexTool (ícone + nome)
     */
    function getTabNameForItem(CommonGLPI $item, $withtemplate = 0) {
       if ($item instanceof Config) {

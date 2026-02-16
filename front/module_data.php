@@ -17,7 +17,7 @@
 include ('../../../inc/includes.php');
 
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-$moduleKey = $_GET['module'] ?? '';
+$moduleKey = isset($_GET['module']) ? preg_replace('/[^a-z0-9_-]/', '', (string)$_GET['module']) : '';
 if ($moduleKey === '') {
    Html::displayErrorAndDie(__('Módulo não informado.', 'nextool'));
 }
@@ -82,7 +82,7 @@ if (empty($tables)) {
 }
 
 // Volta para a tela de configuração padrão do GLPI com a aba de módulos selecionada
-$configUrl = $CFG_GLPI['root_doc'] . '/front/config.form.php?forcetab=PluginNextoolSetup$1#rt-tab-modulos';
+$configUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$1';
 echo "<a href='" . Html::entities_deep($configUrl) . "' class='btn btn-secondary'>";
 echo "<i class='ti ti-arrow-left me-1'></i>" . __('Voltar para configuração', 'nextool');
 echo "</a>";

@@ -3,16 +3,14 @@
  * -------------------------------------------------------------------------
  * NexTool Solutions - Hook Providers Dispatcher
  * -------------------------------------------------------------------------
- * Dispatcher genérico para hooks globais do GLPI que precisam existir no
- * plugin base (`plugin_nextool_*`), mas cuja lógica é específica de módulos.
- *
- * Estratégia:
- * - Cada módulo ativo pode expor "providers" via BaseModule::getHookProviders().
- * - O dispatcher instancia esses providers (quando a classe existe) e delega.
- *
- * Benefícios:
- * - Evita acoplamento de `setup.php` / `hook.php` com módulos específicos.
- * - Cria um padrão único para futuros módulos com Search nativo e MassiveActions.
+ * Dispatcher para hooks globais do GLPI (plugin_nextool_*) cuja lógica é
+ * dos módulos. Módulos ativos expõem providers via BaseModule::getHookProviders();
+ * o dispatcher instancia e delega. Evita acoplamento com módulos específicos.
+ * -------------------------------------------------------------------------
+ * @author    Richard Loureiro
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
  * -------------------------------------------------------------------------
  */
 if (!defined('GLPI_ROOT')) {
@@ -67,7 +65,7 @@ class PluginNextoolHookProvidersDispatcher {
             try {
                $provider = new $className();
             } catch (Throwable $e) {
-               // Não abortar hooks globais por falha em provider
+               Toolbox::logWarning('[NEXTOOL] Hook provider failed: ' . $className . ' – ' . $e->getMessage());
                continue;
             }
             if ($provider instanceof PluginNextoolHookProviderInterface) {
@@ -89,7 +87,7 @@ class PluginNextoolHookProvidersDispatcher {
          try {
             $provider->registerClasses();
          } catch (Throwable $e) {
-            // Ignora erro de provider para não quebrar init do plugin
+            Toolbox::logWarning('[NEXTOOL] Hook provider registerClasses failed: ' . get_class($provider) . ' – ' . $e->getMessage());
             continue;
          }
       }
@@ -105,6 +103,7 @@ class PluginNextoolHookProvidersDispatcher {
          try {
             $actions = array_merge($actions, $provider->getMassiveActions($type));
          } catch (Throwable $e) {
+            Toolbox::logWarning('[NEXTOOL] Hook provider getMassiveActions failed: ' . get_class($provider) . ' – ' . $e->getMessage());
             continue;
          }
       }
@@ -118,6 +117,7 @@ class PluginNextoolHookProvidersDispatcher {
                return true;
             }
          } catch (Throwable $e) {
+            Toolbox::logWarning('[NEXTOOL] Hook provider massiveActionsFieldsDisplay failed: ' . get_class($provider) . ' – ' . $e->getMessage());
             continue;
          }
       }
@@ -132,6 +132,7 @@ class PluginNextoolHookProvidersDispatcher {
                return $result;
             }
          } catch (Throwable $e) {
+            Toolbox::logWarning('[NEXTOOL] Hook provider giveItem failed: ' . get_class($provider) . ' – ' . $e->getMessage());
             continue;
          }
       }

@@ -96,6 +96,9 @@ abstract class PluginNextoolBaseModule {
     * reinstalações futuras. Use o botão "Apagar dados" (purgeData) quando
     * for necessário dropar as tabelas.
     *
+    * REGRA CRÍTICA: NUNCA acionar uninstall.sql neste método. Executar
+    * uninstall.sql é ação exclusiva do botão "Apagar dados" (purgeData).
+    *
     * @return bool True se desinstalou com sucesso
     */
    public function uninstall() {
@@ -131,6 +134,21 @@ abstract class PluginNextoolBaseModule {
     * @return bool True se tem página de configuração
     */
    public function hasConfig() {
+      return false;
+   }
+
+   /**
+    * Indica se o módulo usa página de configuração standalone (própria)
+    * em vez de aparecer como aba dentro do painel do NexTool.
+    *
+    * Módulos que retornam true:
+    * - NÃO aparecem como aba vertical no nextoolconfig.form.php
+    * - O submenu em "Nextools" aponta diretamente para getConfigPage()
+    * - O botão "Configurações" no card aponta para getConfigPage()
+    *
+    * @return bool True se usa página standalone, false para aba embutida (padrão)
+    */
+   public function usesStandaloneConfig() {
       return false;
    }
 
@@ -178,6 +196,61 @@ abstract class PluginNextoolBaseModule {
     */
    public function getHookProviders(): array {
       return [];
+   }
+
+   /**
+    * Retorna as tabelas de dados do módulo (usadas para purge/auditoria).
+    *
+    * O ModuleManager usa este método para descobrir quais tabelas pertencem
+    * ao módulo, eliminando a necessidade de hardcoding no core.
+    * Sobrescreva no módulo retornando a lista de tabelas criadas pelo install.sql.
+    *
+    * @return string[] Lista de nomes de tabelas (ex: ['glpi_plugin_nextool_[modulo]_config'])
+    */
+   public function getDataTables(): array {
+      return [];
+   }
+
+   /**
+    * Retorna a lista de arquivos AJAX stateless (sem sessão/login) do módulo.
+    *
+    * Módulos com endpoints públicos (webhooks, aprovações por e-mail, etc.)
+    * devem sobrescrever e retornar os nomes dos arquivos em ajax/ que não
+    * requerem autenticação. O core usa esta informação para:
+    * 1. Registrar rotas stateless no SessionManager do GLPI (boot)
+    * 2. Decidir se inclui includes.php no roteador AJAX
+    *
+    * @return string[] Lista de arquivos (ex: ['webhook.php', 'approve.php'])
+    */
+   public function getStatelessFiles(): array {
+      return [];
+   }
+
+   /**
+    * Retorna registro de menu para o plugin base registrar no GLPI (hook menu_toadd).
+    * Módulos que desejam adicionar um menu na barra principal devem sobrescrever e
+    * retornar ['key' => string, 'class' => string]. A classe deve implementar
+    * getMenuName() e getMenuContent().
+    *
+    * @return array{key: string, class: string}|null null se o módulo não possui menu
+    */
+   public function getMenuRegistration(): ?array {
+      return null;
+   }
+
+   /**
+    * Retorna itens de menu adicionais para o hook redefine_menus.
+    *
+    * Módulos que precisam de menu de primeiro nível na sidebar (fora do
+    * submenu "Nextools") devem sobrescrever e retornar um array com a
+    * estrutura do menu GLPI. O core itera sobre módulos ativos e injeta
+    * os menus retornados.
+    *
+    * @return array|null null se não possui menu adicional, ou array com estrutura:
+    *   ['menu_key' => string, 'menu' => [...estrutura GLPI...]]
+    */
+   public function getRedefineMenuItems(): ?array {
+      return null;
    }
 
    /**
@@ -351,14 +424,8 @@ abstract class PluginNextoolBaseModule {
     * @return string Caminho web relativo ao plugin
     */
    protected function getModuleWebPath() {
-      $modulePath = $this->getModulePath();
-      $pluginPath = GLPI_ROOT . '/plugins/nextool';
-      
-      // Calcula caminho relativo ao plugin
-      $relativePath = str_replace($pluginPath, '', $modulePath);
-      $relativePath = trim($relativePath, '/');
-      
-      return Plugin::getWebDir('nextool') . '/' . $relativePath;
+      // Path lógico para URL (módulos podem estar em files/_plugins/nextool/modules/)
+      return Plugin::getWebDir('nextool') . '/modules/' . $this->getModuleKey();
    }
 
    /**
@@ -386,18 +453,11 @@ abstract class PluginNextoolBaseModule {
     */
    protected function getAjaxPath($filename) {
       $modulePath = $this->getModulePath();
-      $pluginPath = GLPI_ROOT . '/plugins/nextool';
-      $relativePath = str_replace($pluginPath, '', $modulePath);
-      $relativePath = trim($relativePath, '/');
-      
-      // Detecta estrutura
+      // Roteador central para AJAX (funciona com módulos em files/_plugins/nextool/modules/)
       if (is_dir($modulePath . '/ajax')) {
-         // Nova estrutura: modules/[nome]/ajax/[arquivo]
-         return Plugin::getWebDir('nextool') . '/' . $relativePath . '/ajax/' . $filename;
-      } else {
-         // Estrutura antiga: ajax/modules/[arquivo]
-         return Plugin::getWebDir('nextool') . '/ajax/modules/' . $filename;
+         return Plugin::getWebDir('nextool') . '/ajax/module_ajax.php?module=' . urlencode($this->getModuleKey()) . '&file=' . urlencode($filename);
       }
+      return Plugin::getWebDir('nextool') . '/ajax/modules/' . $filename;
    }
 
    /**
@@ -409,7 +469,7 @@ abstract class PluginNextoolBaseModule {
     * O roteador é genérico e funciona com qualquer módulo, não requer arquivos
     * específicos fora da pasta do módulo.
     * 
-    * @param string $filename Nome do arquivo CSS.php (ex: 'pendingsurvey.css.php')
+    * @param string $filename Nome do arquivo CSS.php (ex: '[module_key].css.php')
     * @return string Caminho web relativo ao plugin para uso em hooks do GLPI
     */
    protected function getCssPath($filename) {
@@ -430,7 +490,7 @@ abstract class PluginNextoolBaseModule {
     * O roteador é genérico e funciona com qualquer módulo, não requer arquivos
     * específicos fora da pasta do módulo.
     * 
-    * @param string $filename Nome do arquivo JS.php (ex: 'pendingsurvey.js.php')
+    * @param string $filename Nome do arquivo JS.php (ex: '[module_key].js.php')
     * @return string Caminho web relativo ao plugin para uso em hooks do GLPI
     */
    protected function getJsPath($filename) {
@@ -532,40 +592,8 @@ abstract class PluginNextoolBaseModule {
          return true;
       }
 
-      $sqlContent = file_get_contents($sqlPath);
-      
-      if ($sqlContent === false) {
-         Toolbox::logError("Nextool: Erro ao ler arquivo SQL: {$sqlPath}");
-         return false;
-      }
-
-      // Remove comentários de linha única (-- até fim da linha)
-      $sqlContent = preg_replace('/--.*$/m', '', $sqlContent);
-      
-      // Remove linhas vazias
-      $sqlContent = preg_replace('/^\s*[\r\n]/m', '', $sqlContent);
-      
-      // Divide em comandos por ponto-e-vírgula
-      $commands = array_filter(
-         array_map('trim', explode(';', $sqlContent)),
-         function($cmd) {
-            return !empty($cmd);
-         }
-      );
-
-      // Executa cada comando
-      foreach ($commands as $command) {
-         if (empty(trim($command))) {
-            continue;
-         }
-
-         if (!$DB->doQuery($command)) {
-            Toolbox::logError("Nextool: Erro ao executar SQL do módulo {$this->getModuleKey()}: " . $DB->error());
-            return false;
-         }
-      }
-
-      return true;
+      // GLPI 11: usar runFile do framework em vez de doQuery em SQL bruto
+      return $DB->runFile($sqlPath);
    }
 
    /**

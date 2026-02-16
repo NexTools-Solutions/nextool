@@ -6,15 +6,17 @@
     <logo>https://raw.githubusercontent.com/RPGMais/nextool/main/logo_nextools.png</logo>
     <description>
         <short>
-            <en_US>Modular platform for GLPI 11 with AI-powered ticket analysis, digital signatures, email interactions, automatic assignment, and survey management.</en_US>
-            <en_GB>Modular platform for GLPI 11 with AI-powered ticket analysis, digital signatures, email interactions, automatic assignment, and survey management.</en_GB>
-            <it_IT>Piattaforma modulare per GLPI 11 con analisi dei ticket basata su IA, firme digitali, interazioni email, assegnazione automatica e gestione sondaggi.</it_IT>
-            <pt_BR>Plataforma modular para GLPI 11 com análise de tickets por IA, assinaturas digitais, interações por e-mail, atribuição automática e gestão de pesquisas.</pt_BR>
-            <fr_FR>Plateforme modulaire pour GLPI 11 avec analyse de tickets par IA, signatures numériques, interactions par e-mail, attribution automatique et gestion d'enquêtes.</fr_FR>
-            <es_ES>Plataforma modular para GLPI 11 con análisis de tickets por IA, firmas digitales, interacciones por correo, asignación automática y gestión de encuestas.</es_ES>
+            <en_US>Modular platform for GLPI 11 with AI-powered ticket analysis, digital signatures, email interactions, automatic assignment, and survey management. Core is self-contained; optional modules are downloaded only when the administrator chooses Download/Install in the catalog (HTTPS, SHA256).</en_US>
+            <en_GB>Modular platform for GLPI 11 with AI-powered ticket analysis, digital signatures, email interactions, automatic assignment, and survey management. Core is self-contained; optional modules are downloaded only when the administrator chooses Download/Install in the catalog (HTTPS, SHA256).</en_GB>
+            <it_IT>Piattaforma modulare per GLPI 11 con analisi dei ticket basata su IA, firme digitali, interazioni email, assegnazione automatica e gestione sondaggi. Il nucleo è autonomo; i moduli opzionali si scaricano solo quando l'amministratore sceglie Scarica/Installa nel catalogo (HTTPS, SHA256).</it_IT>
+            <pt_BR>Plataforma modular para GLPI 11 com análise de tickets por IA, assinaturas digitais, interações por e-mail, atribuição automática e gestão de pesquisas. O núcleo é autocontido; módulos opcionais são baixados apenas quando o administrador escolhe Download/Instalar no catálogo (HTTPS, SHA256).</pt_BR>
+            <fr_FR>Plateforme modulaire pour GLPI 11 avec analyse de tickets par IA, signatures numériques, interactions par e-mail, attribution automatique et gestion d'enquêtes. Le noyau est autonome ; les modules optionnels ne sont téléchargés que lorsque l'administrateur choisit Télécharger/Installer dans le catalogue (HTTPS, SHA256).</fr_FR>
+            <es_ES>Plataforma modular para GLPI 11 con análisis de tickets por IA, firmas digitales, interacciones por correo, asignación automática y gestión de encuestas. El núcleo es autónomo; los módulos opcionales se descargan solo cuando el administrador elige Descargar/Instalar en el catálogo (HTTPS, SHA256).</es_ES>
         </short>
         <long>
             <en_US>NexTool Solutions is a modular plugin for GLPI 11 that centralizes multiple tools as independent modules, all accessible from a single interface. Designed for GLPI administrators who want to add ready-made features without installing multiple separate plugins.
+
+The plugin can be used with no modules installed, or only with the modules the administrator chooses. The core is self-contained; optional modules are distributed via our own infrastructure (ContainerAPI) over HTTPS, with SHA256 checksum verification before installation. Download occurs only when the administrator explicitly clicks Download/Install in the catalog—there is no automatic or background download.
 
 The platform provides a unified module catalog with guided installation and update process (Download → Install → Activate), integrated licensing system for free and paid modules, and data management per module (access/delete data directly from the plugin interface).
 
@@ -28,6 +30,8 @@ Available modules include:
 Each module can be independently installed, activated, and configured. Free modules are available without an active license, while paid modules are unlocked according to the contracted plan.</en_US>
             <en_GB>NexTool Solutions is a modular plugin for GLPI 11 that centralises multiple tools as independent modules, all accessible from a single interface. Designed for GLPI administrators who want to add ready-made features without installing multiple separate plugins.
 
+The plugin can be used with no modules installed, or only with the modules the administrator chooses. The core is self-contained; optional modules are distributed via our own infrastructure (ContainerAPI) over HTTPS, with SHA256 checksum verification before installation. Download occurs only when the administrator explicitly clicks Download/Install in the catalogue—there is no automatic or background download.
+
 The platform provides a unified module catalog with guided installation and update process (Download → Install → Activate), integrated licensing system for free and paid modules, and data management per module (access/delete data directly from the plugin interface).
 
 Available modules include:
@@ -39,6 +43,8 @@ Available modules include:
 
 Each module can be independently installed, activated, and configured. Free modules are available without an active license, while paid modules are unlocked according to the contracted plan.</en_GB>
             <it_IT>NexTool Solutions è un plugin modulare per GLPI 11 che centralizza più strumenti come moduli indipendenti, tutti accessibili da un'unica interfaccia. Progettato per gli amministratori GLPI che vogliono aggiungere funzionalità pronte senza installare più plugin separati.
+
+Il plugin può essere usato senza alcun modulo installato o solo con i moduli scelti dall'amministratore. Il nucleo è autonomo; i moduli opzionali sono distribuiti tramite la nostra infrastruttura (ContainerAPI) in HTTPS, con verifica del checksum SHA256 prima dell'installazione. Il download avviene solo quando l'amministratore clicca esplicitamente su Scarica/Installa nel catalogo—nessun download automatico o in background.
 
 La piattaforma fornisce un catalogo unificato di moduli con processo guidato di installazione e aggiornamento (Download → Installa → Attiva), sistema di licenze integrato per moduli gratuiti e a pagamento, e gestione dei dati per modulo (accedere/eliminare dati direttamente dall'interfaccia del plugin).
 
@@ -52,6 +58,8 @@ I moduli disponibili includono:
 Ogni modulo può essere installato, attivato e configurato in modo indipendente. I moduli gratuiti sono disponibili senza licenza attiva, mentre i moduli a pagamento vengono sbloccati secondo il piano contrattuale.</it_IT>
             <pt_BR>NexTool Solutions é um plugin modular para GLPI 11 que centraliza diversas ferramentas como módulos independentes, todos acessíveis a partir de uma única interface. Foi pensado para administradores de GLPI que querem adicionar funcionalidades prontas sem precisar instalar vários plugins separados.
 
+O plugin pode ser usado sem nenhum módulo instalado ou apenas com os módulos que o administrador escolher. O núcleo é autocontido; os módulos opcionais são distribuídos pela nossa própria infraestrutura (ContainerAPI) via HTTPS, com verificação de checksum SHA256 antes da instalação. O download ocorre somente quando o administrador clica explicitamente em Download/Instalar no catálogo—não há download automático ou em segundo plano.
+
 A plataforma oferece um catálogo unificado de módulos com processo guiado de instalação e atualização (Download → Instalar → Ativar), sistema de licenciamento integrado para módulos gratuitos e pagos, e gestão de dados por módulo (acessar/apagar dados diretamente pela interface do plugin).
 
 Os módulos disponíveis incluem:
@@ -63,6 +71,8 @@ Os módulos disponíveis incluem:
 
 Cada módulo pode ser instalado, ativado e configurado independentemente. Módulos gratuitos ficam disponíveis mesmo sem licença ativa; módulos pagos só aparecem liberados quando o plano do ambiente cobre aquele módulo.</pt_BR>
             <fr_FR>NexTool Solutions est un plugin modulaire pour GLPI 11 qui centralise plusieurs outils sous forme de modules indépendants, tous accessibles depuis une seule interface. Conçu pour les administrateurs GLPI qui souhaitent ajouter des fonctionnalités prêtes à l'emploi sans avoir besoin d'installer plusieurs plugins séparés.
+
+Le plugin peut être utilisé sans aucun module installé, ou uniquement avec les modules choisis par l'administrateur. Le noyau est autonome ; les modules optionnels sont distribués via notre propre infrastructure (ContainerAPI) en HTTPS, avec vérification du checksum SHA256 avant installation. Le téléchargement n'a lieu que lorsque l'administrateur clique explicitement sur Télécharger/Installer dans le catalogue—aucun téléchargement automatique ou en arrière-plan.
 
 La plateforme offre un catalogue unifié de modules avec un processus guidé d'installation et de mise à jour (Télécharger → Installer → Activer), un système de licences intégré pour les modules gratuits et payants, et une gestion des données par module (accéder/supprimer les données directement depuis l'interface du plugin).
 
@@ -76,6 +86,8 @@ Les modules disponibles incluent :
 Chaque module peut être installé, activé et configuré indépendamment. Les modules gratuits sont disponibles sans licence active, tandis que les modules payants sont débloqués selon le plan contractuel.</fr_FR>
             <es_ES>NexTool Solutions es un plugin modular para GLPI 11 que centraliza múltiples herramientas como módulos independientes, todos accesibles desde una única interfaz. Diseñado para administradores de GLPI que quieren agregar funcionalidades listas para usar sin necesidad de instalar varios plugins separados.
 
+El plugin puede usarse sin ningún módulo instalado o solo con los módulos que elija el administrador. El núcleo es autónomo; los módulos opcionales se distribuyen mediante nuestra propia infraestructura (ContainerAPI) por HTTPS, con verificación de checksum SHA256 antes de la instalación. La descarga solo ocurre cuando el administrador hace clic explícitamente en Descargar/Instalar en el catálogo—no hay descarga automática ni en segundo plano.
+
 La plataforma ofrece un catálogo unificado de módulos con proceso guiado de instalación y actualización (Descargar → Instalar → Activar), sistema de licencias integrado para módulos gratuitos y de pago, y gestión de datos por módulo (acceder/eliminar datos directamente desde la interfaz del plugin).
 
 Los módulos disponibles incluyen:
@@ -88,7 +100,7 @@ Los módulos disponibles incluyen:
 Cada módulo puede ser instalado, activado y configurado de forma independiente. Los módulos gratuitos están disponibles sin licencia activa, mientras que los módulos de pago se desbloquean según el plan contratado.</es_ES>
         </long>
     </description>
-    <homepage>https://linkedin.com/in/richard-ti/</homepage>
+    <homepage>https://nextoolsolutions.ai</homepage>
     <download>https://github.com/RPGMais/nextool/releases</download>
     <issues>https://github.com/RPGMais/nextool/issues</issues>
     <readme>https://raw.githubusercontent.com/RPGMais/nextool/main/README.md</readme>
@@ -97,9 +109,9 @@ Cada módulo puede ser instalado, activado y configurado de forma independiente.
     </authors>
     <versions>
         <version>
-            <num>2.18.2</num>
+            <num>3.0.7</num>
             <compatibility>~11.0.0</compatibility>
-            <download_url>https://github.com/RPGMais/nextool/releases/download/2.18.2/nextool-2.18.2.tar.gz</download_url>
+            <download_url>https://github.com/RPGMais/nextool/releases/download/3.0.7/nextool-3.0.7.tar.gz</download_url>
         </version>
     </versions>
     <langs>

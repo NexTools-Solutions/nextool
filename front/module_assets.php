@@ -10,11 +10,11 @@
  * que intercepta URLs diretas para arquivos dentro de modules/[nome]/front/.
  * 
  * Formato de URL aceito (2 formas):
- * 1. PATH_INFO: /plugins/nextool/front/module_assets.php/[module]/[file]
- *    Exemplo: /plugins/nextool/front/module_assets.php/pendingsurvey/pendingsurvey.css.php
+ * 1. PATH_INFO: /plugins/nextool/front/module_assets.php/[module_key]/[file]
+ *    Exemplo: /plugins/nextool/front/module_assets.php/[module_key]/[module_key].css.php
  * 
- * 2. Query String: /plugins/nextool/front/module_assets.php?module=[module]&file=[file]
- *    Exemplo: /plugins/nextool/front/module_assets.php?module=pendingsurvey&file=pendingsurvey.css.php
+ * 2. Query String: /plugins/nextool/front/module_assets.php?module=[module_key]&file=[file]
+ *    Exemplo: /plugins/nextool/front/module_assets.php?module=[module_key]&file=[module_key].css.php
  * 
  * Este roteador é genérico e funciona com qualquer módulo.
  * -------------------------------------------------------------------------
@@ -65,7 +65,8 @@ $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename($filename); // Remove caminhos (segurança)
 
 // Verifica se módulo existe
-$modulePath = GLPI_ROOT . '/plugins/nextool/modules/' . $moduleKey;
+require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+$modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
 $filePath = $modulePath . '/front/' . $filename;
 
 if (!file_exists($filePath)) {
@@ -79,7 +80,7 @@ $extension = pathinfo($filename, PATHINFO_EXTENSION);
 if ($extension !== 'php') {
    http_response_code(400);
    header('Content-Type: text/plain; charset=UTF-8');
-   die('Apenas arquivos PHP são permitidos (ex: pendingsurvey.css.php, pendingsurvey.js.php)');
+   die('Apenas arquivos PHP são permitidos (ex: [module_key].css.php, [module_key].js.php)');
 }
 
 // Verifica se é um arquivo CSS ou JS (baseado no nome do arquivo)

@@ -84,6 +84,9 @@ class PluginNextoolLicenseValidator {
 
       $licenseKey = $licenseConfig['license_key'] ?? null;
       $plan       = $licenseConfig['plan'] ?? null;
+      if ($plan !== null && strtoupper((string)$plan) === 'STARTER') {
+         $plan = 'DESENVOLVIMENTO';
+      }
       $apiEndpoint = null;
       $apiSecret   = null;
       $useDistributionValidation = $distributionBaseUrl !== ''
@@ -382,6 +385,10 @@ class PluginNextoolLicenseValidator {
             $planForMessage = null;
             if (isset($responseData['plan']) && is_string($responseData['plan']) && $responseData['plan'] !== '') {
                $planForMessage = strtoupper(trim($responseData['plan']));
+               if ($planForMessage === 'STARTER') {
+                  $planForMessage = 'DESENVOLVIMENTO';
+               }
+               $plan = $planForMessage;
             }
 
             // Mensagem base (pode vir do administrativo)
@@ -415,6 +422,9 @@ class PluginNextoolLicenseValidator {
          // Atualiza plano se o administrativo informar explicitamente, mesmo em respostas inválidas
             if (isset($responseData['plan']) && is_string($responseData['plan']) && $responseData['plan'] !== '') {
                $plan = strtoupper(trim($responseData['plan']));
+               if ($plan === 'STARTER') {
+                  $plan = 'DESENVOLVIMENTO';
+               }
                $logBase['plan'] = $plan;
             }
 
@@ -441,9 +451,13 @@ class PluginNextoolLicenseValidator {
          //  - o usuário clicar em "Validar licença agora" (config.save.php), ou
          //  - houver validação explícita antes de instalar módulo.
          if (!empty($responseData['modules_catalog']) && is_array($responseData['modules_catalog'])) {
-            $origin = isset($context['origin']) ? (string)$context['origin'] : '';
-            if ($origin !== 'config_status') {
-               self::applyModulesCatalogSync($responseData['modules_catalog']);
+            $syncOrigin = isset($context['origin']) ? (string)$context['origin'] : '';
+            if ($syncOrigin !== 'config_status') {
+               $planForSync = isset($responseData['plan']) ? strtoupper(trim((string)$responseData['plan'])) : '';
+               if ($planForSync === 'STARTER') {
+                  $planForSync = 'DESENVOLVIMENTO';
+               }
+               self::applyModulesCatalogSync($responseData['modules_catalog'], $planForSync);
             }
          }
       }
@@ -454,6 +468,9 @@ class PluginNextoolLicenseValidator {
             $plan = 'FREE';
          } else {
             $plan = strtoupper($plan);
+            if ($plan === 'STARTER') {
+               $plan = 'DESENVOLVIMENTO';
+            }
          }
          if ($licenseStatus === null) {
             $licenseStatus = 'FREE_TIER';
@@ -526,11 +543,16 @@ class PluginNextoolLicenseValidator {
 
    /**
     * Aplica sincronização do catálogo de módulos retornado pelo administrativo.
+    * Módulos DEV (billing_tier=DEV) são ocultados para ambientes sem plano DESENVOLVIMENTO:
+    * - não são inseridos ou são marcados como indisponíveis;
+    * - módulos DEV já existentes localmente e ausentes no catálogo (ex.: plano mudou)
+    *   são desabilitados (is_available=0, is_enabled=0).
     *
-    * @param array $catalog
+    * @param array $catalog Catálogo retornado pelo ContainerAPI
+    * @param string $plan Plano do ambiente (DESENVOLVIMENTO, ENTERPRISE, PRO, FREE, etc.)
     * @return void
     */
-   protected static function applyModulesCatalogSync(array $catalog) {
+   protected static function applyModulesCatalogSync(array $catalog, string $plan = '') {
       global $DB;
 
       $table = 'glpi_plugin_nextool_main_modules';
@@ -576,27 +598,55 @@ class PluginNextoolLicenseValidator {
          $schemaUpdated = true;
       }
 
+      $migrationMinVer = new Migration(102);
+      if (!$DB->fieldExists($table, 'min_version_nextools')) {
+         $migrationMinVer->addField(
+            $table,
+            'min_version_nextools',
+            'varchar(50)',
+            [
+               'value'   => null,
+               'comment' => 'Versão mínima do plugin Nextool para este módulo',
+               'after'   => 'available_version',
+            ]
+         );
+         $migrationMinVer->executeMigration();
+      }
+
       if ($schemaUpdated) {
          $migration->executeMigration();
       }
+
+      $planUpper = strtoupper(trim($plan));
+      $envHasDevLicense = ($planUpper === 'DESENVOLVIMENTO');
+      $moduleKeysInCatalog = [];
 
       foreach ($catalog as $entry) {
          $moduleKey = isset($entry['module_key']) ? trim((string)$entry['module_key']) : '';
          if ($moduleKey === '') {
             continue;
          }
+         $moduleKeysInCatalog[] = $moduleKey;
 
          $name        = isset($entry['name']) ? trim((string)$entry['name']) : '';
          $description = array_key_exists('description', $entry) ? trim((string)$entry['description']) : null;
          $version     = isset($entry['version']) ? trim((string)$entry['version']) : '';
          $billingTier = isset($entry['billing_tier']) ? strtoupper(trim((string)$entry['billing_tier'])) : '';
          $isEnabled   = !empty($entry['is_enabled']);
+         $minVersionNextools = isset($entry['min_version_nextools']) ? trim((string)$entry['min_version_nextools']) : '';
+         if ($minVersionNextools === '') {
+            $minVersionNextools = null;
+         }
 
          if ($billingTier === '') {
             $billingTier = 'FREE';
          }
 
          $isAvailable = $isEnabled ? 1 : 0;
+         // Módulos DEV: exibir apenas para ambientes com plano DESENVOLVIMENTO (defesa em profundidade)
+         if ($billingTier === 'DEV' && !$envHasDevLicense) {
+            $isAvailable = 0;
+         }
 
         $iterator = $DB->request([
             'FROM'  => $table,
@@ -607,12 +657,13 @@ class PluginNextoolLicenseValidator {
         if (count($iterator)) {
             $row = $iterator->current();
             $updateData = [
-               'name'              => $name !== '' ? $name : $moduleKey,
-               'description'       => $description !== null ? ($description !== '' ? $description : null) : ($row['description'] ?? null),
-               'billing_tier'      => $billingTier,
-               'is_available'      => $isAvailable,
-               'available_version' => $version !== '' ? $version : null,
-               'date_mod'          => date('Y-m-d H:i:s'),
+               'name'                  => $name !== '' ? $name : $moduleKey,
+               'description'           => $description !== null ? ($description !== '' ? $description : null) : ($row['description'] ?? null),
+               'billing_tier'          => $billingTier,
+               'is_available'          => $isAvailable,
+               'available_version'     => $version !== '' ? $version : null,
+               'min_version_nextools'  => $minVersionNextools,
+               'date_mod'              => date('Y-m-d H:i:s'),
             ];
             if (empty($row['version']) && $version !== '') {
                $updateData['version'] = $version;
@@ -627,19 +678,41 @@ class PluginNextoolLicenseValidator {
             $DB->insert(
                $table,
                [
-                  'module_key'    => $moduleKey,
-                  'name'          => $name !== '' ? $name : $moduleKey,
-                  'description'   => $description !== '' ? $description : null,
-                  'version'       => null,
-                  'available_version' => $version !== '' ? $version : null,
-                  'is_installed'  => 0,
-                  'billing_tier'  => $billingTier,
-                  'is_enabled'    => 0,
-                  'is_available'  => $isAvailable,
-                  'config'        => json_encode([]),
-                  'date_creation' => date('Y-m-d H:i:s'),
+                  'module_key'             => $moduleKey,
+                  'name'                   => $name !== '' ? $name : $moduleKey,
+                  'description'            => $description !== '' ? $description : null,
+                  'version'                => null,
+                  'available_version'      => $version !== '' ? $version : null,
+                  'min_version_nextools'   => $minVersionNextools,
+                  'is_installed'           => 0,
+                  'billing_tier'           => $billingTier,
+                  'is_enabled'             => 0,
+                  'is_available'           => $isAvailable,
+                  'config'                 => json_encode([]),
+                  'date_creation'          => date('Y-m-d H:i:s'),
                ]
             );
+         }
+      }
+
+      // Desabilita módulos DEV locais que não vieram no catálogo (ex.: plano mudou de DESENVOLVIMENTO para outro)
+      if (!$envHasDevLicense) {
+         $iterator = $DB->request([
+            'FROM'  => $table,
+            'WHERE' => ['billing_tier' => 'DEV'],
+         ]);
+         foreach ($iterator as $row) {
+            $mk = $row['module_key'] ?? '';
+            if ($mk === '') {
+               continue;
+            }
+            if (count($moduleKeysInCatalog) === 0 || !in_array($mk, $moduleKeysInCatalog, true)) {
+               $DB->update(
+                  $table,
+                  ['is_available' => 0, 'is_enabled' => 0, 'date_mod' => date('Y-m-d H:i:s')],
+                  ['module_key' => $mk]
+               );
+            }
          }
       }
    }

@@ -3,18 +3,14 @@
  * -------------------------------------------------------------------------
  * NexTool Solutions - Hook Dispatcher
  * -------------------------------------------------------------------------
- * Dispatcher central para hooks de Ticket (e outros item types) que múltiplos
- * módulos precisam registrar. Evita que um módulo sobrescreva o handler de
- * outro ao definir $PLUGIN_HOOKS['item_add']['nextool']['Ticket'] etc.
- *
- * Uso: em onInit(), em vez de setar $PLUGIN_HOOKS diretamente, chame
- *   PluginNextoolHookDispatcher::registerPreItemAdd('Ticket', [self::class, 'meuPreAdd']);
- *   PluginNextoolHookDispatcher::registerItemAdd('Ticket', [self::class, 'meuItemAdd']);
- *
- * O setup registra os métodos dispatch* nos hooks após loadActiveModules().
+ * Dispatcher central para hooks de Ticket (e outros item types). Módulos
+ * registram via registerPreItemAdd/registerItemAdd em onInit(); o setup
+ * registra os dispatch* nos hooks após loadActiveModules().
  * -------------------------------------------------------------------------
  * @author    Richard Loureiro
- * @license   GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
  * -------------------------------------------------------------------------
  */
 
@@ -29,6 +25,9 @@ class PluginNextoolHookDispatcher {
 
    /** @var array[] itemAdd[itemType] = [ [class, method], ... ] */
    private static $itemAdd = [];
+
+   /** @var array[] itemUpdate[itemType] = [ [class, method], ... ] */
+   private static $itemUpdate = [];
 
    /**
     * Registra callback para pre_item_add.
@@ -54,6 +53,16 @@ class PluginNextoolHookDispatcher {
          self::$itemAdd[$itemType] = [];
       }
       self::$itemAdd[$itemType][] = $callback;
+   }
+
+   /**
+    * Registra callback para item_update.
+    */
+   public static function registerItemUpdate($itemType, array $callback) {
+      if (!isset(self::$itemUpdate[$itemType])) {
+         self::$itemUpdate[$itemType] = [];
+      }
+      self::$itemUpdate[$itemType][] = $callback;
    }
 
    /**
@@ -99,6 +108,60 @@ class PluginNextoolHookDispatcher {
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_add Ticket: %s - %s',
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
+   /**
+    * Dispatcher para item_update['nextool']['Ticket'].
+    */
+   public static function dispatchItemUpdateTicket(CommonDBTM $item) {
+      foreach (self::$itemUpdate['Ticket'] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_update Ticket: %s - %s',
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
+   /**
+    * Dispatcher para item_add['nextool']['TicketValidation'].
+    */
+   public static function dispatchItemAddTicketValidation(CommonDBTM $item) {
+      foreach (self::$itemAdd['TicketValidation'] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_add TicketValidation: %s - %s',
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
+   /**
+    * Dispatcher para item_update['nextool']['TicketValidation'].
+    */
+   public static function dispatchItemUpdateTicketValidation(CommonDBTM $item) {
+      foreach (self::$itemUpdate['TicketValidation'] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_update TicketValidation: %s - %s',
                $e->getMessage(),
                $e->getTraceAsString()
             ));

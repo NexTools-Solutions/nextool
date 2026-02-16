@@ -3,13 +3,15 @@
 O **NexTool** é um plugin modular para o **GLPI 11** que centraliza diversos recursos em forma de módulos, todos acessíveis a partir de uma única interface dentro do GLPI.  
 Ele foi pensado para administradores de GLPI que querem **adicionar funcionalidades prontas** sem precisar instalar vários plugins separados.
 
+**Uso sem módulos:** o plugin pode ser usado **sem baixar nenhum módulo** ou apenas com os que o administrador escolher. O núcleo é autocontido; o download de módulos opcionais ocorre **somente quando o administrador clica em Download/Instalar** no catálogo, dentro do GLPI. Os módulos opcionais são distribuídos pela nossa própria infraestrutura, via **HTTPS**, com **checksum SHA256** para verificação de integridade antes da instalação.
+
 ---
 
 ## O que o NexTool Solutions faz!
 
-- **Catálogo único de módulos** dentro do GLPI (cards com nome, descrição, status e plano free/paid).
+- **Catálogo único de módulos** dentro do GLPI (cards com nome, descrição, status e plano free/licenciados).
 - **Instalação e atualização guiada** dos módulos (Download → Instalar → Ativar).
-- **Integração com licenciamento**, liberando módulos pagos conforme o plano contratado.
+- **Integração com licenciamento**, liberando módulos licenciados conforme o plano contratado.
 - **Gestão de dados por módulo** (acessar/apagar dados pela própria interface do plugin).
 
 ---
@@ -85,13 +87,47 @@ Ele foi pensado para administradores de GLPI que querem **adicionar funcionalida
 
 **Benefício:** distribui o trabalho de forma justa e automatizada, otimizando o fluxo de atendimento.
 
+### Signature Pad (Assinatura Manual)
+
+- Carrega um PDF padrão configurável como modelo de assinatura.
+- Gera link interno de assinatura (mouse ou touch) para coleta diretamente no navegador.
+- Salva o PDF assinado como documento vinculado ao chamado no GLPI.
+
+**Benefício:** permite coletar assinaturas manuais em campo sem depender de ferramentas externas.
+
+### Ticket Flow (Fluxo de Chamados)
+
+- Automatiza a abertura de chamados filhos com base em critérios configuráveis (categoria + evento).
+- Aciona modelos de chamado nativos do GLPI ao criar ou atualizar tickets.
+- Permite encadear fluxos para processos complexos com múltiplas etapas.
+
+**Benefício:** automatiza processos que dependem de chamados subsequentes, reduzindo trabalho manual.
+
+### Approval Flow (Escalonamento de Aprovação)
+
+- Define fluxos de aprovação multinível por categoria de chamado.
+- Modelo de dados em árvore: caminhos independentes para aprovação e recusa em cada nível.
+- Ações configuráveis por resultado: não fazer nada, solucionar, fechar ou escalonar para o próximo nível.
+- Hooks automáticos: criação de ticket aciona validação; resposta à validação executa a ação configurada.
+- Suporte a modelos de aprovação (ITILValidationTemplate) com targets por usuário e grupo.
+
+**Benefício:** automatiza fluxos de aprovação complexos com ramificação, eliminando escalonamentos manuais.
+
+### Gestão de Estoque
+
+- Debita insumos do estoque diretamente a partir de chamados.
+- Adiciona aba no Ticket e no Insumo (Consumable) para registrar saídas.
+- Rastreabilidade bidirecional: do chamado para o insumo e vice-versa.
+
+**Benefício:** controla o consumo de materiais vinculado a atendimentos, com rastreio completo.
+
 ---
 
 ## Como o NexTool Solutions aparece no GLPI
 
 Depois de instalado e ativado, será exibida a aba **Configurar → Geral → NexTool Solutions** com:
 
-- O **Catálogo de Módulos** contendo cards com nome, descrição, status e plano free/paid, e botões para Download, Instalar/Ativar e Acessar/Apagar dados.
+- O **Catálogo de Módulos** contendo cards com nome, descrição, status e plano free/licenciados, e botões para Download, Instalar/Ativar e Acessar/Apagar dados.
 - Uma aba de **Licença e status** do ambiente (plano, módulos disponíveis, status de validação).
 - Uma aba de **Contato**, com canais oficiais de suporte e materiais de ajuda.
 - Uma aba de **Logs**, para acompanhar registros importantes do plugin (validações, downloads de módulos, etc.).
@@ -108,7 +144,7 @@ Depois de instalado e ativado, será exibida a aba **Configurar → Geral → Ne
    - **Download** + **Instalar / Ativar** para habilitar um módulo.
    - **Acessar dados / Apagar dados** para gerenciar as informações de cada módulo.
 
-Módulos **FREE** ficam disponíveis mesmo sem licença ativa; módulos **Pagos** só aparecem liberados quando o plano do ambiente cobre aquele módulo.
+Módulos **FREE** ficam disponíveis mesmo sem licença ativa; módulos **licenciados** só aparecem liberados quando o plano do ambiente cobre aquele módulo.
 
 ---
 
@@ -116,43 +152,6 @@ Módulos **FREE** ficam disponíveis mesmo sem licença ativa; módulos **Pagos*
 
 - **GLPI 11**
 - **PHP 8.1+**
-
-O plugin é compatível com a arquitetura padrão de plugins do GLPI 11.  
-Em instalações típicas, não é necessário nenhum ajuste manual além de garantir que o usuário do serviço web (por exemplo `www-data`) tenha permissão de escrita nos diretórios de arquivos do GLPI.
-
----
-
-## Garantindo permissão para baixar módulos
-
-Para que o NexTool Solutions consiga **baixar e atualizar módulos automaticamente**, o servidor web precisa ter **permissão de escrita** em dois diretórios do GLPI:
-
-- Pasta temporária do GLPI (ex.: `files/_tmp/`)
-- Pasta de módulos do plugin NexTool (ex.: `plugins/nextool/modules/`)
-
-Se essas permissões não estiverem corretas, você poderá ver erros de download/extração, ou os botões de módulos podem não funcionar como esperado.
-
-### Como ajustar de forma geral
-
-1. **Descobrir a pasta do GLPI**  
-   - Acesse o GLPI como administrador → **Configurar → Geral → Sistema** → veja o campo **Diretório raiz (GLPI root directory)**.
-
-2. **Em servidores Linux (Debian/Ubuntu, Alma/CentOS/RHEL, etc.)**  
-   Passe estes comandos para quem administra o servidor, ajustando o caminho/usuário se necessário:
-
-   ```bash
-   cd /caminho/do/seu/glpi
-
-   # Exemplos mais comuns:
-   # Debian/Ubuntu (Apache/Nginx):
-   sudo chown -R www-data:www-data files/_tmp plugins/nextool/modules
-
-   # AlmaLinux/CentOS/RHEL (Apache):
-   sudo chown -R apache:apache files/_tmp plugins/nextool/modules
-   ```
-
-3. **Em ambientes Windows (XAMPP/WAMP/IIS)**  
-   Garanta, via **Propriedades → Segurança** das pastas `files` e `plugins\nextool\modules`, que o usuário/grupo usado pelo servidor web tenha permissão de **Modificar** (leitura + escrita).  
-   Se tiver dúvida sobre qual usuário usar, peça ajuda ao responsável pela infraestrutura.
 
 ---
 
@@ -163,9 +162,9 @@ Este projeto é um **hub de módulos para GLPI**.
 - O **Hub** (este plugin) é distribuído sob a licença **GPL-3.0-or-later**.
 - Os **módulos** disponibilizados através do Hub podem ser:
   - **gratuitos**, ou
-  - **pagos**, com acesso mediante contratação/assinatura.
+  - **licenciados**, com acesso mediante contratação/assinatura.
 
-Mesmo quando um módulo é pago, ele é entregue **com código-fonte aberto** e sob licença **GPLv3 ou compatível**.
+Mesmo quando um módulo é licenciado, ele é entregue **com código-fonte aberto** e sob licença **GPLv3 ou compatível**.
 
 O pagamento refere-se ao **serviço de disponibilização, suporte e/ou conveniência**, e **não** impõe restrições adicionais às liberdades garantidas pela GPL.
 

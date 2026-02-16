@@ -50,11 +50,12 @@ if ($action === 'purge_data') {
    PluginNextoolPermissionManager::assertCanPurgeModuleDataForModule($moduleKey);
 }
 
-// Carrega ModuleManager
+// Carrega ModuleManager e MainConfig (para validar forcetab)
 require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/basemodule.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/licensevalidator.class.php';
+require_once GLPI_ROOT . '/plugins/nextool/inc/nextoolmainconfig.class.php';
 
 $manager = PluginNextoolModuleManager::getInstance();
 
@@ -83,8 +84,41 @@ if ($action === 'download') {
    ]);
 }
 
+// Bloqueio de update quando a versão do Nextool é insuficiente (min_version_nextools)
+if ($action === 'update') {
+   global $DB;
+   $pluginVersion = null;
+   if (function_exists('plugin_version_nextool')) {
+      $info = plugin_version_nextool();
+      $pluginVersion = isset($info['version']) ? (string) $info['version'] : null;
+   }
+   $table = 'glpi_plugin_nextool_main_modules';
+   if ($DB->tableExists($table) && $DB->fieldExists($table, 'min_version_nextools')) {
+      $iterator = $DB->request([
+         'FROM'  => $table,
+         'WHERE' => ['module_key' => $moduleKey],
+         'LIMIT' => 1,
+      ]);
+      if (count($iterator)) {
+         $row = $iterator->current();
+         $minVer = isset($row['min_version_nextools']) && $row['min_version_nextools'] !== '' && $row['min_version_nextools'] !== null
+            ? trim((string) $row['min_version_nextools']) : null;
+         if ($minVer !== null && ($pluginVersion === null || $pluginVersion === '' || version_compare($pluginVersion, $minVer, '<'))) {
+            $msg = sprintf(
+               __('Para atualizar este módulo é necessário o Nextool versão %s ou superior. %s', 'nextool'),
+               $minVer,
+               __('Atualize o plugin em:', 'nextool') . ' ' . NEXTOOL_SITE_URL
+            );
+            Session::addMessageAfterRedirect($msg, false, ERROR);
+            Html::redirect(Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=' . urlencode('PluginNextoolMainConfig$1'));
+            exit;
+         }
+      }
+   }
+}
+
 // Executa ação
-$result = ['success' => false, 'message' => 'Ação inválida', 'forcetab' => 'PluginNextoolSetup$1'];
+$result = ['success' => false, 'message' => 'Ação inválida', 'forcetab' => 'PluginNextoolMainConfig$1'];
 
 switch ($action) {
    case 'install':
@@ -116,26 +150,41 @@ case 'update':
    break;
 }
 
-// Adiciona mensagem na sessão do GLPI
-if ($result['success']) {
-   Session::addMessageAfterRedirect($result['message'], false, INFO);
-} else {
-   Session::addMessageAfterRedirect($result['message'], false, ERROR);
-}
+// Adiciona mensagem na sessão do GLPI (INFO, WARNING ou ERROR conforme resultado)
+$msgType = $result['message_type'] ?? ($result['success'] ? INFO : ERROR);
+Session::addMessageAfterRedirect($result['message'], false, $msgType);
 
 // Declarar variáveis globais do GLPI
 global $CFG_GLPI;
 
-// Determina tab de retorno (instalação → Licença; enable/disable → Módulos)
-$returnTab = isset($result['forcetab']) && $result['forcetab'] !== ''
-   ? $result['forcetab']
-   : 'PluginNextoolSetup$1';
-
-$hash = '#rt-tab-modulos';
-if ($action === 'install') {
-   $hash = '#rt-tab-licenca';
+// Ao ativar (enable) com sucesso: abrir a aba lateral do módulo na mesma tela do plugin
+$returnTab = null;
+if ($action === 'enable' && !empty($result['success'])) {
+   $moduleTabs = PluginNextoolMainConfig::getModuleConfigTabs();
+   foreach ($moduleTabs as $tabNum => $meta) {
+      if (($meta['module_key'] ?? '') === $moduleKey) {
+         $returnTab = 'PluginNextoolMainConfig$' . $tabNum;
+         break;
+      }
+   }
 }
 
-Html::redirect($CFG_GLPI['root_doc'] . '/front/config.form.php?forcetab=' . urlencode($returnTab) . $hash);
+if ($returnTab === null) {
+   // Tab de retorno: usar a mesma aba de onde veio o POST (forcetab), senão resultado ou padrão Módulos
+   $returnTab = 'PluginNextoolMainConfig$1';
+   if (isset($_POST['forcetab']) && $_POST['forcetab'] !== '') {
+      $returnTab = $_POST['forcetab'];
+   } elseif (isset($result['forcetab']) && $result['forcetab'] !== '') {
+      $returnTab = $result['forcetab'];
+   }
+   // Validar contra abas conhecidas para evitar tab inválida
+   $validTabs = PluginNextoolMainConfig::getValidTabIds();
+   if (!in_array($returnTab, $validTabs, true)) {
+      $returnTab = 'PluginNextoolMainConfig$1';
+   }
+}
+
+$redirectUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=' . urlencode($returnTab);
+Html::redirect($redirectUrl);
 
 

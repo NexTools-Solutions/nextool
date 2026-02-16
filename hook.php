@@ -1,46 +1,55 @@
 <?php
 /**
- * Hooks do plugin Nextool v2.x
- *
- * Fluxo de instalação:
- * 1. Executa sql/install.sql (cria tabelas básicas e seeds)
- * 2. Gera automaticamente o client_identifier
- *
- * Fluxo de desinstalação:
- * 1. Executa sql/uninstall.sql (remove apenas tabelas operacionais)
- * 2. Remove diretórios físicos dos módulos baixados
- *
- * @version 2.x-dev
- * @author Richard Loureiro - linkedin.com/in/richard-ti
- * @license GPLv3+
- * @link https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Hooks
+ * -------------------------------------------------------------------------
+ * Instalação: sql/install.sql (tabelas e seeds), geração do client_identifier.
+ * Desinstalação: sql/uninstall.sql (tabelas operacionais), remoção de
+ * diretórios dos módulos baixados. MassiveActions, giveItem, redefine_menus.
+ * -------------------------------------------------------------------------
+ * @author    Richard Loureiro
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
+require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/modulemanager.class.php';
 require_once __DIR__ . '/inc/basemodule.class.php';
 require_once __DIR__ . '/inc/permissionmanager.class.php';
 require_once __DIR__ . '/inc/hookprovidersdispatcher.class.php';
+require_once __DIR__ . '/inc/nextoolmainconfig.class.php';
 
 function plugin_nextool_install() {
    global $DB;
+
+   if (!is_dir(NEXTOOL_DOC_DIR)) {
+      @mkdir(NEXTOOL_DOC_DIR, 0755, true);
+   }
+   if (!defined('NEXTOOL_MODULES_BASE')) {
+      require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+   }
+   if (!is_dir(NEXTOOL_MODULES_BASE)) {
+      @mkdir(NEXTOOL_MODULES_BASE, 0755, true);
+   }
 
    $sqlfile = GLPI_ROOT . '/plugins/nextool/sql/install.sql';
    if (file_exists($sqlfile)) {
       $DB->runFile($sqlfile);
    }
 
+   $version = plugin_version_nextool()['version'] ?? '0.0.0';
+   $migration = new Migration($version);
    $modulesTable = 'glpi_plugin_nextool_main_modules';
    if ($DB->tableExists($modulesTable) && !$DB->fieldExists($modulesTable, 'description')) {
-      $DB->doQuery(
-         "ALTER TABLE `{$modulesTable}`
-          ADD COLUMN `description` text DEFAULT NULL
-          COMMENT 'Descrição do módulo' AFTER `name`"
-      );
+      $migration->addField($modulesTable, 'description', 'text', ['after' => 'name', 'comment' => 'Descrição do módulo']);
    }
+   $migration->executeMigration();
 
    $configfile = GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
    if (file_exists($configfile)) {
@@ -109,14 +118,9 @@ function plugin_nextool_uninstall() {
       $DB->runFile($sqlfile);
    }
 
-   // Remove diretórios de módulos baixados (dados continuarão no banco)
-   $modulesDir = GLPI_ROOT . '/plugins/nextool/modules';
-   if (is_dir($modulesDir)) {
-      foreach (glob($modulesDir . '/*') as $entry) {
-         if (is_dir($entry)) {
-            nextool_delete_dir($entry);
-         }
-      }
+   // Remove diretório de dados do plugin em files/_plugins/nextool (módulos baixados; dados continuarão no banco)
+   if (is_dir(NEXTOOL_DOC_DIR)) {
+      nextool_delete_dir(NEXTOOL_DOC_DIR);
    }
 
    // Remove cache de descoberta de módulos e diretório temporário de downloads
@@ -173,24 +177,196 @@ function plugin_nextool_giveItem($itemtype, $ID, $data, $num) {
    return PluginNextoolHookProvidersDispatcher::giveItem($itemtype, $ID, $data, $num);
 }
 
-function nextool_delete_dir(string $dir): void {
-   if (!is_dir($dir)) {
-      return;
+/**
+ * Hook redefine_menus - Cria menus de primeiro nível na barra principal.
+ *
+ * 1. "Nextools" (nativo do plugin) - menu principal com submenu por módulo/admin.
+ * 2. Menus adicionais via getRedefineMenuItems() - módulos que precisam de menu
+ *    de primeiro nível próprio declaram via método na BaseModule.
+ *
+ * @param array $menu Menu atual do GLPI
+ * @return array Menu modificado
+ */
+function plugin_nextool_redefine_menus($menu) {
+   if (empty($menu)) {
+      return $menu;
    }
 
-   $iterator = new RecursiveIteratorIterator(
-      new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
-      RecursiveIteratorIterator::CHILD_FIRST
-   );
+   // Não exibir menus NexTool para perfis de interface simplificada (self-service/helpdesk)
+   if (Session::getCurrentInterface() === 'helpdesk') {
+      return $menu;
+   }
 
-   foreach ($iterator as $item) {
-      $path = $item->getPathname();
-      if ($item->isDir()) {
-         @rmdir($path);
-      } else {
-         @unlink($path);
+   // Verificar permissões globais do NexTool
+   $canViewModulesGlobal = PluginNextoolPermissionManager::canViewModules();
+   $canAccessAdmin       = PluginNextoolPermissionManager::canAccessAdminTabs();
+   $canViewAnyMod        = PluginNextoolPermissionManager::canViewAnyModule();
+   $hasGlobalAdmin       = Session::haveRight('config', UPDATE);
+
+   // Se o perfil não tem nenhuma permissão no NexTool, não exibir menu
+   if (!$canViewModulesGlobal && !$canAccessAdmin && !$canViewAnyMod && !$hasGlobalAdmin) {
+      return $menu;
+   }
+
+   global $CFG_GLPI;
+   $rootDoc = $CFG_GLPI['root_doc'] ?? '';
+
+   // ---- Menu nativo "Nextools" (independente de módulos) ----
+   $nextoolsItem = [
+      'title'   => __('Nextools', 'nextool'),
+      'icon'    => 'ti ti-tool',
+      'types'   => [],
+      'content' => [],
+   ];
+
+   $configBase = $rootDoc . '/plugins/nextool/front/nextoolconfig.form.php?id=1';
+
+   // Subitem "Módulos": requer permissão global de módulos OU acesso a algum módulo
+   if ($canViewModulesGlobal || $canViewAnyMod || $hasGlobalAdmin) {
+      $nextoolsItem['content']['modulos'] = [
+         'title' => __('Módulos', 'nextool'),
+         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$1',
+         'icon'  => 'ti ti-puzzle',
+      ];
+   }
+
+   // Subitens administrativos: requer permissão de abas admin OU bypass global
+   if ($canAccessAdmin || $hasGlobalAdmin) {
+      $nextoolsItem['content']['contato'] = [
+         'title' => __('Contato', 'nextool'),
+         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$2',
+         'icon'  => 'ti ti-headset',
+      ];
+      $nextoolsItem['content']['licenciamento'] = [
+         'title' => __('Licenciamento', 'nextool'),
+         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$3',
+         'icon'  => 'ti ti-key',
+      ];
+      $nextoolsItem['content']['logs'] = [
+         'title' => __('Logs', 'nextool'),
+         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$4',
+         'icon'  => 'ti ti-report-analytics',
+      ];
+   }
+
+   // Abas dinâmicas: cada módulo instalado com config (exceto standalone)
+   // Cada aba de módulo só aparece se o perfil tem READ no módulo
+   $moduleConfigTabs = PluginNextoolMainConfig::getModuleConfigTabs();
+   foreach ($moduleConfigTabs as $tabNum => $meta) {
+      $moduleKey = $meta['module_key'] ?? '';
+      if ($moduleKey !== '' && !PluginNextoolPermissionManager::canViewModule($moduleKey) && !$hasGlobalAdmin) {
+         continue;
+      }
+      $key = 'module_' . $moduleKey;
+      $nextoolsItem['content'][$key] = [
+         'title' => $meta['name'],
+         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$' . $tabNum,
+         'icon'  => $meta['icon'],
+      ];
+   }
+
+   // Módulos standalone instalados: submenu aponta para getConfigPage()
+   // Aparece no menu quando instalado (mesmo desativado); some apenas ao desinstalar.
+   try {
+      if (class_exists('PluginNextoolModuleManager')) {
+         $standaloneManager = PluginNextoolModuleManager::getInstance();
+         if ($standaloneManager !== null) {
+            foreach ($standaloneManager->getAllModules() as $mk => $mod) {
+               if (!$mod->isInstalled()) {
+                  continue;
+               }
+               if (method_exists($mod, 'usesStandaloneConfig') && $mod->usesStandaloneConfig() && $mod->hasConfig()) {
+                  if (!PluginNextoolPermissionManager::canViewModule($mk)) {
+                     continue;
+                  }
+                  $key = 'module_' . $mk;
+                  $nextoolsItem['content'][$key] = [
+                     'title' => $mod->getName(),
+                     'page'  => $mod->getConfigPage(),
+                     'icon'  => $mod->getIcon(),
+                  ];
+               }
+            }
+         }
+      }
+   } catch (Throwable $e) {
+      // Silenciar erros na construção do menu
+   }
+
+   // Ordem fixa: Módulos primeiro, depois Contato, Licenciamento, Logs, depois módulos
+   $order = ['modulos', 'contato', 'licenciamento', 'logs'];
+   $content = $nextoolsItem['content'];
+   $nextoolsItem['content'] = [];
+   foreach ($order as $k) {
+      if (isset($content[$k])) {
+         $nextoolsItem['content'][$k] = $content[$k];
+      }
+   }
+   foreach ($moduleConfigTabs as $tabNum => $meta) {
+      $key = 'module_' . $meta['module_key'];
+      if (isset($content[$key])) {
+         $nextoolsItem['content'][$key] = $content[$key];
+      }
+   }
+   // Módulos standalone (não presentes em $moduleConfigTabs) na ordem que restou
+   foreach ($content as $k => $v) {
+      if (!isset($nextoolsItem['content'][$k])) {
+         $nextoolsItem['content'][$k] = $v;
       }
    }
 
-   @rmdir($dir);
+   // Só inserir "Nextools" se tem conteúdo (perfil pode não ter nenhuma permissão)
+   if (!empty($nextoolsItem['content'])) {
+      $ordered = [];
+      $inserted = false;
+      foreach ($menu as $key => $value) {
+         if ($key === 'nextools') continue;
+         if (($key === 'ritecadmin' || $key === 'config') && !$inserted) {
+            $ordered['nextools'] = $nextoolsItem;
+            $inserted = true;
+         }
+         $ordered[$key] = $value;
+      }
+      if (!$inserted) {
+         $ordered['nextools'] = $nextoolsItem;
+      }
+      $menu = $ordered;
+   }
+
+   // ---- Menus adicionais via getRedefineMenuItems() (genérico) ----
+   try {
+      $rdManager = PluginNextoolModuleManager::getInstance();
+      foreach ($rdManager->getActiveModules() as $rdKey => $rdModule) {
+         if (!method_exists($rdModule, 'getRedefineMenuItems')) {
+            continue;
+         }
+         if (!PluginNextoolPermissionManager::canViewModule($rdKey)) {
+            continue;
+         }
+         $menuData = $rdModule->getRedefineMenuItems();
+         if (is_array($menuData) && !empty($menuData['menu_key']) && !empty($menuData['menu'])) {
+            $mKey = $menuData['menu_key'];
+            if (empty($menu[$mKey])) {
+               $menu[$mKey] = $menuData['menu'];
+            } else {
+               // Merge conteúdo se menu já existe
+               if (!empty($menuData['menu']['content'])) {
+                  $menu[$mKey]['content'] = array_merge(
+                     $menu[$mKey]['content'] ?? [],
+                     $menuData['menu']['content']
+                  );
+               }
+            }
+         }
+      }
+   } catch (Throwable $e) {
+      // Silenciar erros na construção de menus de módulos
+   }
+
+   return $menu;
+}
+
+function nextool_delete_dir(string $dir): void {
+   require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+   PluginNextoolFileHelper::deleteDirectory($dir, false);
 }

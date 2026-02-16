@@ -119,14 +119,14 @@ class PluginNextoolValidationAttempt extends CommonDBTM {
          'LIMIT' => 100
       ]);
 
-      echo "<div class='table-responsive-lg'>";
-      echo "<table class='table card-table table-hover table-striped'>";
-      echo "<thead>";
+      echo "<div class='table-responsive' style='max-height: 500px; overflow-y: auto;'>";
+      echo "<table class='table table-sm table-hover table-striped'>";
+      echo "<thead class='table-light sticky-top'>";
       echo "<tr>";
       echo "<th>" . __('Data/Hora', 'nextool') . "</th>";
       echo "<th>" . __('Resultado', 'nextool') . "</th>";
       echo "<th>" . __('Código HTTP', 'nextool') . "</th>";
-      echo "<th>" . __('Tempo de resposta (ms)', 'nextool') . "</th>";
+      echo "<th>" . __('Tempo (ms)', 'nextool') . "</th>";
       echo "<th>" . __('Origem', 'nextool') . "</th>";
       echo "<th>" . __('Status / Plano', 'nextool') . "</th>";
       echo "<th>" . __('Usuário', 'nextool') . "</th>";
@@ -261,6 +261,7 @@ class PluginNextoolValidationAttempt extends CommonDBTM {
       echo "</tbody>";
       echo "</table>";
       echo "</div>";
+      echo "<p class='text-muted small mb-0 mt-2'>" . __('Exibindo até as 100 tentativas mais recentes.', 'nextool') . "</p>";
    }
 }
 

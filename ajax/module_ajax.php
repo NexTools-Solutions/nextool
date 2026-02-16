@@ -10,7 +10,7 @@
  * no GLPI 11, que intercepta URLs diretas para esses arquivos.
  * 
  * Uso: 
- * - AJAX: /plugins/nextool/ajax/module_ajax.php?module=pendingsurvey&file=pendingsurvey.php
+ * - AJAX: /plugins/nextool/ajax/module_ajax.php?module=[module_key]&file=[arquivo].php
  * -------------------------------------------------------------------------
  * @author    Richard Loureiro
  * @copyright 2025 Richard Loureiro
@@ -19,12 +19,16 @@
  * -------------------------------------------------------------------------
  */
 
-// Define GLPI_ROOT PRIMEIRO (necessário para caminhos)
+// Define GLPI_ROOT (plugin pode estar em plugins/nextool/ ou files/_plugins/nextool/)
 if (!defined('GLPI_ROOT')) {
-   // Calcula GLPI_ROOT: este arquivo está em plugins/nextool/ajax/module_ajax.php
-   // GLPI_ROOT = 4 níveis acima
-   define('GLPI_ROOT', dirname(__FILE__, 4));
+   $candidate = dirname(__FILE__, 4);
+   if (!@file_exists($candidate . '/inc/includes.php')) {
+      $candidate = dirname(__FILE__, 5);
+   }
+   define('GLPI_ROOT', $candidate);
 }
+
+require_once dirname(__DIR__) . '/inc/modulespath.inc.php';
 
 // Detecta módulo e arquivo usando PATH_INFO (preferencial) ou query string
 // PATH_INFO é mais confiável com Symfony, mas query string funciona como fallback
@@ -63,17 +67,17 @@ if (empty($moduleKey) || empty($filename)) {
 $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename($filename); // Remove caminhos
 
-// Verifica se módulo existe
-$modulePath = GLPI_ROOT . '/plugins/nextool/modules/' . $moduleKey;
+$modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
 $filePath = $modulePath . '/ajax/' . $filename;
 
 if (!file_exists($filePath)) {
+   error_log("[NEXTOOL] module_ajax: file not found – {$moduleKey}/{$filename}");
    http_response_code(404);
    header('Content-Type: application/json; charset=UTF-8');
    echo json_encode([
       'error' => true,
       'title' => 'Item não encontrado',
-      'message' => "Arquivo não encontrado: modules/{$moduleKey}/ajax/{$filename}"
+      'message' => 'Recurso não encontrado.',
    ]);
    exit;
 }
@@ -91,33 +95,32 @@ if ($extension !== 'php') {
    exit;
 }
 
-// Verifica se o arquivo é stateless (não requer sessão/login)
-// Módulos com APIs públicas (mailinteractions: approve/validate/satisfaction; autentique: webhook)
-// Arquivos stateless definem suas próprias constantes e incluem includes.php diretamente
-$allowStateless = in_array($moduleKey, ['mailinteractions', 'autentique'], true);
-$fileContent = @file_get_contents($filePath);
-$isStateless = ($allowStateless && $fileContent !== false &&
-               (strpos($fileContent, 'NO_CHECK_FROMOUTSIDE') !== false ||
-                strpos($fileContent, 'DO_NOT_CHECK_LOGIN') !== false ||
-                (strpos($fileContent, 'require GLPI_ROOT') !== false && strpos($fileContent, '/inc/includes.php') !== false) ||
-                (strpos($fileContent, 'require __DIR__') !== false && strpos($fileContent, '/inc/includes.php') !== false)));
+// Verifica se o arquivo é stateless (não requer sessão/login) via whitelist explícita
+require_once GLPI_ROOT . '/plugins/nextool/inc/statelessmodules.inc.php';
+$statelessFiles = plugin_nextool_stateless_files();
+$isStateless = isset($statelessFiles[$moduleKey])
+   && in_array($filename, $statelessFiles[$moduleKey], true);
 
 if ($isStateless) {
-   // Para arquivos stateless, não inclui includes.php aqui
-   // O arquivo já define suas próprias constantes e inclui includes.php
-   // IMPORTANTE: Define GLPI_ROOT antes de incluir para que __DIR__ funcione corretamente
-   if (!defined('GLPI_ROOT')) {
-      // GLPI_ROOT = 4 níveis acima do roteador (plugins/nextool/ajax/module_ajax.php)
-      define('GLPI_ROOT', dirname(__FILE__, 4));
-   }
+   // Para arquivos stateless, não inclui includes.php aqui; o arquivo inclui includes.php
+   // GLPI_ROOT já foi definido no topo (com suporte a plugin em plugins/ ou files/_plugins/)
    ob_start();
    include($filePath);
    ob_end_flush();
    exit;
 }
 
-// Para arquivos AJAX normais, inclui o GLPI normalmente (precisa de sessão, DB, etc)
-include('../../../inc/includes.php');
+// Para arquivos AJAX normais, inclui o GLPI (path absoluto para garantir sessão e CWD)
+require_once GLPI_ROOT . '/inc/includes.php';
+
+// GLPI 11: requisições a scripts em ajax/ podem ser atendidas fora do entry point (index.php);
+// a sessão nem sempre é iniciada/restaurada. Usar Session do GLPI (path + start) para restaurar pelo cookie.
+if (session_status() === PHP_SESSION_NONE && class_exists('Session')) {
+   if (method_exists('Session', 'setPath')) {
+      Session::setPath();
+   }
+   Session::start();
+}
 
 // Carrega o arquivo do módulo
 // O arquivo do módulo será executado no contexto atual (variáveis globais já estão disponíveis)
