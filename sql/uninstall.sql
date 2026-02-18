@@ -1,10 +1,8 @@
--- Desinstalação do plugin Nextool (remove estrutura principal e licenciamento)
+-- Desinstalação do plugin Nextool (remove apenas estrutura principal e licenciamento)
 --
--- Este arquivo é executado na desinstalação do plugin.
--- A partir da v2.0.0, o plugin usa arquitetura modular.
-
--- NOTA: As tabelas específicas dos módulos são removidas pelo método uninstall() de cada módulo
--- O ModuleManager chama automaticamente uninstall() de cada módulo antes de remover as tabelas principais
+-- Este arquivo é executado na desinstalação do PLUGIN (Configurar > Plugins > Desinstalar nextool).
+-- As tabelas dos MÓDULOS (ex.: glpi_plugin_nextool_telegrambot_*) NÃO são removidas aqui.
+-- Elas só são removidas quando o usuário aciona "Apagar dados" no card do módulo (purgeModuleData).
 
 -- Remove tabelas de licenciamento do operacional
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_validation_attempts`;

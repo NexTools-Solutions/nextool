@@ -183,7 +183,7 @@ class PluginNextoolModuleCardHelper {
                'btn btn-sm btn-danger module-action',
                'ti ti-trash',
                false,
-               __('Tem certeza? A funcionalidade será removida, mas os dados permanecerão.', 'nextool')
+               __('Tem certeza? O módulo será desativado, mas tabelas e dados permanecerão no banco. Para apagar os dados, use "Apagar dados" após desinstalar.', 'nextool')
             );
          }
       }

@@ -335,24 +335,43 @@ abstract class PluginNextoolBaseModule {
    public function saveConfig($config) {
       global $DB;
 
+      if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
+         return false;
+      }
+
       $iterator = $DB->request([
          'FROM'  => 'glpi_plugin_nextool_main_modules',
          'WHERE' => ['module_key' => $this->getModuleKey()],
          'LIMIT' => 1
       ]);
 
+      $now = date('Y-m-d H:i:s');
       if (count($iterator)) {
          return $DB->update(
             'glpi_plugin_nextool_main_modules',
             [
                'config' => json_encode($config),
-               'date_mod' => date('Y-m-d H:i:s')
+               'date_mod' => $now
             ],
             ['module_key' => $this->getModuleKey()]
          );
       }
 
-      return false;
+      // Sem registro: cria linha para persistir a config (ex.: módulo acessado antes do install/catálogo)
+      return $DB->insert(
+         'glpi_plugin_nextool_main_modules',
+         [
+            'module_key'         => $this->getModuleKey(),
+            'name'               => $this->getName(),
+            'config'             => json_encode($config),
+            'is_installed'       => 0,
+            'is_enabled'         => 0,
+            'is_available'       => 0,
+            'billing_tier'        => $this->getBillingTier(),
+            'date_creation'      => $now,
+            'date_mod'           => $now,
+         ]
+      );
    }
 
    /**
@@ -608,10 +627,12 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
-    * Executa arquivo uninstall.sql do módulo (se existir)
-    * 
-    * Método helper para facilitar uso nos métodos uninstall()
-    * 
+    * Executa arquivo uninstall.sql do módulo (se existir).
+    *
+    * NUNCA chame este método em uninstall(). É exclusivo de purgeData().
+    * O botão "Apagar dados" chama purgeData(), que chama este método e faz o
+    * ModuleManager dropar as tabelas. Em uninstall() os dados devem permanecer.
+    *
     * @return bool True se executou com sucesso ou arquivo não existe
     */
    protected function executeUninstallSql() {

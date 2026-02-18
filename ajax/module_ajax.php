@@ -110,20 +110,10 @@ if ($isStateless) {
    exit;
 }
 
-// Para arquivos AJAX normais, inclui o GLPI (path absoluto para garantir sessão e CWD)
+// GLPI 11 (Symfony): sessão e autoloader já carregados pelo Kernel.
+// includes.php é stub no GLPI 11, mas mantemos para compatibilidade.
 require_once GLPI_ROOT . '/inc/includes.php';
 
-// GLPI 11: requisições a scripts em ajax/ podem ser atendidas fora do entry point (index.php);
-// a sessão nem sempre é iniciada/restaurada. Usar Session do GLPI (path + start) para restaurar pelo cookie.
-if (session_status() === PHP_SESSION_NONE && class_exists('Session')) {
-   if (method_exists('Session', 'setPath')) {
-      Session::setPath();
-   }
-   Session::start();
-}
-
 // Carrega o arquivo do módulo
-// O arquivo do módulo será executado no contexto atual (variáveis globais já estão disponíveis)
-// Cada arquivo do módulo é responsável por suas próprias verificações de permissão e validações
 include($filePath);
 

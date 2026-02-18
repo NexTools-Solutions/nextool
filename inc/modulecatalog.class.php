@@ -3,13 +3,11 @@
  * -------------------------------------------------------------------------
  * NexTool Solutions - Module Catalog
  * -------------------------------------------------------------------------
- * Manager de catálogo que usa o banco como fonte única da verdade.
- * As constantes PHP servem apenas para bootstrap inicial.
- * 
- * ARQUITETURA:
- * - ritecadmin → ContainerAPI → nextool (banco)
- * - Este manager lê de glpi_plugin_nextool_main_modules
- * - Fallback para BOOTSTRAP_MODULES apenas na primeira instalação
+ * Catálogo lê exclusivamente de glpi_plugin_nextool_main_modules (banco).
+ * A tabela é populada pela sincronização com o ContainerAPI (aceite dos termos
+ * ou botão Sincronizar). Não há lista chumbada no código — novos módulos
+ * passam a aparecer após atualização do catálogo no ritecadmin/ContainerAPI
+ * e nova sincronização, sem precisar atualizar o plugin.
  * -------------------------------------------------------------------------
  * @author    Richard Loureiro
  * @copyright 2025 Richard Loureiro
@@ -24,222 +22,27 @@ if (!defined('GLPI_ROOT')) {
 
 class PluginNextoolModuleCatalog {
 
-   /**
-    * Módulos de bootstrap (usados apenas na primeira instalação)
-    * IMPORTANTE: Esta constante NÃO é a fonte da verdade!
-    * A fonte oficial é glpi_plugin_nextool_main_modules (sincronizado via ContainerAPI)
-    */
-   private const BOOTSTRAP_MODULES = [
-      'aiassist' => [
-         'name'        => 'AI Assist',
-         'description' => 'Utiliza IA para analisar o sentimento do solicitante, sugerir automaticamente a urgência mais adequada e gerar resumos claros dos chamados, agilizando a triagem e priorização de cada atendimento pela equipe de suporte.',
-         'version'     => '1.7.1',
-         'icon'        => 'ti ti-robot',
-         'billing_tier'=> 'FREE',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'Richard Loureiro',
-            'url'  => 'https://linkedin.com/in/richard-ti/',
-         ],
-      ],
-      'autentique' => [
-         'name'        => 'Autentique',
-         'description' => 'Integra assinatura digital aos chamados, permitindo enviar documentos diretamente pelo sistema, controlar quem deve assinar e acompanhar em tempo real o status de cada assinatura até a conclusão do processo.',
-         'version'     => '1.11.1',
-         'icon'        => 'ti ti-signature',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'Richard Loureiro',
-            'url'  => 'https://linkedin.com/in/richard-ti/',
-         ],
-      ],
-      'mailinteractions' => [
-         'name'        => 'Mail Interactions',
-         'description' => 'Permite interações completas por e-mail, possibilitando que usuários aprovem solicitações, validem entregas e respondam pesquisas de satisfação diretamente da caixa de entrada, sem necessidade de acessar o sistema.',
-         'version'     => '2.2.4',
-         'icon'        => 'ti ti-mail',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'Richard Loureiro',
-            'url'  => 'https://linkedin.com/in/richard-ti/',
-         ],
-      ],
-      'mailanalyzer' => [
-         'name'        => 'Mail Analyzer',
-         'description' => 'Analisa conversas por e-mail, combina respostas relacionadas em um único ticket e evita duplicidades causadas por CC.',
-         'version'     => '3.4.5',
-         'icon'        => 'ti ti-mail',
-         'billing_tier'=> 'FREE',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'Richard Loureiro',
-            'url'  => 'https://linkedin.com/in/richard-ti/',
-         ],
-      ],
-      'orderservice' => [
-         'name'        => 'Ordem de Serviço',
-         'description' => 'Gera a Ordem de Serviço em PDF a partir do chamado, com cabeçalho configurável e dados do prestador.',
-         'version'     => '2.5.1',
-         'icon'        => 'ti ti-file-type-pdf',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'Richard Loureiro',
-            'url'  => 'https://linkedin.com/in/richard-ti/',
-         ],
-      ],
-      'pendingsurvey' => [
-         'name'        => 'Pending Survey',
-         'description' => 'Exibe pop-ups alertando o usuário sobre pesquisas de satisfação pendentes e, opcionalmente, bloqueia a abertura de novos chamados quando a quantidade de pesquisas não respondidas ultrapassar o limite configurado (X).',
-         'version'     => '1.1.5',
-         'icon'        => 'ti ti-message-question',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'Richard Loureiro',
-            'url'  => 'https://linkedin.com/in/richard-ti/',
-         ],
-      ],
-      'smartassign' => [
-         'name'        => 'Smart Assign',
-         'description' => 'Distribui novos chamados automaticamente entre os técnicos, aplicando regras de balanceamento de carga ou rodízio configurável, para evitar sobrecarga em alguns atendentes e garantir um fluxo de trabalho mais equilibrado.',
-         'version'     => '1.5.4',
-         'icon'        => 'ti ti-user-check',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'Richard Loureiro',
-            'url'  => 'https://linkedin.com/in/richard-ti/',
-         ],
-      ],
-      'helloworld' => [
-         'name'        => 'Hello World (PoC)',
-         'description' => 'Demonstração da distribuição remota de módulos via ContainerAPI.',
-         'version'     => '1.0.2',
-         'icon'        => 'ti ti-code',
-         'billing_tier'=> 'FREE',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'Richard Loureiro',
-            'url'  => 'https://linkedin.com/in/richard-ti/',
-         ],
-      ],
-      'geolocation' => [
-         'name'        => 'Geolocalização',
-         'description' => 'Captura e registra a localização geográfica do usuário ao adicionar acompanhamentos ou soluções em tickets.',
-         'version'     => '1.1.5',
-         'icon'        => 'ti ti-map-pin',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'NexTool Solutions',
-            'url'  => 'https://nextoolsolutions.ai',
-         ],
-      ],
-      'template' => [
-         'name'        => 'Template Module',
-         'description' => 'Módulo template base para criação de novos módulos do NexTool.',
-         'version'     => '1.2.5',
-         'icon'        => 'ti ti-template',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'NexTool Solutions',
-            'url'  => 'https://nextoolsolutions.ai',
-         ],
-      ],
-      'ticketflow' => [
-         'name'        => 'Fluxo de chamados',
-         'description' => 'Automatiza abertura de chamados com base em critérios configuráveis (categoria + evento), acionando modelos de chamado nativos do GLPI.',
-         'version'     => '1.0.0',
-         'icon'        => 'ti ti-route',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'NexTool Solutions',
-            'url'  => 'https://nextoolsolutions.ai',
-         ],
-      ],
-      'approvalflow' => [
-         'name'        => 'Escalonamento de Aprovação',
-         'description' => 'Fluxos de aprovação multinível por categoria de chamado, com ações configuráveis para aprovação e recusa.',
-         'version'     => '1.0.0',
-         'icon'        => 'ti ti-arrows-up',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'NexTool Solutions',
-            'url'  => 'https://nextoolsolutions.ai',
-         ],
-      ],
-      'tabs' => [
-         'name'        => 'Abas',
-         'description' => 'Adiciona um menu de primeiro nível na barra principal do GLPI, com submenus para Configuração e Dashboard.',
-         'version'     => '1.0.3',
-         'icon'        => 'ti ti-layout-navbar',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'NexTool Solutions',
-            'url'  => 'https://nextoolsolutions.ai',
-         ],
-      ],
-      'signaturepad' => [
-         'name'        => 'Assinatura Manual (PDF)',
-         'description' => 'Carrega um PDF padrão, gera link interno de assinatura (mouse/touch) e salva um novo PDF assinado como documento no GLPI.',
-         'version'     => '1.2.1',
-         'icon'        => 'ti ti-signature',
-         'billing_tier'=> 'PAID',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'NexTool Solutions',
-            'url'  => 'https://nextoolsolutions.ai',
-         ],
-      ],
-      'estoque' => [
-         'name'        => 'Gestão de Estoque',
-         'description' => 'Debita insumos do estoque a partir de chamados. Adiciona aba no Ticket e no Insumo para registrar saídas com rastreabilidade bidirecional.',
-         'version'     => '1.0.0',
-         'icon'        => 'ti ti-packages',
-         'billing_tier'=> 'DEV',
-         'has_config'  => true,
-         'downloadable'=> true,
-         'author'      => [
-            'name' => 'NexTool Solutions',
-            'url'  => 'https://nextoolsolutions.ai',
-         ],
-      ],
+   /** Metadados padrão quando a tabela não possui colunas icon/author/has_config/downloadable */
+   private const DEFAULT_ICON = 'ti ti-puzzle';
+   private const DEFAULT_HAS_CONFIG = true;
+   private const DEFAULT_DOWNLOADABLE = true;
+   private const DEFAULT_AUTHOR = [
+      'name' => 'NexTool Solutions',
+      'url'  => 'https://nextoolsolutions.ai',
    ];
 
    /**
-    * Retorna todos os módulos do banco (fonte única da verdade)
-    * Fallback para BOOTSTRAP_MODULES apenas se banco estiver vazio
-    * 
+    * Retorna todos os módulos do banco (fonte única da verdade).
+    * Tabela vazia ou inexistente → [] (catálogo vem do ContainerAPI no aceite dos termos / sincronizar).
+    *
     * @return array
     */
    public static function all(): array {
       global $DB;
-      
+
       $table = 'glpi_plugin_nextool_main_modules';
       if (!$DB->tableExists($table)) {
-         // Bootstrap: banco ainda não foi criado
-         return self::BOOTSTRAP_MODULES;
+         return [];
       }
 
       $modules = [];
@@ -249,38 +52,31 @@ class PluginNextoolModuleCatalog {
       ]);
 
       if (count($iterator) === 0) {
-         // Bootstrap: banco vazio, usar constantes para primeiro acesso
-         return self::BOOTSTRAP_MODULES;
+         return [];
       }
 
       foreach ($iterator as $row) {
          $moduleKey = $row['module_key'];
-         
-         // Pega metadados extras de BOOTSTRAP_MODULES se existir (ícone, descrição, author)
-         $bootstrap = self::BOOTSTRAP_MODULES[$moduleKey] ?? [];
-         
+
          $minVerNextool = $row['min_version_nextools'] ?? null;
          if ($minVerNextool !== null && trim((string)$minVerNextool) === '') {
             $minVerNextool = null;
          } else {
             $minVerNextool = $minVerNextool !== null ? trim((string)$minVerNextool) : null;
          }
+
          $modules[$moduleKey] = [
             'name'         => $row['name'],
-            'description'  => $row['description'] ?? ($bootstrap['description'] ?? ''),
-            'version'      => $row['available_version'] ?? $row['version'], // Prioriza available_version
-            'icon'         => $bootstrap['icon'] ?? 'ti ti-puzzle',
+            'description'  => $row['description'] ?? '',
+            'version'      => $row['available_version'] ?? $row['version'],
+            'icon'         => $row['icon'] ?? self::DEFAULT_ICON,
             'billing_tier' => $row['billing_tier'] ?? 'FREE',
-            'has_config'   => $bootstrap['has_config'] ?? true,
-            'downloadable' => $bootstrap['downloadable'] ?? true,
-            'author'       => $bootstrap['author'] ?? [
-               'name' => 'NexTool Solutions',
-               'url'  => 'https://nextoolsolutions.ai',
-            ],
-            // Dados do banco (runtime)
-            'is_installed'       => (bool)($row['is_installed'] ?? 0),
-            'is_enabled'         => (bool)($row['is_enabled'] ?? 0),
-            'is_available'       => (bool)($row['is_available'] ?? 0),
+            'has_config'   => isset($row['has_config']) ? (bool)$row['has_config'] : self::DEFAULT_HAS_CONFIG,
+            'downloadable' => isset($row['downloadable']) ? (bool)$row['downloadable'] : self::DEFAULT_DOWNLOADABLE,
+            'author'       => self::parseAuthor($row['author'] ?? null),
+            'is_installed' => (bool)($row['is_installed'] ?? 0),
+            'is_enabled'   => (bool)($row['is_enabled'] ?? 0),
+            'is_available' => (bool)($row['is_available'] ?? 0),
             'min_version_nextools' => $minVerNextool,
          ];
       }
@@ -289,8 +85,26 @@ class PluginNextoolModuleCatalog {
    }
 
    /**
+    * @param string|null $authorJson JSON com { "name": "...", "url": "..." }
+    * @return array
+    */
+   private static function parseAuthor($authorJson): array {
+      if ($authorJson === null || trim((string)$authorJson) === '') {
+         return self::DEFAULT_AUTHOR;
+      }
+      $decoded = json_decode($authorJson, true);
+      if (!is_array($decoded) || empty($decoded['name'])) {
+         return self::DEFAULT_AUTHOR;
+      }
+      return [
+         'name' => $decoded['name'],
+         'url'  => $decoded['url'] ?? '',
+      ];
+   }
+
+   /**
     * Busca um módulo específico pelo module_key
-    * 
+    *
     * @param string $moduleKey
     * @return array|null
     */
@@ -298,15 +112,4 @@ class PluginNextoolModuleCatalog {
       $all = self::all();
       return $all[$moduleKey] ?? null;
    }
-
-   /**
-    * Retorna módulos de bootstrap (apenas para uso interno)
-    * 
-    * @return array
-    */
-   public static function getBootstrapModules(): array {
-      return self::BOOTSTRAP_MODULES;
-   }
 }
-
-

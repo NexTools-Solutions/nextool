@@ -21,7 +21,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '3.5.0');
+define('PLUGIN_NEXTOOL_VERSION', '3.5.2');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -59,24 +59,23 @@ function plugin_version_nextool() {
 /**
  * Hook executado durante o boot do GLPI, antes da sessão e da inicialização dos plugins.
  *
- * Registra o roteador AJAX (module_ajax.php) como stateless no SessionManager do GLPI.
- * O SessionManager do GLPI 11 testa patterns apenas contra $plugin_resource (path
- * relativo ao plugin, SEM query string). Como todos os módulos usam o mesmo roteador
- * (/ajax/module_ajax.php) e a diferenciação ocorre via query string (?module=X),
- * não é possível filtrar por módulo no nível do SessionManager.
+ * NÃO registra module_ajax.php como stateless no SessionManager. Se registrado,
+ * o GLPI desabilita cookies (ini_set('session.use_cookies', '0')) e cria sessão
+ * vazia a cada requisição — causando 401 "Sessão inválida" em todos os módulos
+ * que precisam de autenticação (geolocation, aiassist, etc.).
  *
- * A decisão final (stateless ou não) é feita pelo próprio module_ajax.php:
- * - Consulta plugin_nextool_stateless_files() (cache JSON gerado pelo ModuleManager)
- * - Se o arquivo solicitado está na whitelist → inclui diretamente (sem includes.php)
- * - Caso contrário → carrega includes.php + Session::start() normalmente
+ * A decisão stateless é feita internamente pelo module_ajax.php via
+ * plugin_nextool_stateless_files() para os poucos módulos que realmente precisam
+ * (webhooks de mailinteractions/autentique).
  *
- * Para endpoints com sessão (AI Assist, etc.), o module_ajax.php restaura a sessão
- * via cookie, garantindo funcionamento normal mesmo com o roteador registrado como stateless.
+ * O Firewall recebe STRATEGY_NO_CHECK para module_ajax.php, permitindo que
+ * o próprio roteador faça a validação (sessão ou stateless conforme o módulo).
  */
 function plugin_nextool_boot() {
-   \Glpi\Http\SessionManager::registerPluginStatelessPath(
+   \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
       'nextool',
-      '#^/ajax/module_ajax\\.php#'
+      '#^/ajax/module_ajax\\.php#',
+      \Glpi\Http\Firewall::STRATEGY_NO_CHECK
    );
 }
 

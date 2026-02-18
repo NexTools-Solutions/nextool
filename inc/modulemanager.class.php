@@ -371,8 +371,10 @@ class PluginNextoolModuleManager {
    }
 
    /**
-    * Desinstala um módulo
-    * 
+    * Desinstala um módulo.
+    * REGRA: NUNCA remove dados nem tabelas; apenas desativa e marca is_installed=0.
+    * Para apagar dados/tabelas o usuário deve acionar "Apagar dados" (purgeModuleData).
+    *
     * @param string $moduleKey Chave do módulo
     * @return array ['success' => bool, 'message' => string]
     */
@@ -400,12 +402,12 @@ class PluginNextoolModuleManager {
          $this->disableModule($moduleKey);
       }
 
-      // Executa desinstalação
+      // Executa desinstalação do módulo (apenas desregistra; NÃO executa uninstall.sql nem DROP TABLE)
       if (!$module->uninstall()) {
          return $this->buildModuleActionResult($moduleKey, $action, false, 'Falha ao executar desinstalação do módulo', $baseContext);
       }
 
-      // Marca como não instalado (mantendo registro para fins de catálogo/licenciamento)
+      // Marca como não instalado; dados e tabelas do módulo permanecem no banco
       $result = $DB->update(
          'glpi_plugin_nextool_main_modules',
          [
