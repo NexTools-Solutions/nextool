@@ -20,22 +20,22 @@ Este repositório (`RPGMais/nextool`) possui **duas linhas** do plugin NexTool:
 
 Links de filtro (uma página com todas as releases do módulo nesta linha):
 
-- <a href="https://github.com/RPGMais/nextool/releases?q=modulo%3Aaiassist%5BGLPI_10%5D" target="_blank" rel="noopener">AI Assist</a>  \
+- <a href="https://github.com/RPGMais/nextool/releases?q=Etiqueta%3A%20modulo%3Aaiassist%5BGLPI_10%5D" target="_blank" rel="noopener">AI Assist</a>  \
   Descrição: resumos, sugestões e sinais de sentimento para agilizar a triagem de tickets.  \
   Problema que resolve: atendimento lento e priorização inconsistente em filas grandes.
-- <a href="https://github.com/RPGMais/nextool/releases?q=modulo%3Acolumnresize%5BGLPI_10%5D" target="_blank" rel="noopener">Column Resize</a>  \
+- <a href="https://github.com/RPGMais/nextool/releases?q=Etiqueta%3A%20modulo%3Acolumnresize%5BGLPI_10%5D" target="_blank" rel="noopener">Column Resize</a>  \
   Descrição: ajusta e salva preferências de largura de colunas em telas do GLPI.  \
   Problema que resolve: telas “apertadas” e perda de tempo ajustando colunas repetidamente.
-- <a href="https://github.com/RPGMais/nextool/releases?q=modulo%3Amailanalyzer%5BGLPI_10%5D" target="_blank" rel="noopener">Mail Analyzer</a>  \
+- <a href="https://github.com/RPGMais/nextool/releases?q=Etiqueta%3A%20modulo%3Amailanalyzer%5BGLPI_10%5D" target="_blank" rel="noopener">Mail Analyzer</a>  \
   Descrição: reduz ruído de e-mail e ajuda a evitar tickets duplicados gerados por cadeias.  \
   Problema que resolve: duplicidade de chamados e aumento de volume por e-mails em CC.
-- <a href="https://github.com/RPGMais/nextool/releases?q=modulo%3Aruleinspector%5BGLPI_10%5D" target="_blank" rel="noopener">Rule Inspector</a>  \
+- <a href="https://github.com/RPGMais/nextool/releases?q=Etiqueta%3A%20modulo%3Aruleinspector%5BGLPI_10%5D" target="_blank" rel="noopener">Rule Inspector</a>  \
   Descrição: ajuda a inspecionar e depurar regras do GLPI com mais transparência.  \
   Problema que resolve: troubleshooting demorado em regras complexas (e-mail, tickets, rotinas).
-- <a href="https://github.com/RPGMais/nextool/releases?q=modulo%3Asmartassign%5BGLPI_10%5D" target="_blank" rel="noopener">Smart Assign</a>  \
+- <a href="https://github.com/RPGMais/nextool/releases?q=Etiqueta%3A%20modulo%3Asmartassign%5BGLPI_10%5D" target="_blank" rel="noopener">Smart Assign</a>  \
   Descrição: distribui tickets automaticamente por regras (balanceamento, rodízio, categorias).  \
   Problema que resolve: sobrecarga em alguns técnicos e filas mal distribuídas.
-- <a href="https://github.com/RPGMais/nextool/releases?q=modulo%3Atemplate%5BGLPI_10%5D" target="_blank" rel="noopener">Template</a>  \
+- <a href="https://github.com/RPGMais/nextool/releases?q=Etiqueta%3A%20modulo%3Atemplate%5BGLPI_10%5D" target="_blank" rel="noopener">Template</a>  \
   Descrição: padroniza conteúdo e acelera preenchimentos/rotinas do time (modelos e atalhos).  \
   Problema que resolve: respostas e registros inconsistentes e retrabalho em tarefas repetitivas.
 
@@ -84,3 +84,4 @@ O NexTool Solutions pode se conectar a um **servidor externo** para habilitar re
 O plugin não foi projetado para enviar conteúdo de chamados, senhas ou dados sensíveis dos usuários finais para o servidor do desenvolvedor.
 
 Para detalhes completos de privacidade, licenciamento, redistribuição e políticas de uso, consulte **[POLICIES_OF_USE.md](./POLICIES_OF_USE.md)**.
+
