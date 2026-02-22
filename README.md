@@ -8,10 +8,10 @@ Importante: este projeto possui **linha para GLPI 10** e **linha para GLPI 11**.
 
 ## Versões (GLPI 10 e GLPI 11)
 
-Este repositório (`RPGMais/nextool-dev`) possui **duas linhas** do plugin NexTool:
+Este repositório (`RPGMais/nextool`) possui **duas linhas** do plugin NexTool:
 
-- <a href="https://github.com/RPGMais/nextool/releases?q=nextool%5BGLPI_10%5D" target="_blank" rel="noopener"><strong>GLPI 10</strong>: branch <code>glpi-10</code> (esta linha)</a>
-- <a href="https://github.com/RPGMais/nextool/releases?q=nextool%5BGLPI_11%5D" target="_blank" rel="noopener"><strong>GLPI 11</strong>: branch <code>main</code> (código e releases próprios)</a>
+- <a href="https://github.com/RPGMais/nextool/releases?q=plugin%3Anextool%5BGLPI_10%5D" target="_blank" rel="noopener"><strong>GLPI 10</strong>: branch <code>glpi-10</code> (esta linha)</a>
+- <a href="https://github.com/RPGMais/nextool/releases?q=plugin%3Anextool%5BGLPI_11%5D" target="_blank" rel="noopener"><strong>GLPI 11</strong>: branch <code>main</code> (código e releases próprios)</a>
 
 **Regra crítica:** não fazer merge entre `main` e `glpi-10`. Se uma mudança precisa existir nas duas versões, portar (cherry-pick/manual) e testar em cada linha.
 
