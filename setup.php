@@ -1,17 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Setup
- * -------------------------------------------------------------------------
- * Plugin principal para GLPI 11. Sistema modular: ModuleManager (auto-discovery),
+ * Nextools - Setup
+ *
+ * Plugin principal para GLPI 10. Sistema modular: ModuleManager (auto-discovery),
  * BaseModule (classe base), módulos em modules/[nome]/[nome].class.php.
- * Documentação completa em: docs/
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Documentação em docs/.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -21,11 +17,11 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '3.5.2');
+define('PLUGIN_NEXTOOL_VERSION', '3.6.0');
 
-/** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
-define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
-define('PLUGIN_NEXTOOL_MAX_GLPI_VERSION', '11.0.99');
+/** GLPI mínimo e máximo suportados */
+define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
+define('PLUGIN_NEXTOOL_MAX_GLPI_VERSION', '10.9.9');
 
 /** URLs e metadados do projeto (centralizados para evitar hardcoding) */
 define('NEXTOOL_AUTHOR_NAME', 'Richard Loureiro');
@@ -44,7 +40,7 @@ function plugin_version_nextool() {
    return [
       'name'        => 'NexTool Solutions',
       'version'     => PLUGIN_NEXTOOL_VERSION,
-      'author'      => 'Richard Loureiro - <a href="https://linkedin.com/in/richard-ti">linkedin.com/in/richard-ti</a>',
+      'author'      => 'Richard Loureiro - <a href="https://linkedin.com/in/richard-ti/" target="_blank" rel="noopener">LinkedIn</a>',
       'license'     => 'GPLv3+',
       'homepage'    => 'https://nextoolsolutions.ai',
       'requirements' => [
@@ -72,11 +68,13 @@ function plugin_version_nextool() {
  * o próprio roteador faça a validação (sessão ou stateless conforme o módulo).
  */
 function plugin_nextool_boot() {
-   \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
-      'nextool',
-      '#^/ajax/module_ajax\\.php#',
-      \Glpi\Http\Firewall::STRATEGY_NO_CHECK
-   );
+   if (method_exists('\Glpi\Http\Firewall', 'addPluginStrategyForLegacyScripts')) {
+      \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
+         'nextool',
+         '#^/ajax/module_ajax\\.php#',
+         \Glpi\Http\Firewall::STRATEGY_NO_CHECK
+      );
+   }
 }
 
 /**

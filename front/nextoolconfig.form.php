@@ -1,20 +1,16 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Config Form (Layout)
- * -------------------------------------------------------------------------
+ * Nextools - Config Form (Layout)
+ *
  * Página standalone de configuração do plugin com abas verticais: Módulos,
  * Contato, Licenciamento, Logs e abas dinâmicas por módulo.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {
-   include(__DIR__ . '/../../inc/includes.php');
+   include(__DIR__ . '/../../../inc/includes.php');
 }
 
 Session::checkRight('config', READ);
@@ -59,22 +55,6 @@ if (!isset($_SESSION['glpi_tabs'])) {
 }
 $_SESSION['glpi_tabs'][$tabKey] = $forcetab;
 
-// Garante que nextoolValidateLicense e funções relacionadas existam na página principal.
-// Necessário porque o conteúdo das abas pode ser carregado via AJAX e scripts injetados
-// por innerHTML não executam; incluir aqui garante disponibilidade global.
-require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
-$licenseConfig = PluginNextoolLicenseConfig::getDefaultConfig();
-$policiesAcceptedAt = $licenseConfig['policies_accepted_at'] ?? null;
-$hasAcceptedPolicies = !empty($policiesAcceptedAt);
-include GLPI_ROOT . '/plugins/nextool/front/config.form.scripts.inc.php';
-
-// Formulário fallback para o botão Sincronizar na aba Módulos (onde o hero não está dentro de form).
-$configSaveUrl = Plugin::getWebDir('nextool') . '/front/config.save.php';
-echo '<form id="nextoolSyncForm" method="post" action="' . htmlspecialchars($configSaveUrl) . '" style="display:none;">';
-echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]);
-echo Html::hidden('forcetab', ['value' => $forcetab]);
-echo '</form>';
-
 $options = [
    'id'       => $id,
    'target'   => Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php',
@@ -82,5 +62,12 @@ $options = [
 ];
 
 $item->display($options);
+
+// Form hidden DEPOIS do display para evitar interferir no layout flex do GLPI 10
+$configSaveUrl = Plugin::getWebDir('nextool') . '/front/config.save.php';
+echo '<form id="nextoolSyncForm" method="post" action="' . htmlspecialchars($configSaveUrl) . '" style="display:none;">';
+echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]);
+echo Html::hidden('forcetab', ['value' => $forcetab]);
+echo '</form>';
 
 Html::footer();

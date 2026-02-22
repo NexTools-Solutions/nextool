@@ -1,17 +1,12 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Log Maintenance
- * -------------------------------------------------------------------------
- * Rotinas de manutenção de logs/auditoria do NexTool Solutions, responsáveis
- * por purgar registros antigos e evitar crescimento descontrolado das
- * tabelas de histórico.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Log Maintenance
+ *
+ * Rotinas de manutenção de logs e auditoria do Nextools, responsáveis por purgar
+ * registros antigos e evitar crescimento descontrolado das tabelas de histórico.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

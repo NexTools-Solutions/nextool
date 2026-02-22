@@ -1,22 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Module AJAX Router
- * -------------------------------------------------------------------------
- * Roteador genérico para arquivos AJAX dos módulos do NexTool Solutions.
- * 
- * Este arquivo roteia requisições AJAX para arquivos dentro de
- * modules/[nome]/ajax/ e soluciona o problema de roteamento do Symfony
- * no GLPI 11, que intercepta URLs diretas para esses arquivos.
- * 
- * Uso: 
- * - AJAX: /plugins/nextool/ajax/module_ajax.php?module=[module_key]&file=[arquivo].php
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Module AJAX Router
+ *
+ * Roteador genérico para arquivos AJAX dos módulos do Nextools.
+ * Roteia requisições para modules/[nome]/ajax/ e soluciona o roteamento do Symfony.
+ * Uso: module_ajax.php?module=[module_key]&file=[arquivo].php
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 // Define GLPI_ROOT (plugin pode estar em plugins/nextool/ ou files/_plugins/nextool/)
@@ -113,6 +104,7 @@ if ($isStateless) {
 // GLPI 11 (Symfony): sessão e autoloader já carregados pelo Kernel.
 // includes.php é stub no GLPI 11, mas mantemos para compatibilidade.
 require_once GLPI_ROOT . '/inc/includes.php';
+Session::checkLoginUser();
 
 // Carrega o arquivo do módulo
 include($filePath);

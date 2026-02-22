@@ -1,19 +1,14 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Module Catalog
- * -------------------------------------------------------------------------
+ * Nextools - Module Catalog
+ *
  * Catálogo lê exclusivamente de glpi_plugin_nextool_main_modules (banco).
  * A tabela é populada pela sincronização com o ContainerAPI (aceite dos termos
- * ou botão Sincronizar). Não há lista chumbada no código — novos módulos
- * passam a aparecer após atualização do catálogo no ritecadmin/ContainerAPI
+ * ou botão Sincronizar). Novos módulos aparecem após atualização no ritecadmin
  * e nova sincronização, sem precisar atualizar o plugin.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -27,7 +22,7 @@ class PluginNextoolModuleCatalog {
    private const DEFAULT_HAS_CONFIG = true;
    private const DEFAULT_DOWNLOADABLE = true;
    private const DEFAULT_AUTHOR = [
-      'name' => 'NexTool Solutions',
+      'name' => 'Nextools',
       'url'  => 'https://nextoolsolutions.ai',
    ];
 

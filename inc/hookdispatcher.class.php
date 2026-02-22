@@ -1,17 +1,11 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Hook Dispatcher
- * -------------------------------------------------------------------------
- * Dispatcher central para hooks de Ticket (e outros item types). Módulos
- * registram via registerPreItemAdd/registerItemAdd em onInit(); o setup
- * registra os dispatch* nos hooks após loadActiveModules().
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Hook Dispatcher
+ *
+ * Dispatcher central para hooks de Ticket. Módulos registram em onInit(); setup registra os dispatch após loadActiveModules().
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

@@ -1,24 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - License Validator
- * -------------------------------------------------------------------------
- * Validador de licença do NexTool Solutions (plugin operacional).
+ * Nextools - License Validator
  *
- * Responsável por:
- * - Ler configuração de licença/endpoints
- * - Decidir quando usar cache ou chamar a API remota (ContainerAPI)
- * - Atualizar o cache local (tabela glpi_plugin_nextool_main_license_config)
- * - Registrar tentativas (glpi_plugin_nextool_main_validation_attempts)
+ * Validador de licença do Nextools (plugin operacional). Lê configuração e endpoints,
+ * decide quando usar cache ou chamar a API remota (ContainerAPI), atualiza o cache
+ * local e registra tentativas em glpi_plugin_nextool_main_validation_attempts.
  *
- * A decisão de bloqueio/desativação de módulos é aplicada em outras
- * camadas (ModuleManager / UI), com base no snapshot retornado.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

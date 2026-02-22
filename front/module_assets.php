@@ -1,28 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Module Assets Router
- * -------------------------------------------------------------------------
- * Roteador genérico para arquivos CSS/JS dos módulos do NexTool Solutions.
- * 
- * Este arquivo serve arquivos CSS/JS de QUALQUER módulo sem passar pelos
- * hooks do GLPI e soluciona o problema de roteamento do Symfony no GLPI 11,
- * que intercepta URLs diretas para arquivos dentro de modules/[nome]/front/.
- * 
- * Formato de URL aceito (2 formas):
- * 1. PATH_INFO: /plugins/nextool/front/module_assets.php/[module_key]/[file]
- *    Exemplo: /plugins/nextool/front/module_assets.php/[module_key]/[module_key].css.php
- * 
- * 2. Query String: /plugins/nextool/front/module_assets.php?module=[module_key]&file=[file]
- *    Exemplo: /plugins/nextool/front/module_assets.php?module=[module_key]&file=[module_key].css.php
- * 
- * Este roteador é genérico e funciona com qualquer módulo.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Module Assets Router
+ *
+ * Roteador genérico para arquivos CSS/JS dos módulos do Nextools.
+ * Serve assets sem passar pelos hooks do GLPI. Aceita PATH_INFO ou query string
+ * (module=...&file=...). Funciona com qualquer módulo.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 // Define GLPI_ROOT PRIMEIRO (necessário para caminhos)
@@ -63,6 +48,10 @@ if (empty($moduleKey) || empty($filename)) {
 // Sanitiza parâmetros (segurança)
 $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename($filename); // Remove caminhos (segurança)
+
+// Assets do plugin exigem sessão autenticada.
+require_once GLPI_ROOT . '/inc/includes.php';
+Session::checkLoginUser();
 
 // Verifica se módulo existe
 require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';

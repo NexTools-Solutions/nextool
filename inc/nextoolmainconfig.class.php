@@ -1,16 +1,12 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Main Config
- * -------------------------------------------------------------------------
+ * Nextools - Main Config
+ *
  * Item type nativo com abas verticais: Módulos, Contato, Licenciamento, Logs
  * e abas dinâmicas por módulo instalado com página de configuração.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -34,7 +30,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
    }
 
    public static function getTypeName($nb = 0) {
-      return __('NexTool Solutions', 'nextool');
+      return __('Nextools', 'nextool');
    }
 
    /**
@@ -52,7 +48,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
 
       $tab[] = [
          'id'   => 'common',
-         'name' => __('NexTool Solutions', 'nextool'),
+         'name' => __('Nextools', 'nextool'),
       ];
 
       $tab[] = [

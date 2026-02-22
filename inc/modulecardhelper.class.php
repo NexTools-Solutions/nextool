@@ -1,17 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Module Card Helper
- * -------------------------------------------------------------------------
- * Helper responsável por renderizar os botões/ações dos cards de módulos
- * na UI do NexTool Solutions (Download, Instalar, Atualizar, Licenciar,
- * Apagar dados, Acessar dados, etc.).
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Module Card Helper
+ *
+ * Helper responsável por renderizar os botões e ações dos cards de módulos
+ * na UI do Nextools: Download, Instalar, Atualizar, Licenciar, Apagar dados,
+ * Acessar dados, etc.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -266,23 +262,19 @@ class PluginNextoolModuleCardHelper {
       bool $disabled = false,
       ?string $confirmMessage = null
    ): string {
-      $actionUrl = Plugin::getWebDir('nextool') . '/ajax/module_action.php';
-      $token = Session::getNewCSRFToken();
-
-      $fields = '';
-      $fields .= Html::hidden('_glpi_csrf_token', ['value' => $token]);
-      $fields .= "<input type='hidden' name='module' value='" . Html::entities_deep($state['module_key']) . "'>";
-      $fields .= "<input type='hidden' name='action' value='" . Html::entities_deep($action) . "'>";
-
       $disabledAttr = $disabled ? ' disabled' : '';
       $confirmAttr = '';
       if (!empty($confirmMessage)) {
-         $confirmAttr = " onclick=\"return confirm(" . json_encode($confirmMessage, JSON_HEX_APOS | JSON_HEX_QUOT) . ");\"";
+         // Confirm será tratado no JS para manter consistência em ações via AJAX.
+         $confirmAttr = " data-confirm=" . json_encode($confirmMessage, JSON_HEX_APOS | JSON_HEX_QUOT);
       }
 
-      $buttonHtml = "<button type='submit' class='{$buttonClass}'{$disabledAttr}{$confirmAttr}><i class='{$iconClass} me-1'></i>{$label}</button>";
+      $moduleKey = Html::entities_deep($state['module_key']);
+      $actionEsc = Html::entities_deep($action);
+      $labelEsc  = Html::entities_deep($label);
+      $classes   = Html::entities_deep(trim($buttonClass . ' me-1 nextool-module-action'));
 
-      return "<form method='post' action='{$actionUrl}' class='d-inline module-action-form me-1'>{$fields}{$buttonHtml}</form>";
+      return "<button type='button' class='{$classes}' data-module='{$moduleKey}' data-action='{$actionEsc}'{$confirmAttr}{$disabledAttr}><i class='{$iconClass} me-1'></i>{$labelEsc}</button>";
    }
 }
 

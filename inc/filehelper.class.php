@@ -1,16 +1,12 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - File Helper
- * -------------------------------------------------------------------------
+ * Nextools - File Helper
+ *
  * Funções utilitárias para operações de arquivo (ex.: remoção recursiva de
  * diretórios). Centraliza lógica usada em hook.php e distributionclient.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

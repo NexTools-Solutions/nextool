@@ -1,17 +1,12 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Plugin Configuration
- * -------------------------------------------------------------------------
- * Classe responsável por gerenciar as configurações globais do plugin
- * NexTool Solutions dentro do GLPI (identificador, distribuição remota,
- * integrações com ContainerAPI, etc.).
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Plugin Configuration
+ *
+ * Classe responsável pelas configurações globais do plugin Nextools no GLPI:
+ * identificador, distribuição remota, integrações com ContainerAPI, etc.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

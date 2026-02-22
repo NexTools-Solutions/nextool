@@ -1,17 +1,12 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Distribution Client
- * -------------------------------------------------------------------------
- * Cliente responsável por conversar com o ContainerAPI para distribuição
- * remota de módulos (manifestos, download de pacotes, bootstrap de
- * segredo HMAC, etc.).
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Distribution Client
+ *
+ * Cliente responsável por conversar com o ContainerAPI: manifestos de módulos,
+ * download de pacotes, bootstrap de segredo HMAC, etc.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

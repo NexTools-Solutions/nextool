@@ -1,18 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Hook Provider Interface
- * -------------------------------------------------------------------------
+ * Nextools - Hook Provider Interface
+ *
  * Contrato para módulos fornecerem integrações com hooks globais do GLPI
- * (Search/giveItem, MassiveActions, MassiveActionsFieldsDisplay). O plugin
- * base mantém as funções plugin_nextool_* e delega para providers dos módulos
- * ativos. Implementações devem ser idempotentes e defensivas.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * (Search/giveItem, MassiveActions, MassiveActionsFieldsDisplay). O plugin base
+ * mantém as funções plugin_nextool_* e delega para providers dos módulos ativos.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");

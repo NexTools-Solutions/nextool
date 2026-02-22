@@ -1,17 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Permission Manager
- * -------------------------------------------------------------------------
+ * Nextools - Permission Manager
+ *
  * Camada de conveniência para registrar e validar os direitos nativos do GLPI
- * utilizados pelo Nextool. Centraliza a definição dos direitos e expõe
+ * utilizados pelo Nextools. Centraliza a definição dos direitos e expõe
  * helpers reutilizáveis na UI e nos endpoints.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -124,7 +120,8 @@ class PluginNextoolPermissionManager {
     */
    public static function canViewModule(string $moduleKey): bool {
       $right = self::getModuleRightName($moduleKey);
-      return self::haveRight($right, READ)
+      return self::canViewModules()
+         || self::haveRight($right, READ)
          || self::hasGlobalAdminAccess();
    }
 
@@ -135,7 +132,8 @@ class PluginNextoolPermissionManager {
     */
    public static function canManageModule(string $moduleKey): bool {
       $right = self::getModuleRightName($moduleKey);
-      return self::haveRight($right, UPDATE)
+      return self::canManageModules()
+         || self::haveRight($right, UPDATE)
          || self::hasGlobalAdminAccess();
    }
 

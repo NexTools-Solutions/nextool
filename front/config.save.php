@@ -1,31 +1,20 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Config Save
- * -------------------------------------------------------------------------
+ * Nextools - Config Save
+ *
  * Processa POST do formulário de configuração: salvar opções, validar licença,
- * regenerar HMAC, aceitar políticas. Requer sessão e CSRF.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * regenerar HMAC, aceitar políticas. Requer sessão e CSRF (validado pelo core no GLPI 10).
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 include ('../../../inc/includes.php');
 
 Session::checkRight("config", UPDATE);
 
-// Validação CSRF para todas as ações POST (não afeta endpoints stateless dos módulos)
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-   if (!isset($_POST['_glpi_csrf_token'])) {
-      Session::addMessageAfterRedirect(__('Token CSRF ausente.', 'nextool'), false, ERROR);
-      Html::back();
-      exit;
-   }
-   Session::validateCSRF($_POST['_glpi_csrf_token']);
-}
+// CSRF no GLPI 10:
+// O core valida automaticamente no `inc/includes.php` para qualquer POST.
 
 // Inclui classes adicionais
 require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
@@ -35,6 +24,79 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/configaudit.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+
+/**
+ * Realiza bootstrap automático do segredo HMAC quando necessário.
+ *
+ * @param array<string, mixed> $distributionSettings
+ * @return array{
+ *   attempted: bool,
+ *   success: bool,
+ *   reused_secret: bool,
+ *   settings: array<string, mixed>,
+ *   client_identifier: string
+ * }
+ */
+function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bool $logAudit = false): array
+{
+   $baseUrl = trim((string) ($distributionSettings['base_url'] ?? ''));
+   $clientIdentifier = trim((string) ($distributionSettings['client_identifier'] ?? ''));
+   $needsBootstrap = $baseUrl !== '' && $clientIdentifier !== '' && empty($distributionSettings['client_secret']);
+
+   if (!$needsBootstrap) {
+      return [
+         'attempted'         => false,
+         'success'           => true,
+         'reused_secret'     => false,
+         'settings'          => $distributionSettings,
+         'client_identifier' => $clientIdentifier,
+      ];
+   }
+
+   $reusedSecret = false;
+   $secret = PluginNextoolDistributionClient::obtainOrReuseClientSecret(
+      $baseUrl,
+      $clientIdentifier,
+      $reusedSecret
+   );
+
+   if ($secret === null) {
+      return [
+         'attempted'         => true,
+         'success'           => false,
+         'reused_secret'     => false,
+         'settings'          => $distributionSettings,
+         'client_identifier' => $clientIdentifier,
+      ];
+   }
+
+   Config::setConfigurationValues('plugin:nextool_distribution', array_merge($distributionSettings, [
+      'client_secret' => $secret,
+   ]));
+
+   if ($logAudit) {
+      PluginNextoolConfigAudit::log([
+         'section' => 'distribution',
+         'action'  => 'bootstrap',
+         'result'  => 1,
+        'message' => __('Chave de segurança gerada automaticamente.', 'nextool'),
+         'details' => [
+            'base_url'               => $baseUrl,
+            'reused_existing_secret' => $reusedSecret ? 1 : 0,
+         ],
+      ]);
+   }
+
+   $updatedSettings = PluginNextoolConfig::getDistributionSettings();
+
+   return [
+      'attempted'         => true,
+      'success'           => true,
+      'reused_secret'     => $reusedSecret,
+      'settings'          => $updatedSettings,
+      'client_identifier' => trim((string) ($updatedSettings['client_identifier'] ?? $clientIdentifier)),
+   ];
+}
 
 // Verificação de permissão depende da ação
 $action = $_POST['action'] ?? '';
@@ -47,9 +109,6 @@ if ($action === 'validate_license') {
    PluginNextoolPermissionManager::assertCanManageAdminTabs();
 }
 
-// Ações específicas
-$action = $_POST['action'] ?? '';
-
 if ($action === 'regenerate_hmac') {
    $distributionSettings = PluginNextoolConfig::getDistributionSettings();
    $baseUrl          = trim((string)($distributionSettings['base_url'] ?? ''));
@@ -57,7 +116,7 @@ if ($action === 'regenerate_hmac') {
 
    if ($baseUrl === '' || $clientIdentifier === '') {
      Session::addMessageAfterRedirect(
-        __('Configure a URL do ContainerAPI e o identificador do ambiente antes de recriar o segredo HMAC.', 'nextool'),
+        __('Configure a URL da plataforma NexTool e o código do ambiente antes de gerar uma nova chave de segurança.', 'nextool'),
         false,
         WARNING
      );
@@ -75,7 +134,7 @@ if ($action === 'regenerate_hmac') {
 
    if ($secret === null) {
       Session::addMessageAfterRedirect(
-         __('Não foi possível recriar o segredo HMAC. Verifique os logs e tente novamente.', 'nextool'),
+         __('Não foi possível gerar uma nova chave de segurança. Tente novamente em instantes.', 'nextool'),
          false,
          ERROR
       );
@@ -91,7 +150,7 @@ if ($action === 'regenerate_hmac') {
       'section' => 'distribution',
       'action'  => 'regenerate_hmac',
       'result'  => 1,
-      'message' => __('Segredo HMAC recriado com sucesso.', 'nextool'),
+      'message' => __('Chave de segurança gerada com sucesso.', 'nextool'),
       'details' => [
          'environment_identifier' => $clientIdentifier,
          'reused_existing_secret' => $reusedSecret ? 1 : 0,
@@ -100,8 +159,8 @@ if ($action === 'regenerate_hmac') {
 
    Session::addMessageAfterRedirect(
       $reusedSecret
-         ? __('Segredo HMAC já existia e foi reutilizado com sucesso.', 'nextool')
-         : __('Novo segredo HMAC provisionado automaticamente.', 'nextool'),
+         ? __('A chave de segurança já existia e foi reutilizada com sucesso.', 'nextool')
+         : __('Nova chave de segurança gerada automaticamente.', 'nextool'),
       false,
       INFO
    );
@@ -117,7 +176,7 @@ if ($action === 'accept_policies') {
 
    if ($baseUrl === '' || $clientIdentifier === '') {
       Session::addMessageAfterRedirect(
-         __('Configure a URL do ContainerAPI e gere o identificador do ambiente antes de aceitar as políticas de uso.', 'nextool'),
+         __('Configure a URL da plataforma NexTool e o código do ambiente antes de aceitar as políticas de uso.', 'nextool'),
          false,
          WARNING
       );
@@ -125,25 +184,20 @@ if ($action === 'accept_policies') {
       exit;
    }
 
-   $needsBootstrap = $baseUrl !== '' && $clientIdentifier !== '' && empty($distributionSettings['client_secret']);
-   if ($needsBootstrap) {
-      $reusedSecret = false;
-      $secret = PluginNextoolDistributionClient::obtainOrReuseClientSecret($baseUrl, $clientIdentifier, $reusedSecret);
-      if ($secret !== null) {
-         Config::setConfigurationValues('plugin:nextool_distribution', array_merge($distributionSettings, [
-            'client_secret' => $secret,
-         ]));
+   $bootstrap = plugin_nextool_bootstrap_hmac_if_needed($distributionSettings);
+   if (!empty($bootstrap['attempted'])) {
+      if (!empty($bootstrap['success'])) {
          Session::addMessageAfterRedirect(
-            $reusedSecret
-               ? __('Segredo HMAC já estava provisionado e foi reutilizado com sucesso.', 'nextool')
-               : __('Segredo HMAC provisionado automaticamente com sucesso.', 'nextool'),
+            !empty($bootstrap['reused_secret'])
+               ? __('A chave de segurança já existia e foi reutilizada com sucesso.', 'nextool')
+               : __('Chave de segurança gerada automaticamente com sucesso.', 'nextool'),
             false,
             INFO
          );
-         $distributionSettings = PluginNextoolConfig::getDistributionSettings();
+         $distributionSettings = $bootstrap['settings'];
       } else {
          Session::addMessageAfterRedirect(
-            __('Não foi possível obter o segredo HMAC automaticamente. Verifique a URL ou tente novamente mais tarde.', 'nextool'),
+            __('Não foi possível gerar a chave de segurança automaticamente. Verifique a configuração e tente novamente mais tarde.', 'nextool'),
             false,
             WARNING
          );
@@ -172,12 +226,12 @@ if ($action === 'accept_policies') {
 
    if (!empty($result['valid'])) {
       Session::addMessageAfterRedirect(
-         __('Políticas aceitas e catálogo sincronizado com sucesso. Os módulos oficiais foram liberados.', 'nextool'),
+         __('Políticas aceitas e sincronização concluída com sucesso. Os módulos disponíveis foram atualizados.', 'nextool'),
          false,
          INFO
       );
    } else {
-      $message = $result['message'] ?? __('Não foi possível sincronizar o catálogo de módulos. Tente novamente em instantes.', 'nextool');
+      $message = $result['message'] ?? __('Não foi possível concluir a sincronização agora. Tente novamente em instantes.', 'nextool');
       Session::addMessageAfterRedirect(
          $message,
          false,
@@ -202,87 +256,103 @@ if ($action === 'accept_policies') {
    exit;
 }
 
-// Snapshot antes da alteração
+// Snapshot antes de qualquer alteração (também usado no fluxo de validação)
 $previousGlobalConfig = PluginNextoolConfig::getConfig();
-$licenseRow = PluginNextoolLicenseConfig::getDefaultConfig();
-$previousLicenseKey = $licenseRow['license_key'] ?? null;
 
-// Calcula novos valores esperados (mesma regra do saveConfig)
-$newIsActive = isset($_POST['is_active']) && $_POST['is_active'] == '1' ? 1 : 0;
-$newEndpoint = isset($_POST['endpoint_url']) ? trim((string)$_POST['endpoint_url']) : null;
-if ($newEndpoint === '') {
-   $newEndpoint = null;
-}
+// Persistir configuração global apenas quando os campos vierem no POST.
+// Isso evita sobrescrever dados em ações como validate_license via nextoolSyncForm.
+$endpointWasPosted = array_key_exists('endpoint_url', $_POST);
+$isActiveWasPosted = array_key_exists('is_active', $_POST);
+$shouldPersistGlobal = in_array($action, ['', 'validate_license'], true)
+   && ($endpointWasPosted || $isActiveWasPosted);
 
-// Salva configuração global (whitelist: apenas is_active e endpoint_url)
-$configData = [
-   'is_active'    => isset($_POST['is_active']) && $_POST['is_active'] == '1' ? 1 : 0,
-   'endpoint_url' => isset($_POST['endpoint_url']) ? trim((string)$_POST['endpoint_url']) : null,
-];
-if (($configData['endpoint_url'] ?? '') === '') {
-   $configData['endpoint_url'] = null;
-}
-$success = PluginNextoolConfig::saveConfig($configData);
+if ($shouldPersistGlobal) {
+   // Mantém valores atuais quando o campo não vem no POST.
+   $newIsActive = $isActiveWasPosted
+      ? ((isset($_POST['is_active']) && $_POST['is_active'] == '1') ? 1 : 0)
+      : (int) ($previousGlobalConfig['is_active'] ?? 1);
 
-// Auditoria dos ajustes globais
-$globalChanges = [];
-if (array_key_exists('is_active', $previousGlobalConfig) && (int)$previousGlobalConfig['is_active'] !== $newIsActive) {
-   $globalChanges['is_active'] = [
-      'old' => (int)$previousGlobalConfig['is_active'],
-      'new' => $newIsActive,
+   if ($endpointWasPosted) {
+      $newEndpoint = trim((string) $_POST['endpoint_url']);
+      if ($newEndpoint === '') {
+         $newEndpoint = null;
+      }
+   } else {
+      $newEndpoint = $previousGlobalConfig['endpoint_url'] ?? null;
+   }
+
+   $configData = [
+      'is_active'    => $newIsActive,
+      'endpoint_url' => $newEndpoint,
    ];
-}
-if (($previousGlobalConfig['endpoint_url'] ?? null) !== $newEndpoint) {
-   $globalChanges['endpoint_url'] = [
-      'old' => $previousGlobalConfig['endpoint_url'] ?? null,
-      'new' => $newEndpoint,
-   ];
-}
+   $success = PluginNextoolConfig::saveConfig($configData);
 
-if (!empty($globalChanges) || !$success) {
-   PluginNextoolConfigAudit::log([
-      'section' => 'global',
-      'action'  => 'save',
-      'result'  => $success ? 1 : 0,
-      'message' => $success
-         ? __('Configurações salvas com sucesso!', 'nextool')
-         : __('Erro ao salvar configurações', 'nextool'),
-      'details' => $globalChanges,
-   ]);
-}
+   // Auditoria dos ajustes globais
+   $globalChanges = [];
+   if (array_key_exists('is_active', $previousGlobalConfig) && (int) $previousGlobalConfig['is_active'] !== $newIsActive) {
+      $globalChanges['is_active'] = [
+         'old' => (int) $previousGlobalConfig['is_active'],
+         'new' => $newIsActive,
+      ];
+   }
+   if (($previousGlobalConfig['endpoint_url'] ?? null) !== $newEndpoint) {
+      $globalChanges['endpoint_url'] = [
+         'old' => $previousGlobalConfig['endpoint_url'] ?? null,
+         'new' => $newEndpoint,
+      ];
+   }
 
-if ($success) {
-   $distributionValues = Config::getConfigurationValues('plugin:nextool_distribution');
-   $currentBaseUrl = isset($distributionValues['base_url'])
-      ? trim((string)$distributionValues['base_url'])
-      : '';
-   $targetBaseUrl = $newEndpoint ?? PluginNextoolConfig::DEFAULT_CONTAINERAPI_BASE_URL;
-   if ($currentBaseUrl !== $targetBaseUrl) {
-      $distributionValues['base_url'] = $targetBaseUrl;
-      Config::setConfigurationValues('plugin:nextool_distribution', $distributionValues);
+   if (!empty($globalChanges) || !$success) {
       PluginNextoolConfigAudit::log([
-         'section' => 'distribution',
-         'action'  => 'update_base_url',
-         'result'  => 1,
-         'message' => __('URL do ContainerAPI atualizada.', 'nextool'),
-         'details' => [
-            'old_base_url' => $currentBaseUrl,
-            'new_base_url' => $targetBaseUrl,
-         ],
+         'section' => 'global',
+         'action'  => 'save',
+         'result'  => $success ? 1 : 0,
+         'message' => $success
+            ? __('Configurações salvas com sucesso!', 'nextool')
+            : __('Erro ao salvar configurações', 'nextool'),
+         'details' => $globalChanges,
       ]);
    }
 
-   Session::addMessageAfterRedirect(
-      __('Configurações salvas com sucesso!', 'nextool'),
-      false,
-      INFO
-   );
-} else {
-   Session::addMessageAfterRedirect(
-      __('Erro ao salvar configurações', 'nextool'),
-      false,
-      ERROR
-   );
+   // endpoint_url é refletido na configuração de distribuição apenas quando o campo foi enviado.
+   if ($success && $endpointWasPosted) {
+      $distributionValues = Config::getConfigurationValues('plugin:nextool_distribution');
+      $currentBaseUrl = isset($distributionValues['base_url'])
+         ? trim((string) $distributionValues['base_url'])
+         : '';
+      $targetBaseUrl = $newEndpoint ?? PluginNextoolConfig::DEFAULT_CONTAINERAPI_BASE_URL;
+      if ($currentBaseUrl !== $targetBaseUrl) {
+         $distributionValues['base_url'] = $targetBaseUrl;
+         Config::setConfigurationValues('plugin:nextool_distribution', $distributionValues);
+         PluginNextoolConfigAudit::log([
+            'section' => 'distribution',
+            'action'  => 'update_base_url',
+            'result'  => 1,
+            'message' => __('URL da plataforma NexTool atualizada.', 'nextool'),
+            'details' => [
+               'old_base_url' => $currentBaseUrl,
+               'new_base_url' => $targetBaseUrl,
+            ],
+         ]);
+      }
+   }
+
+   // No validate_license, não poluir feedback com mensagem de "salvo".
+   if ($action !== 'validate_license') {
+      if ($success) {
+         Session::addMessageAfterRedirect(
+            __('Configurações salvas com sucesso!', 'nextool'),
+            false,
+            INFO
+         );
+      } else {
+         Session::addMessageAfterRedirect(
+            __('Erro ao salvar configurações', 'nextool'),
+            false,
+            ERROR
+         );
+      }
+   }
 }
 
 // Se usuário clicou em "Validar licença agora", executa validação imediata
@@ -290,45 +360,22 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
    $distributionSettings = PluginNextoolConfig::getDistributionSettings();
    $distributionClientIdentifier = $distributionSettings['client_identifier']
       ?? ($previousGlobalConfig['client_identifier'] ?? '');
-   $needsBootstrap = !empty($distributionSettings['base_url'])
-      && !empty($distributionSettings['client_identifier'])
-      && empty($distributionSettings['client_secret']);
-
-   if ($needsBootstrap) {
-      $reusedSecret = false;
-      $secret = PluginNextoolDistributionClient::obtainOrReuseClientSecret(
-         $distributionSettings['base_url'],
-         $distributionSettings['client_identifier'],
-         $reusedSecret
-      );
-
-      if ($secret !== null) {
-         Config::setConfigurationValues('plugin:nextool_distribution', array_merge($distributionSettings, [
-            'client_secret' => $secret,
-         ]));
-         PluginNextoolConfigAudit::log([
-            'section' => 'distribution',
-            'action'  => 'bootstrap',
-            'result'  => 1,
-            'message' => __('Segredo HMAC provisionado automaticamente.', 'nextool'),
-            'details' => [
-               'base_url'               => $distributionSettings['base_url'],
-               'reused_existing_secret' => $reusedSecret ? 1 : 0,
-            ],
-         ]);
+   $bootstrap = plugin_nextool_bootstrap_hmac_if_needed($distributionSettings, true);
+   if (!empty($bootstrap['attempted'])) {
+      if (!empty($bootstrap['success'])) {
          Session::addMessageAfterRedirect(
-            $reusedSecret
-               ? __('Segredo HMAC já existia e foi reutilizado automaticamente.', 'nextool')
-               : __('Segredo HMAC provisionado automaticamente com sucesso.', 'nextool'),
+            !empty($bootstrap['reused_secret'])
+               ? __('A chave de segurança já existia e foi reutilizada automaticamente.', 'nextool')
+               : __('Chave de segurança gerada automaticamente com sucesso.', 'nextool'),
             false,
             INFO
          );
-         $distributionSettings = PluginNextoolConfig::getDistributionSettings();
-         $distributionClientIdentifier = $distributionSettings['client_identifier']
+         $distributionSettings = $bootstrap['settings'];
+         $distributionClientIdentifier = $bootstrap['client_identifier']
             ?? ($previousGlobalConfig['client_identifier'] ?? '');
       } else {
          Session::addMessageAfterRedirect(
-            __('Não foi possível obter o segredo HMAC automaticamente. Verifique a URL ou tente novamente mais tarde.', 'nextool'),
+            __('Não foi possível gerar a chave de segurança automaticamente. Verifique a configuração e tente novamente mais tarde.', 'nextool'),
             false,
             WARNING
          );
@@ -366,21 +413,25 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
          : [];
 
       if ($resultError === 'unauthorized') {
-         $msg = __('Ainda estamos provisionando este ambiente no ContainerAPI. Aguarde alguns instantes e clique novamente em "Validar licença agora" para concluir o bootstrap. O ambiente permanece em modo FREE.', 'nextool');
+         $msg = __('Ainda estamos preparando este ambiente na plataforma NexTool. Aguarde alguns instantes e clique novamente em "Sincronizar" para concluir. Enquanto isso, o ambiente permanece no plano gratuito.', 'nextool');
          Session::addMessageAfterRedirect(
             $msg,
             false,
             INFO
          );
       } elseif (empty($licensesInfo)) {
+         $noLicenseMsg = __('Sincronização concluída: nenhuma licença ativa encontrada. O ambiente permanece no plano gratuito.', 'nextool');
+         if ($msg !== '' && stripos((string) $msg, 'nenhuma licença') === false) {
+            $noLicenseMsg .= ' ' . sprintf(__('Detalhes: %s.', 'nextool'), $msg);
+         }
          Session::addMessageAfterRedirect(
-            sprintf(__('Validação concluída (nenhuma licença ativa): %s. Ambiente permanece no modo FREE.', 'nextool'), $msg),
+            $noLicenseMsg,
             false,
             INFO
          );
       } else {
          Session::addMessageAfterRedirect(
-            sprintf(__('Licença inválida: %s. Ambiente operará em modo FREE até que uma licença ativa seja atribuída.', 'nextool'), $msg),
+            sprintf(__('Licença inválida: %s. O ambiente permanecerá no plano gratuito até que uma licença ativa seja atribuída.', 'nextool'), $msg),
             false,
             INFO
          );
@@ -429,6 +480,5 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
 }
 
 // Redireciona de volta para a página de configuração
-$forcetab = isset($_POST['forcetab']) ? $_POST['forcetab'] : '';
 Html::back();
 

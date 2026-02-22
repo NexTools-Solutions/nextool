@@ -1,29 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Stateless Modules
- * -------------------------------------------------------------------------
+ * Nextools - Stateless Modules
+ *
  * Fornece o mapa de módulos com endpoints stateless (sem sessão/login).
+ * Usado por setup.php (boot) e module_ajax.php para decidir se inclui includes.php.
+ * Carregado antes da sessão GLPI — não pode depender de Session, $DB ou classes GLPI.
  *
- * Usado por:
- * - setup.php (boot) para registrar rotas no SessionManager
- * - module_ajax.php para decidir se inclui includes.php
- *
- * IMPORTANTE: Este arquivo é carregado antes da sessão GLPI, antes do
- * autoload e antes do banco estar disponível. NÃO pode depender de
- * Session, $DB, CommonDBTM ou qualquer classe GLPI/plugin.
- *
- * Estratégia:
- * - Lê um cache JSON (nextool_stateless.json) gerado pelo ModuleManager
- *   quando os módulos são descobertos (com GLPI já carregado).
- * - Se o cache não existir (primeira instalação), retorna array vazio.
- * - O ModuleManager regenera o cache toda vez que discoverModules() roda.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

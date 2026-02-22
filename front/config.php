@@ -1,16 +1,11 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Config Redirect
- * -------------------------------------------------------------------------
- * Redireciona para a página de configuração do plugin. Chamado quando o
- * usuário clica em "Configurar" na lista de plugins (Configurar → Plugins).
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Config Redirect
+ *
+ * Redireciona para a página de configuração do plugin (Configurar → Plugins).
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 include('../../../inc/includes.php');

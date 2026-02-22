@@ -1,23 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - License Validation Attempts
- * -------------------------------------------------------------------------
- * Classe de tentativas de validação de licença do NexTool Solutions
- * (camada operacional).
+ * Nextools - License Validation Attempts
  *
- * Armazena histórico das chamadas à API administrativa (via ContainerAPI):
- * - data/hora
- * - resultado
- * - mensagem
- * - código HTTP
- * - tempo de resposta
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Classe de tentativas de validação de licença (camada operacional).
+ * Armazena histórico das chamadas à API administrativa (ContainerAPI):
+ * data/hora, resultado, mensagem, código HTTP, tempo de resposta.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

@@ -1,17 +1,11 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Hooks
- * -------------------------------------------------------------------------
- * Instalação: sql/install.sql (tabelas e seeds), geração do client_identifier.
- * Desinstalação: sql/uninstall.sql (tabelas operacionais), remoção de
- * diretórios dos módulos baixados. MassiveActions, giveItem, redefine_menus.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Hooks
+ *
+ * Registro de hooks do plugin: instalação, desinstalação, MassiveActions, giveItem, menus.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

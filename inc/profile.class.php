@@ -1,16 +1,11 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Profile
- * -------------------------------------------------------------------------
- * Adiciona aba na tela de Perfis do GLPI para configurar direitos do Nextool
- * por perfil (READ/UPDATE/DELETE/PURGE).
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Profile
+ *
+ * Aba em Perfis do GLPI para configurar direitos do Nextools por perfil.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

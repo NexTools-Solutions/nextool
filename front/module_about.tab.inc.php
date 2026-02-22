@@ -1,12 +1,13 @@
 <?php
 /**
- * Aba "Sobre" genérica para módulos standalone.
+ * Nextools - Aba Sobre (módulos)
  *
- * Exibe informações técnicas do módulo (nome, versão, status, ícone, autor, billing tier).
+ * Aba "Sobre" genérica para módulos standalone. Exibe informações técnicas do módulo:
+ * nome, versão, status, ícone, autor, billing tier.
  * Uso: incluir via displayTabContentForItem com $GLOBALS['nextool_about_module_key'] definido.
  *
- * Variáveis esperadas via $GLOBALS:
- *   'nextool_about_module_key' => string (module_key do módulo)
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -67,7 +68,13 @@ $statusBadge = $module->isEnabled()
             </tr>
             <tr>
                <th><?php echo __('Autor', 'nextool'); ?></th>
-               <td><?php echo Html::entities_deep($module->getAuthor()); ?></td>
+               <td><?php
+                  if (defined('NEXTOOL_AUTHOR_URL') && NEXTOOL_AUTHOR_URL !== '') {
+                     echo '<a href="' . Html::entities_deep(NEXTOOL_AUTHOR_URL) . '" target="_blank" rel="noopener" class="text-decoration-underline">' . Html::entities_deep($module->getAuthor()) . '</a>';
+                  } else {
+                     echo Html::entities_deep($module->getAuthor());
+                  }
+               ?></td>
             </tr>
             <tr>
                <th><?php echo __('Tier de cobrança', 'nextool'); ?></th>

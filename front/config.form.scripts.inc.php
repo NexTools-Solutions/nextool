@@ -1,16 +1,11 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Config Form Scripts
- * -------------------------------------------------------------------------
- * Scripts compartilhados do formulário de configuração (contato, abas,
- * validação). Incluído por config.form.php (modo standalone e full).
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Config Form Scripts
+ *
+ * Scripts compartilhados do formulário de configuração (contato, abas, validação).
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 ?>
 <script type="text/javascript">
@@ -38,12 +33,97 @@ if (document.readyState === 'loading') {
 }
 document.addEventListener('glpi.load', nextoolActivateDefaultTab);
 
+function nextoolGetAjaxCsrfToken() {
+   // GLPI 10 expõe getAjaxCsrfToken() via common.js; manter fallback por segurança.
+   if (typeof window.getAjaxCsrfToken === 'function') {
+      return window.getAjaxCsrfToken();
+   }
+   var meta = document.querySelector('meta[property="glpi:csrf_token"]');
+   return meta ? meta.getAttribute('content') : '';
+}
+
+function nextoolInitModuleActions() {
+   if (document.documentElement.dataset.nextoolModuleActionsBound === '1') return;
+   document.documentElement.dataset.nextoolModuleActionsBound = '1';
+
+   var endpoint = <?php echo json_encode(Plugin::getWebDir('nextool') . '/ajax/module_action.php'); ?>;
+
+   document.addEventListener('click', function (event) {
+      var btn = event.target && typeof event.target.closest === 'function'
+         ? event.target.closest('button.nextool-module-action')
+         : null;
+      if (!btn) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (btn.disabled) return;
+      var action = (btn.dataset && btn.dataset.action) ? String(btn.dataset.action) : '';
+      var moduleKey = (btn.dataset && btn.dataset.module) ? String(btn.dataset.module) : '';
+      if (action === '' || moduleKey === '') return;
+
+      var confirmMsg = (btn.dataset && btn.dataset.confirm) ? String(btn.dataset.confirm) : '';
+      if (confirmMsg !== '' && !window.confirm(confirmMsg)) return;
+
+      var csrfToken = nextoolGetAjaxCsrfToken();
+      if (!csrfToken) {
+         // Sem token: a página está inconsistente; recarregar resolve.
+         window.location.reload();
+         return;
+      }
+
+      // Mantém a aba atual ao voltar do redirect
+      var params = new URLSearchParams(window.location.search || '');
+      var forcetab = params.get('forcetab') || 'PluginNextoolMainConfig$1';
+
+      var originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i><?php echo Html::entities_deep(__('Processando...', 'nextool')); ?>';
+
+      fetch(endpoint, {
+         method: 'POST',
+         headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-Glpi-Csrf-Token': csrfToken
+         },
+         body: new URLSearchParams({
+            action: action,
+            module: moduleKey,
+            forcetab: forcetab
+         }).toString(),
+         credentials: 'same-origin'
+      })
+         .then(function (r) { return r.json().catch(function () { return {}; }); })
+         .then(function (data) {
+            if (data && data.redirect_url) {
+               window.location.assign(String(data.redirect_url));
+               return;
+            }
+            // Fallback: recarregar para exibir mensagens (se existirem)
+            window.location.reload();
+         })
+         .catch(function () {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+         });
+   });
+}
+
+if (document.readyState === 'loading') {
+   document.addEventListener('DOMContentLoaded', nextoolInitModuleActions);
+} else {
+   nextoolInitModuleActions();
+}
+document.addEventListener('glpi.load', nextoolInitModuleActions);
+
 function nextoolValidateLicense(btn) {
    var form = (btn && btn.form) ? btn.form : document.getElementById('configForm') || document.getElementById('nextoolSyncForm');
    if (!form) return false;
    var hasAcceptedPolicies = <?php echo !empty($hasAcceptedPolicies) ? 'true' : 'false'; ?>;
    if (!hasAcceptedPolicies) {
-      var msg = 'Ao validar a licença do Nextool pela primeira vez, serão enviados dados técnicos do ambiente (domínio, identificador do cliente, chave de licença, IP do servidor e versões de GLPI/PHP/plugin) ao ContainerAPI apenas para fins de licenciamento, controle de ambientes e auditoria técnica. Nenhum dado de tickets, usuários finais ou anexos é coletado.\n\nVocê concorda com esta política de uso e coleta de dados?';
+      var msg = 'Ao sincronizar a licença do NexTool pela primeira vez, serão enviados apenas dados técnicos do ambiente (domínio, código do ambiente, chave da licença, IP do servidor e versões do sistema) para a plataforma de licenciamento NexTool. Nenhum dado de chamados, usuários finais ou anexos é coletado.\n\nVocê concorda com esta política de uso e coleta de dados?';
       if (!window.confirm(msg)) return false;
    }
    var actionInput = form.querySelector('input[name="action"]');
@@ -61,7 +141,7 @@ function nextoolValidateLicense(btn) {
 function nextoolRegenerateHmac(btn) {
    var form = document.getElementById('configForm');
    if (!form) return false;
-   if (!window.confirm('Gerar um novo segredo HMAC invalida o segredo atual imediatamente. Todos os ambientes ou integrações que utilizam o segredo antigo deixarão de funcionar até que o novo valor seja propagado. Deseja continuar?')) return false;
+   if (!window.confirm('Gerar uma nova chave de segurança invalida a chave atual imediatamente. Todas as integrações que usam a chave antiga deixarão de funcionar até que o novo valor seja atualizado. Deseja continuar?')) return false;
    var actionInput = form.querySelector('input[name="action"]');
    if (!actionInput) {
       actionInput = document.createElement('input');
@@ -72,18 +152,6 @@ function nextoolRegenerateHmac(btn) {
    actionInput.value = 'regenerate_hmac';
    form.submit();
    return false;
-}
-
-function nextoolCopyHmacSecret(btn) {
-   if (!btn || !btn.dataset) return;
-   var secret = btn.dataset.secret || '';
-   if (secret === '') return;
-   navigator.clipboard.writeText(secret).then(function () {
-      var original = btn.innerHTML;
-      btn.innerHTML = '<i class="ti ti-check me-1"></i><?php echo Html::entities_deep(__('Copiado!', 'nextool')); ?>';
-      btn.disabled = true;
-      setTimeout(function () { btn.innerHTML = original; btn.disabled = false; }, 2000);
-   });
 }
 
 function nextoolInitContactForm() {
@@ -98,8 +166,17 @@ function nextoolInitContactForm() {
       form.classList.add('was-validated');
       if (!form.checkValidity()) return;
       var formData = new FormData(form);
-      var csrfInput = form.querySelector('input[name="_glpi_csrf_token"]');
-      var csrfToken = csrfInput ? csrfInput.value : '';
+      // GLPI 10: para requisições AJAX, usar o token do meta `glpi:csrf_token` no header.
+      // O token do formulário continua indo no body via FormData.
+      var csrfToken = nextoolGetAjaxCsrfToken();
+      if (!csrfToken) {
+         // Fallback: se o meta não existir por algum motivo, tentar o token do formulário.
+         try {
+            csrfToken = String(formData.get('_glpi_csrf_token') || '');
+         } catch (e) {
+            csrfToken = '';
+         }
+      }
       if (submitButton) submitButton.disabled = true;
       if (feedback) { feedback.classList.remove('text-danger', 'text-success'); feedback.classList.add('text-muted'); feedback.textContent = 'Enviando contato...'; }
       fetch(form.action, { method: 'POST', body: formData, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-Glpi-Csrf-Token': csrfToken }, credentials: 'same-origin' })

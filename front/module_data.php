@@ -1,17 +1,12 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Module Data Viewer
- * -------------------------------------------------------------------------
- * Tela administrativa que lista as tabelas de dados associadas a um
- * módulo do NexTool Solutions, permitindo inspeção/apagamento seguro
- * via UI.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Module Data Viewer
+ *
+ * Tela administrativa que lista as tabelas de dados associadas a um módulo
+ * do Nextools, permitindo inspeção e apagamento seguro via UI.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 include ('../../../inc/includes.php');
@@ -34,8 +29,6 @@ if ($catalog === null) {
 
 $manager = PluginNextoolModuleManager::getInstance();
 $tables = $manager->getModuleDataTables($moduleKey);
-
-global $CFG_GLPI;
 
 Html::header(
    sprintf(__('Dados do módulo %s', 'nextool'), $catalog['name']),

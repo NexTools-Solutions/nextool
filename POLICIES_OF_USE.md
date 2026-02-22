@@ -1,8 +1,8 @@
-## Políticas de Uso – NexTool Solutions (Hub de Módulos para GLPI)
+## Políticas de Uso – Nextools (Hub de Módulos para GLPI)
 
 ### 1. Apresentação
 
-Estas Políticas de Uso regulam o uso do software **NexTool Solutions** (“Hub”) e o acesso aos módulos distribuídos por meio dele (“Módulos”), desenvolvidos e disponibilizados por **NexTool Solutions / RPGMais** (“Fornecedor”).
+Estas Políticas de Uso regulam o uso do software **Nextools** (“Hub”) e o acesso aos módulos distribuídos por meio dele (“Módulos”), desenvolvidos e disponibilizados por **Richard Loureiro / Nextools** (“Fornecedor”).
 
 O Hub é um plugin para GLPI, distribuído sob licença **GNU General Public License, versão 3 (GPLv3) ou GPL-3.0-or-later**, e funciona como um repositório/hub de soluções integradas ao GLPI, algumas gratuitas e outras disponibilizadas mediante pagamento.
 

@@ -1,19 +1,13 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - BaseModule
- * -------------------------------------------------------------------------
- * Classe abstrata base para todos os módulos do NexTool Solutions.
- * Todos os módulos devem estender esta classe e implementar seus métodos
- * abstratos. Esta classe define a interface padrão que todos os módulos
- * devem seguir.
- * -------------------------------------------------------------------------
- * @abstract
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - BaseModule
+ *
+ * Classe abstrata base para todos os módulos do Nextools.
+ * Todos os módulos devem estender esta classe e implementar os métodos abstratos.
+ * Define a interface padrão que todos os módulos seguem.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {
