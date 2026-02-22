@@ -114,6 +114,34 @@ if ($isStateless) {
 // includes.php é stub no GLPI 11, mas mantemos para compatibilidade.
 require_once GLPI_ROOT . '/inc/includes.php';
 
+// Quando /ajax/module_ajax.php é registrado como stateless no SessionManager
+// (necessário para permitir webhooks POST sem CSRF), o Kernel NÃO inicia sessão
+// e desabilita cookies por padrão. Para endpoints autenticados (não stateless),
+// precisamos reabilitar cookies e iniciar a sessão aqui.
+if (session_status() !== PHP_SESSION_ACTIVE) {
+   @ini_set('session.use_cookies', '1');
+   Session::start();
+}
+
+Session::checkLoginUser();
+
+// Reaplica CSRF para endpoints autenticados.
+// (O CheckCsrfListener é bypassado quando o path é stateless.)
+$method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) $_SERVER['REQUEST_METHOD']) : 'GET';
+$bodylessMethods = ['GET', 'HEAD', 'OPTIONS', 'TRACE'];
+if (!in_array($method, $bodylessMethods, true)) {
+   $isXhr = !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+      && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+
+   if ($isXhr) {
+      // Para AJAX, prioriza header (padrão GLPI 11), mas aceita fallback do body.
+      $csrfToken = (string) ($_SERVER['HTTP_X_GLPI_CSRF_TOKEN'] ?? ($_POST['_glpi_csrf_token'] ?? ''));
+      Session::checkCSRF(['_glpi_csrf_token' => $csrfToken], true);
+   } else {
+      Session::checkCSRF($_POST);
+   }
+}
+
 // Carrega o arquivo do módulo
 include($filePath);
 

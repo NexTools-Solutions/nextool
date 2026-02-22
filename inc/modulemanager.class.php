@@ -118,6 +118,10 @@ class PluginNextoolModuleManager {
          $cachedModules = $this->loadCache();
          if ($cachedModules !== false) {
             $this->modules = $cachedModules;
+            // Mantém o mapa stateless sempre em dia, mesmo quando o cache de
+            // módulos é usado. Isso evita ficar “preso” com um nextool_stateless.json
+            // antigo (ou com ownership/permissão incorreta) e quebrar webhooks.
+            $this->refreshStatelessCache();
             return $this->modules;
          }
       }
@@ -1369,7 +1373,7 @@ class PluginNextoolModuleManager {
          return '';
       }
 
-      $data = @unserialize($cacheData);
+      $data = @unserialize($cacheData, ['allowed_classes' => false]);
       if ($data === false || !isset($data['key'])) {
          return '';
       }
@@ -1394,7 +1398,7 @@ class PluginNextoolModuleManager {
          return false;
       }
 
-      $data = @unserialize($cacheData);
+      $data = @unserialize($cacheData, ['allowed_classes' => false]);
       if ($data === false || !isset($data['modules'])) {
          return false;
       }
@@ -1531,7 +1535,48 @@ class PluginNextoolModuleManager {
 
       $cacheFile = plugin_nextool_stateless_cache_path();
       $json = json_encode($statelessMap, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-      @file_put_contents($cacheFile, $json, LOCK_EX);
+      if ($json === false) {
+         $json = '{}';
+      }
+
+      // Evita escrita desnecessária, mas regrava caso o arquivo não seja gravável
+      // (ex.: foi criado por root). Isso permite “auto-cura” via tmp+rename.
+      $shouldWrite = true;
+      if (file_exists($cacheFile)) {
+         $current = @file_get_contents($cacheFile);
+         if ($current === $json && is_writable($cacheFile)) {
+            $shouldWrite = false;
+         }
+      }
+      if (!$shouldWrite) {
+         return;
+      }
+
+      // Escrita atômica (tmp + rename) para não depender de permissão no arquivo
+      // final (rename depende do diretório). Isso corrige casos de root:root.
+      $dir = dirname($cacheFile);
+      if (!is_dir($dir)) {
+         @mkdir($dir, 0755, true);
+      }
+
+      $tmpFile = @tempnam($dir, 'nextool_stateless_');
+      if ($tmpFile === false) {
+         @file_put_contents($cacheFile, $json, LOCK_EX);
+         return;
+      }
+
+      $written = @file_put_contents($tmpFile, $json, LOCK_EX);
+      if ($written === false) {
+         @unlink($tmpFile);
+         @file_put_contents($cacheFile, $json, LOCK_EX);
+         return;
+      }
+
+      @chmod($tmpFile, 0644);
+      if (!@rename($tmpFile, $cacheFile)) {
+         @file_put_contents($cacheFile, $json, LOCK_EX);
+         @unlink($tmpFile);
+      }
    }
 
    public function refreshModules() {

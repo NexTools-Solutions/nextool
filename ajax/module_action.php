@@ -30,10 +30,9 @@ if (!isset($_POST['_glpi_csrf_token'])) {
 }
 Session::validateCSRF($_POST['_glpi_csrf_token']);
 
-$action = $_POST['action'] ?? '';
-$moduleKey = $_POST['module'] ?? '';
-
-if (empty($action) || empty($moduleKey)) {
+$action = isset($_POST['action']) ? trim((string) $_POST['action']) : '';
+$moduleKeyRaw = isset($_POST['module']) ? trim((string) $_POST['module']) : '';
+if ($action === '' || $moduleKeyRaw === '') {
    http_response_code(400);
    echo json_encode([
       'success' => false,
@@ -41,6 +40,17 @@ if (empty($action) || empty($moduleKey)) {
    ]);
    exit;
 }
+
+// Defende contra path traversal / caracteres inesperados em chave de módulo.
+if (!preg_match('/^[a-z0-9_-]+$/i', $moduleKeyRaw)) {
+   http_response_code(400);
+   echo json_encode([
+      'success' => false,
+      'message' => 'Módulo inválido'
+   ]);
+   exit;
+}
+$moduleKey = strtolower($moduleKeyRaw);
 
 if (in_array($action, ['install', 'uninstall', 'enable', 'disable', 'update', 'download'], true)) {
    PluginNextoolPermissionManager::assertCanManageModule($moduleKey);

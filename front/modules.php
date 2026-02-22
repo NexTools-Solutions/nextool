@@ -92,6 +92,7 @@ if ($isStateless) {
 
 // Para arquivos PHP normais, inclui o GLPI normalmente
 include('../../../inc/includes.php');
+Session::checkLoginUser();
 
 // Declarar variáveis globais do GLPI
 global $CFG_GLPI;

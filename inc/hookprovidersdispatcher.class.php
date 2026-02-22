@@ -25,6 +25,19 @@ class PluginNextoolHookProvidersDispatcher {
    private static ?array $providers = null;
 
    /**
+    * Logger defensivo: evita derrubar o plugin se a API de log do GLPI mudar.
+    * GLPI 11 não expõe Toolbox::logWarning() em algumas versões/builds.
+    */
+   private static function logWarning(string $message): void {
+      if (class_exists('Toolbox') && method_exists('Toolbox', 'logInFile')) {
+         // Vai para /var/log/glpi/plugin_nextool.log
+         Toolbox::logInFile('plugin_nextool', $message . "\n");
+         return;
+      }
+      error_log($message);
+   }
+
+   /**
     * @return PluginNextoolHookProviderInterface[]
     */
    private static function getProviders(): array {
@@ -65,7 +78,7 @@ class PluginNextoolHookProvidersDispatcher {
             try {
                $provider = new $className();
             } catch (Throwable $e) {
-               Toolbox::logWarning('[NEXTOOL] Hook provider failed: ' . $className . ' – ' . $e->getMessage());
+               self::logWarning('[NEXTOOL] Hook provider failed: ' . $className . ' - ' . $e->getMessage());
                continue;
             }
             if ($provider instanceof PluginNextoolHookProviderInterface) {
@@ -87,7 +100,7 @@ class PluginNextoolHookProvidersDispatcher {
          try {
             $provider->registerClasses();
          } catch (Throwable $e) {
-            Toolbox::logWarning('[NEXTOOL] Hook provider registerClasses failed: ' . get_class($provider) . ' – ' . $e->getMessage());
+            self::logWarning('[NEXTOOL] Hook provider registerClasses failed: ' . get_class($provider) . ' - ' . $e->getMessage());
             continue;
          }
       }
@@ -103,7 +116,7 @@ class PluginNextoolHookProvidersDispatcher {
          try {
             $actions = array_merge($actions, $provider->getMassiveActions($type));
          } catch (Throwable $e) {
-            Toolbox::logWarning('[NEXTOOL] Hook provider getMassiveActions failed: ' . get_class($provider) . ' – ' . $e->getMessage());
+            self::logWarning('[NEXTOOL] Hook provider getMassiveActions failed: ' . get_class($provider) . ' - ' . $e->getMessage());
             continue;
          }
       }
@@ -117,7 +130,7 @@ class PluginNextoolHookProvidersDispatcher {
                return true;
             }
          } catch (Throwable $e) {
-            Toolbox::logWarning('[NEXTOOL] Hook provider massiveActionsFieldsDisplay failed: ' . get_class($provider) . ' – ' . $e->getMessage());
+            self::logWarning('[NEXTOOL] Hook provider massiveActionsFieldsDisplay failed: ' . get_class($provider) . ' - ' . $e->getMessage());
             continue;
          }
       }
@@ -132,7 +145,7 @@ class PluginNextoolHookProvidersDispatcher {
                return $result;
             }
          } catch (Throwable $e) {
-            Toolbox::logWarning('[NEXTOOL] Hook provider giveItem failed: ' . get_class($provider) . ' – ' . $e->getMessage());
+            self::logWarning('[NEXTOOL] Hook provider giveItem failed: ' . get_class($provider) . ' - ' . $e->getMessage());
             continue;
          }
       }

@@ -64,6 +64,10 @@ if (empty($moduleKey) || empty($filename)) {
 $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename($filename); // Remove caminhos (segurança)
 
+// Assets do plugin exigem sessão autenticada.
+require_once GLPI_ROOT . '/inc/includes.php';
+Session::checkLoginUser();
+
 // Verifica se módulo existe
 require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
 $modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;

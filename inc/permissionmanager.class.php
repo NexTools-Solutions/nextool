@@ -120,22 +120,24 @@ class PluginNextoolPermissionManager {
    /**
     * Verifica se o usuário tem permissão READ no módulo específico.
     * Usa apenas o bit READ do direito por módulo + bypass admin.
-    * NÃO faz fallback para permissões globais de visualização.
+    * Faz fallback para permissões globais de visualização.
     */
    public static function canViewModule(string $moduleKey): bool {
       $right = self::getModuleRightName($moduleKey);
-      return self::haveRight($right, READ)
+      return self::canViewModules()
+         || self::haveRight($right, READ)
          || self::hasGlobalAdminAccess();
    }
 
    /**
     * Verifica se o usuário tem permissão UPDATE no módulo específico.
     * Usa apenas o bit UPDATE do direito por módulo + bypass admin.
-    * NÃO faz fallback para permissões globais de gerenciamento.
+    * Faz fallback para permissões globais de gerenciamento.
     */
    public static function canManageModule(string $moduleKey): bool {
       $right = self::getModuleRightName($moduleKey);
-      return self::haveRight($right, UPDATE)
+      return self::canManageModules()
+         || self::haveRight($right, UPDATE)
          || self::hasGlobalAdminAccess();
    }
 

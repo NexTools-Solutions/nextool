@@ -1,172 +1,103 @@
-# NexTool – Plataforma de Módulos para GLPI 11
+# NexTool Solutions – Hub de Soluções para GLPI 10 e 11
 
-O **NexTool** é um plugin modular para o **GLPI 11** que centraliza diversos recursos em forma de módulos, todos acessíveis a partir de uma única interface dentro do GLPI.  
-Ele foi pensado para administradores de GLPI que querem **adicionar funcionalidades prontas** sem precisar instalar vários plugins separados.
+O **NexTool Solutions** é um hub de soluções dentro do GLPI: você habilita apenas o que precisa e mantém tudo centralizado em uma única interface, com instalação guiada e licenciamento integrado quando aplicável.
 
-**Uso sem módulos:** o plugin pode ser usado **sem baixar nenhum módulo** ou apenas com os que o administrador escolher. O núcleo é autocontido; o download de módulos opcionais ocorre **somente quando o administrador clica em Download/Instalar** no catálogo, dentro do GLPI. Os módulos opcionais são distribuídos pela nossa própria infraestrutura, via **HTTPS**, com **checksum SHA256** para verificação de integridade antes da instalação.
-
----
-
-## O que o NexTool Solutions faz!
-
-- **Catálogo único de módulos** dentro do GLPI (cards com nome, descrição, status e plano free/licenciados).
-- **Instalação e atualização guiada** dos módulos (Download → Instalar → Ativar).
-- **Integração com licenciamento**, liberando módulos licenciados conforme o plano contratado.
-- **Gestão de dados por módulo** (acessar/apagar dados pela própria interface do plugin).
+Importante: este projeto possui **linha para GLPI 11** e **linha para GLPI 10**. Se você usa GLPI 10, pode seguir normalmente (veja a seção “Versões”).
 
 ---
 
-## Módulos incluídos (visão geral)
+## Versões (GLPI 10 e GLPI 11)
 
-### AI Assist
+Este repositório (`RPGMais/nextool`) possui **duas linhas** do plugin NexTool:
 
-- Gera **resumos automáticos** e **sugestões de resposta** para tickets.
-- Analisa o **sentimento** com base no histórico recente do solicitante.
-- Integra com provedores de IA (OpenAI e Gemini) e permite escolha de modelo.
-- Exibe ações diretamente na timeline e na aba do chamado.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=nextool%5BGLPI_11%5D" target="_blank" rel="noopener"><strong>GLPI 11</strong>: branch <code>main</code> (esta linha)</a>
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=nextool%5BGLPI_10%5D" target="_blank" rel="noopener"><strong>GLPI 10</strong>: branch <code>glpi-10</code> (código e releases próprios)</a>
 
-**Benefício:** acelera o atendimento e melhora a priorização de chamados.
+---
 
-### Autentique
+### Módulos (GLPI 11)
 
-- Envia documentos vinculados aos tickets para assinatura digital.
-- Gerencia lista de signatários (quem precisa assinar).
-- Acompanha o status de cada assinatura em tempo real.
-- Integra com a plataforma Autentique.
-- Notifica no GLPI quando o documento é assinado.
+Links de filtro (uma página com todas as releases do módulo nesta linha):
 
-**Benefício:** elimina papel e agiliza processos que exigem assinatura formal.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Aaiassist%5BGLPI_11%5D" target="_blank" rel="noopener">AI Assist</a>  \
+  Descrição: resumos, sugestões e sinais de sentimento para agilizar a triagem de tickets.  \
+  Problema que resolve: atendimento lento e priorização inconsistente em filas grandes.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Aapprovalflow%5BGLPI_11%5D" target="_blank" rel="noopener">Approval Flow</a>  \
+  Descrição: fluxo de aprovações multinível, com rastreabilidade e ações automáticas por resultado.  \
+  Problema que resolve: aprovações “no improviso” sem controle, histórico e governança.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Aautentique%5BGLPI_11%5D" target="_blank" rel="noopener">Autentique</a>  \
+  Descrição: assinatura digital de documentos vinculados a tickets, com acompanhamento de status.  \
+  Problema que resolve: coleta de assinatura fora do GLPI e falta de rastreio do processo.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Acolumnresize%5BGLPI_11%5D" target="_blank" rel="noopener">Column Resize</a>  \
+  Descrição: ajusta e salva preferências de largura de colunas em telas do GLPI.  \
+  Problema que resolve: telas “apertadas” e perda de tempo ajustando colunas repetidamente.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Aestoque%5BGLPI_11%5D" target="_blank" rel="noopener">Estoque</a>  \
+  Descrição: registra consumo de insumos/itens diretamente nos tickets e melhora a rastreabilidade.  \
+  Problema que resolve: falta de controle sobre saída de materiais por atendimento.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Ageolocation%5BGLPI_11%5D" target="_blank" rel="noopener">Geolocation</a>  \
+  Descrição: captura localização em atendimentos e vincula evidências ao histórico do chamado.  \
+  Problema que resolve: ausência de comprovação/rastreio em atendimentos de campo.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Amailanalyzer%5BGLPI_11%5D" target="_blank" rel="noopener">Mail Analyzer</a>  \
+  Descrição: reduz ruído de e-mail e ajuda a evitar tickets duplicados gerados por cadeias.  \
+  Problema que resolve: duplicidade de chamados e aumento de volume por e-mails em CC.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Amailinteractions%5BGLPI_11%5D" target="_blank" rel="noopener">Mail Interactions</a>  \
+  Descrição: permite interações por e-mail (aprovar, responder, validar) com links seguros.  \
+  Problema que resolve: usuários que não acessam o portal, travando validações e fluxos.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Aorderservice%5BGLPI_11%5D" target="_blank" rel="noopener">Order Service</a>  \
+  Descrição: gera Ordem de Serviço (PDF) a partir do ticket com layout padronizado.  \
+  Problema que resolve: formalização manual e inconsistência de documentos entregues ao cliente.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Apendingsurvey%5BGLPI_11%5D" target="_blank" rel="noopener">Pending Survey</a>  \
+  Descrição: incentiva resposta de pesquisas e pode restringir novas aberturas quando aplicável.  \
+  Problema que resolve: baixa taxa de resposta e ausência de feedback para melhoria contínua.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Aruleinspector%5BGLPI_11%5D" target="_blank" rel="noopener">Rule Inspector</a>  \
+  Descrição: ajuda a inspecionar e depurar regras do GLPI com mais transparência.  \
+  Problema que resolve: troubleshooting demorado em regras complexas (e-mail, tickets, rotinas).
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Asignaturepad%5BGLPI_11%5D" target="_blank" rel="noopener">Signature Pad</a>  \
+  Descrição: coleta assinatura manual em PDF diretamente no navegador e vincula ao ticket.  \
+  Problema que resolve: coleta de assinatura em campo sem depender de ferramentas externas.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Asmartassign%5BGLPI_11%5D" target="_blank" rel="noopener">Smart Assign</a>  \
+  Descrição: distribui tickets automaticamente por regras (balanceamento, rodízio, categorias).  \
+  Problema que resolve: sobrecarga em alguns técnicos e filas mal distribuídas.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Atelegrambot%5BGLPI_11%5D" target="_blank" rel="noopener">Telegram Bot</a>  \
+  Descrição: integra notificações e interações com tickets via Telegram (quando habilitado).  \
+  Problema que resolve: falta de agilidade para alertas e acompanhamento fora do GLPI.
+- <a href="https://github.com/RPGMais/nextool-dev/releases?q=modulo%3Aticketflow%5BGLPI_11%5D" target="_blank" rel="noopener">Ticket Flow</a>  \
+  Descrição: automatiza fluxos de chamados e criação de tickets derivados por evento/categoria.  \
+  Problema que resolve: processos repetitivos que dependem de abertura manual de múltiplos tickets.
 
-### Mail Interactions
-
-- Permite aprovar/rejeitar validações por e-mail, sem o usuário precisar fazer login.
-- Envia pedidos de validação de solução e pesquisas de satisfação por e-mail.
-- Processa automaticamente as respostas no GLPI (links seguros).
-
-**Benefício:** usuários interagem com o suporte diretamente pelo e-mail, sem acessar o sistema.
-
-### Mail Analyzer
-
-- Evita criação de tickets duplicados a partir de cadeias de e-mail em CC.
-- Identifica respostas legítimas às notificações do GLPI.
-- Notifica remetentes quando um e-mail é recusado.
-
-**Benefício:** reduz ruído na caixa de entrada e mantém o GLPI mais limpo.
-
-### Order Service (Ordem de Serviço)
-
-- Gera um PDF de Ordem de Serviço dentro do chamado.
-- Permite configurar cabeçalho, logo e dados do prestador.
-- Exibe followups públicos e fluxo de aprovação quando existirem.
-
-**Benefício:** padroniza entregas e facilita a formalização com o cliente.
-
-### Geolocation
-
-- Captura localização geográfica diretamente do navegador.
-- Insere endereço e coordenadas em acompanhamentos/soluções.
-- Mantém histórico completo por ticket.
-
-**Benefício:** melhora rastreabilidade e evidências de atendimento em campo.
-
-### Pending Survey
-
-- Bloqueia a abertura de novos chamados se o usuário tiver pesquisa de satisfação pendente.
-- Garante que a pesquisa seja respondida antes de permitir novos tickets.
-- Exibe mensagem clara explicando o motivo do bloqueio.
-- Pode ser configurado por entidade/perfil.
-
-**Benefício:** aumenta a taxa de resposta das pesquisas e melhora a qualidade do feedback.
-
-### Smart Assign
-
-- Atribui tickets automaticamente por categoria, grupo ou regras definidas.
-- Modos de distribuição: **balanceamento** (distribui de forma mais equilibrada) ou **rodízio** (sequencial).
-- Evita sobrecarga em técnicos específicos e reduz tempo de atribuição manual.
-- Funciona em tempo real na criação do ticket.
-
-**Benefício:** distribui o trabalho de forma justa e automatizada, otimizando o fluxo de atendimento.
-
-### Signature Pad (Assinatura Manual)
-
-- Carrega um PDF padrão configurável como modelo de assinatura.
-- Gera link interno de assinatura (mouse ou touch) para coleta diretamente no navegador.
-- Salva o PDF assinado como documento vinculado ao chamado no GLPI.
-
-**Benefício:** permite coletar assinaturas manuais em campo sem depender de ferramentas externas.
-
-### Ticket Flow (Fluxo de Chamados)
-
-- Automatiza a abertura de chamados filhos com base em critérios configuráveis (categoria + evento).
-- Aciona modelos de chamado nativos do GLPI ao criar ou atualizar tickets.
-- Permite encadear fluxos para processos complexos com múltiplas etapas.
-
-**Benefício:** automatiza processos que dependem de chamados subsequentes, reduzindo trabalho manual.
-
-### Approval Flow (Escalonamento de Aprovação)
-
-- Define fluxos de aprovação multinível por categoria de chamado.
-- Modelo de dados em árvore: caminhos independentes para aprovação e recusa em cada nível.
-- Ações configuráveis por resultado: não fazer nada, solucionar, fechar ou escalonar para o próximo nível.
-- Hooks automáticos: criação de ticket aciona validação; resposta à validação executa a ação configurada.
-- Suporte a modelos de aprovação (ITILValidationTemplate) com targets por usuário e grupo.
-
-**Benefício:** automatiza fluxos de aprovação complexos com ramificação, eliminando escalonamentos manuais.
-
-### Gestão de Estoque
-
-- Debita insumos do estoque diretamente a partir de chamados.
-- Adiciona aba no Ticket e no Insumo (Consumable) para registrar saídas.
-- Rastreabilidade bidirecional: do chamado para o insumo e vice-versa.
-
-**Benefício:** controla o consumo de materiais vinculado a atendimentos, com rastreio completo.
+---
 
 ---
 
 ## Como o NexTool Solutions aparece no GLPI
 
-Depois de instalado e ativado, será exibida a aba **Configurar → Geral → NexTool Solutions** com:
+Depois de instalado e ativado, o **NexTool Solutions** aparece como um novo item de menu no GLPI (ao lado dos menus principais), com uma tela central que reúne:
 
-- O **Catálogo de Módulos** contendo cards com nome, descrição, status e plano free/licenciados, e botões para Download, Instalar/Ativar e Acessar/Apagar dados.
-- Uma aba de **Licença e status** do ambiente (plano, módulos disponíveis, status de validação).
+- Uma aba de **Módulos** contendo cards com nome, descrição, status e plano, e botões para Download, Instalar/Ativar e Configurações.
 - Uma aba de **Contato**, com canais oficiais de suporte e materiais de ajuda.
-- Uma aba de **Logs**, para acompanhar registros importantes do plugin (validações, downloads de módulos, etc.).
+- Uma aba de **Licenciamento** do ambiente (plano, módulos disponíveis, status de validação).
+- Uma aba de **Logs**, para acompanhar registros importantes do plugin.
 
----
+Fluxo rápido (administrador GLPI):
 
-## Visão rápida do fluxo de uso (administrador GLPI)
+1. Instalar e ativar o plugin NexTool pelo mecanismo padrão de plugins do GLPI.
+2. Acessar o item de menu **NexTool Solutions** no GLPI.
+3. Na aba **Licenciamento**, conferir o status do ambiente e clicar em **Sincronizar** (quando aplicável) para atualizar o catálogo.
+4. Na aba **Módulos**, escolher uma solução e usar **Download** e depois **Instalar/Ativar**.
+5. Quando aplicável, acessar **Configurações** para ajustar o comportamento da solução.
 
-1. **Instalar e ativar o plugin NexTool** pelo mecanismo padrão de plugins do GLPI.
-2. Acessar a tela de **configuração do NexTool** em **Configurar → Geral → NexTool Solutions**.
-3. Conferir o **status de licença** e o **identificador do ambiente**.
-4. Clicar em **Sincronizar** (quando aplicável) para atualizar o catálogo de módulos.
-5. Na tela de módulos, usar:
-   - **Download** + **Instalar / Ativar** para habilitar um módulo.
-   - **Acessar dados / Apagar dados** para gerenciar as informações de cada módulo.
-
-Módulos **FREE** ficam disponíveis mesmo sem licença ativa; módulos **licenciados** só aparecem liberados quando o plano do ambiente cobre aquele módulo.
-
----
-
-## Requisitos básicos
-
-- **GLPI 11**
-- **PHP 8.1+**
+Soluções **gratuitas** ficam disponíveis mesmo sem licença ativa; soluções **licenciadas** só aparecem liberadas quando o plano do ambiente cobre o módulo.
 
 ---
 
 ## Licença e modelo de distribuição
 
-Este projeto é um **hub de módulos para GLPI**.
+Este projeto é um **hub de soluções para GLPI**.
 
 - O **Hub** (este plugin) é distribuído sob a licença **GPL-3.0-or-later**.
-- Os **módulos** disponibilizados através do Hub podem ser:
-  - **gratuitos**, ou
-  - **licenciados**, com acesso mediante contratação/assinatura.
+- As soluções disponibilizadas através do Hub podem ser **gratuitas** ou **licenciadas**, com ativação conforme o plano contratado.
 
 Mesmo quando um módulo é licenciado, ele é entregue **com código-fonte aberto** e sob licença **GPLv3 ou compatível**.
-
-O pagamento refere-se ao **serviço de disponibilização, suporte e/ou conveniência**, e **não** impõe restrições adicionais às liberdades garantidas pela GPL.
 
 Em caso de conflito entre qualquer texto comercial e a licença GPLv3, **prevalece a GPLv3**.
 
@@ -174,19 +105,8 @@ Em caso de conflito entre qualquer texto comercial e a licença GPLv3, **prevale
 
 ## Privacidade e dados
 
-O Hub pode se conectar a um **servidor externo** para:
+O NexTool Solutions pode se conectar a um **servidor externo** para habilitar recursos como catálogo, licenciamento e distribuição das soluções.
 
-- listar módulos disponíveis;
-- baixar módulos e atualizações;
-- validar informações técnicas básicas (por exemplo: versão do GLPI, versão do Hub).
+O plugin não foi projetado para enviar conteúdo de chamados, senhas ou dados sensíveis dos usuários finais para o servidor do desenvolvedor.
 
-**O plugin não foi projetado para enviar conteúdo de chamados, senhas ou dados sensíveis dos usuários finais para o servidor do desenvolvedor.**
-
-Os dados eventualmente coletados (por exemplo: logs de acesso, IP, dados de contato do cliente) são tratados em conformidade com a LGPD/GDPR, conforme descrito na nossa Política de Privacidade:
-
-Antes de usar em produção, recomenda-se que você:
-
-- revise a Política de Privacidade;
-- verifique se o uso do Hub e dos módulos está em conformidade com as políticas internas da sua organização.
-
-Para detalhes jurídicos completos sobre licenciamento, redistribuição, privacidade e proteção de dados, consulte também o documento **[POLICIES_OF_USE.md](./POLICIES_OF_USE.md)** incluído na raiz deste plugin.
+Para detalhes completos de privacidade, licenciamento, redistribuição e políticas de uso, consulte **[POLICIES_OF_USE.md](./POLICIES_OF_USE.md)**.

@@ -21,7 +21,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '3.5.2');
+define('PLUGIN_NEXTOOL_VERSION', '3.5.6');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -59,19 +59,28 @@ function plugin_version_nextool() {
 /**
  * Hook executado durante o boot do GLPI, antes da sessão e da inicialização dos plugins.
  *
- * NÃO registra module_ajax.php como stateless no SessionManager. Se registrado,
- * o GLPI desabilita cookies (ini_set('session.use_cookies', '0')) e cria sessão
- * vazia a cada requisição — causando 401 "Sessão inválida" em todos os módulos
- * que precisam de autenticação (geolocation, aiassist, etc.).
+ * GLPI 11 (Symfony) aplica CSRF em qualquer POST não-stateless via CheckCsrfListener.
+ * Para permitir webhooks (stateless) em module_ajax.php, registramos o path do
+ * roteador como stateless no SessionManager para que o Kernel NÃO aplique CSRF.
  *
- * A decisão stateless é feita internamente pelo module_ajax.php via
- * plugin_nextool_stateless_files() para os poucos módulos que realmente precisam
- * (webhooks de mailinteractions/autentique).
+ * Importante: isso faz o GLPI desabilitar cookies e NÃO iniciar sessão por padrão
+ * nesse path. Para não quebrar módulos autenticados (geolocation, aiassist, etc.),
+ * o próprio module_ajax.php reabilita cookies, inicia a sessão e faz check CSRF
+ * SOMENTE quando o arquivo do módulo NÃO é stateless.
+ *
+ * A decisão do que é stateless continua sendo feita internamente pelo module_ajax.php
+ * via plugin_nextool_stateless_files() (whitelist explícita).
  *
  * O Firewall recebe STRATEGY_NO_CHECK para module_ajax.php, permitindo que
  * o próprio roteador faça a validação (sessão ou stateless conforme o módulo).
  */
 function plugin_nextool_boot() {
+   // Necessário para webhooks (POST) não caírem no CheckCsrfListener do Symfony.
+   \Glpi\Http\SessionManager::registerPluginStatelessPath(
+      'nextool',
+      '#^/ajax/module_ajax\\.php$#'
+   );
+
    \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
       'nextool',
       '#^/ajax/module_ajax\\.php#',
