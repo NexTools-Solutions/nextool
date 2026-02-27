@@ -5,7 +5,7 @@
  * Classe responsável pelas configurações globais do plugin Nextools no GLPI:
  * identificador, distribuição remota, integrações com ContainerAPI, etc.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

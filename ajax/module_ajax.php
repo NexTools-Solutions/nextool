@@ -6,7 +6,7 @@
  * Roteia requisições para modules/[nome]/ajax/ e soluciona o roteamento do Symfony.
  * Uso: module_ajax.php?module=[module_key]&file=[arquivo].php
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

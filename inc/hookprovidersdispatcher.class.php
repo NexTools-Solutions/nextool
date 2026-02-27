@@ -6,7 +6,7 @@
  * Módulos ativos expõem providers via BaseModule::getHookProviders(); o dispatcher
  * instancia e delega. Evita acoplamento com módulos específicos.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 if (!defined('GLPI_ROOT')) {

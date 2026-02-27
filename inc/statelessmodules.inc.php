@@ -6,7 +6,7 @@
  * Usado por setup.php (boot) e module_ajax.php para decidir se inclui includes.php.
  * Carregado antes da sessão GLPI — não pode depender de Session, $DB ou classes GLPI.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

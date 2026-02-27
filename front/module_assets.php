@@ -6,7 +6,7 @@
  * Serve assets sem passar pelos hooks do GLPI. Aceita PATH_INFO ou query string
  * (module=...&file=...). Funciona com qualquer módulo.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

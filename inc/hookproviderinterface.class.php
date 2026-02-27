@@ -6,7 +6,7 @@
  * (Search/giveItem, MassiveActions, MassiveActionsFieldsDisplay). O plugin base
  * mantém as funções plugin_nextool_* e delega para providers dos módulos ativos.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 if (!defined('GLPI_ROOT')) {

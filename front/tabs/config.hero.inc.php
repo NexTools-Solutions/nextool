@@ -5,7 +5,7 @@
  * Bloco hero compartilhado nas abas da configuração: exibe plano atual,
  * status da licença e ações rápidas (sincronizar, validar).
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  *
  * Variáveis esperadas: $heroPlanBadgeClass, $heroPlanLabel, $heroPlanDescription, $contractActive, $isFreeTier, $licenseStatusCode,

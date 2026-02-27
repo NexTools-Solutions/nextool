@@ -6,7 +6,7 @@
  * client_identifier, endpoint do ContainerAPI, secret, status da última validação
  * e cache de módulos.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

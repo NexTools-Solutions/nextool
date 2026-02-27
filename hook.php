@@ -4,7 +4,7 @@
  *
  * Registro de hooks do plugin: instalação, desinstalação, MassiveActions, giveItem, menus.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 
@@ -243,48 +243,63 @@ function plugin_nextool_redefine_menus($menu) {
       ];
    }
 
-   // Abas dinâmicas: cada módulo instalado com config (exceto standalone)
-   // Cada aba de módulo só aparece se o perfil tem READ no módulo
-   $moduleConfigTabs = PluginNextoolMainConfig::getModuleConfigTabs();
-   foreach ($moduleConfigTabs as $tabNum => $meta) {
-      $moduleKey = $meta['module_key'] ?? '';
-      if ($moduleKey !== '' && !PluginNextoolPermissionManager::canViewModule($moduleKey) && !$hasGlobalAdmin) {
-         continue;
+   $modManager = null;
+   try {
+      if (class_exists('PluginNextoolModuleManager')) {
+         $modManager = PluginNextoolModuleManager::getInstance();
       }
-      $key = 'module_' . $moduleKey;
-      $nextoolsItem['content'][$key] = [
-         'title' => $meta['name'],
-         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$' . $tabNum,
-         'icon'  => $meta['icon'],
-      ];
+   } catch (Throwable $e) {
+      Toolbox::logInFile('plugin_nextool', 'redefine_menus: ModuleManager init failed: ' . $e->getMessage());
+   }
+
+   // Abas dinâmicas: cada módulo instalado com config (exceto standalone)
+   // Cada aba de módulo só aparece se o perfil tem READ no módulo e o módulo está ativo
+   $moduleConfigTabs = [];
+   if ($modManager !== null) {
+      $moduleConfigTabs = PluginNextoolMainConfig::getModuleConfigTabs();
+      foreach ($moduleConfigTabs as $tabNum => $meta) {
+         $moduleKey = $meta['module_key'] ?? '';
+         if ($moduleKey !== '') {
+            $mod = $modManager->getModule($moduleKey);
+            if ($mod === null || !$mod->isEnabled()) {
+               continue;
+            }
+         }
+         if ($moduleKey !== '' && !PluginNextoolPermissionManager::canViewModule($moduleKey) && !$hasGlobalAdmin) {
+            continue;
+         }
+         $key = 'module_' . $moduleKey;
+         $nextoolsItem['content'][$key] = [
+            'title' => $meta['name'],
+            'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$' . $tabNum,
+            'icon'  => $meta['icon'],
+         ];
+      }
    }
 
    // Módulos standalone instalados: submenu aponta para getConfigPage()
-   // Aparece no menu quando instalado (mesmo desativado); some apenas ao desinstalar.
+   // Aparece no menu quando instalado E ativo.
    try {
-      if (class_exists('PluginNextoolModuleManager')) {
-         $standaloneManager = PluginNextoolModuleManager::getInstance();
-         if ($standaloneManager !== null) {
-            foreach ($standaloneManager->getAllModules() as $mk => $mod) {
-               if (!$mod->isInstalled()) {
+      if ($modManager !== null) {
+         foreach ($modManager->getAllModules() as $mk => $mod) {
+            if (!$mod->isInstalled() || !$mod->isEnabled()) {
+               continue;
+            }
+            if (method_exists($mod, 'usesStandaloneConfig') && $mod->usesStandaloneConfig() && $mod->hasConfig()) {
+               if (!PluginNextoolPermissionManager::canViewModule($mk)) {
                   continue;
                }
-               if (method_exists($mod, 'usesStandaloneConfig') && $mod->usesStandaloneConfig() && $mod->hasConfig()) {
-                  if (!PluginNextoolPermissionManager::canViewModule($mk)) {
-                     continue;
-                  }
-                  $key = 'module_' . $mk;
-                  $nextoolsItem['content'][$key] = [
-                     'title' => $mod->getName(),
-                     'page'  => $mod->getConfigPage(),
-                     'icon'  => $mod->getIcon(),
-                  ];
-               }
+               $key = 'module_' . $mk;
+               $nextoolsItem['content'][$key] = [
+                  'title' => $mod->getName(),
+                  'page'  => $mod->getConfigPage(),
+                  'icon'  => $mod->getIcon(),
+               ];
             }
          }
       }
    } catch (Throwable $e) {
-      // Silenciar erros na construção do menu
+      Toolbox::logInFile('plugin_nextool', 'redefine_menus: standalone modules failed: ' . $e->getMessage());
    }
 
    // Ordem fixa: Módulos primeiro, depois Contato, Licenciamento, Logs, depois módulos

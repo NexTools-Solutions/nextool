@@ -5,7 +5,7 @@
  * Endpoint seguro para leitura do segredo HMAC usado na assinatura de requisições
  * ao ContainerAPI. Uso exclusivo via AJAX (ex.: módulos que precisam do secret).
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

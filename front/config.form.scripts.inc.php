@@ -4,7 +4,7 @@
  *
  * Scripts compartilhados do formulário de configuração (contato, abas, validação).
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 ?>

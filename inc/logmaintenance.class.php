@@ -5,7 +5,7 @@
  * Rotinas de manutenção de logs e auditoria do Nextools, responsáveis por purgar
  * registros antigos e evitar crescimento descontrolado das tabelas de histórico.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

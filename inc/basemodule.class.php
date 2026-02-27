@@ -6,7 +6,7 @@
  * Todos os módulos devem estender esta classe e implementar os métodos abstratos.
  * Define a interface padrão que todos os módulos seguem.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

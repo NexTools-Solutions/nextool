@@ -6,7 +6,7 @@
  * decide quando usar cache ou chamar a API remota (ContainerAPI), atualiza o cache
  * local e registra tentativas em glpi_plugin_nextool_main_validation_attempts.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

@@ -4,7 +4,7 @@
  *
  * Renderiza a aba Licenciamento da configuração (status, ambiente, módulos liberados).
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 ?>

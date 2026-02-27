@@ -4,7 +4,7 @@
  *
  * Wrapper de asset do módulo AI Assist para GLPI 10. Delega para module_assets.php.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

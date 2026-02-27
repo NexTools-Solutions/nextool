@@ -6,7 +6,7 @@
  * nome, versão, status, ícone, autor, billing tier.
  * Uso: incluir via displayTabContentForItem com $GLOBALS['nextool_about_module_key'] definido.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

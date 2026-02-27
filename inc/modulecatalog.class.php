@@ -7,7 +7,7 @@
  * ou botão Sincronizar). Novos módulos aparecem após atualização no ritecadmin
  * e nova sincronização, sem precisar atualizar o plugin.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

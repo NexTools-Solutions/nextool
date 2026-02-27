@@ -4,7 +4,7 @@
  *
  * Aba em Perfis do GLPI para configurar direitos do Nextools por perfil.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

@@ -5,7 +5,7 @@
  * Página standalone de configuração do plugin com abas verticais: Módulos,
  * Contato, Licenciamento, Logs e abas dinâmicas por módulo.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

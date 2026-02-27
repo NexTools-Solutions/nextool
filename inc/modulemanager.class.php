@@ -6,7 +6,7 @@
  * (com cache), carregar módulos ativos, instalação/desinstalação, ativar/desativar
  * e verificar dependências.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

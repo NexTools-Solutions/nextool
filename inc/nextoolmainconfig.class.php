@@ -5,7 +5,7 @@
  * Item type nativo com abas verticais: Módulos, Contato, Licenciamento, Logs
  * e abas dinâmicas por módulo instalado com página de configuração.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 
@@ -89,7 +89,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
 
       $iterator = $DB->request([
          'FROM'  => $table,
-         'WHERE' => ['is_installed' => 1],
+         'WHERE' => ['is_installed' => 1, 'is_enabled' => 1],
          'ORDER' => 'name',
       ]);
 

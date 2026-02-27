@@ -4,7 +4,7 @@
  *
  * Auditoria de ações em módulos (instalação, ativação, dados) em glpi_plugin_nextool_main_module_audit.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

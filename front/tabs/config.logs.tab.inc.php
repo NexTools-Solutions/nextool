@@ -5,7 +5,7 @@
  * Renderiza a aba Logs da configuração do Nextools (tentativas de validação,
  * erros e eventos relevantes).
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 ?>

@@ -6,7 +6,7 @@
  * informações sobre planos, módulos e suporte.
  * GLPI 10: CSRF validado automaticamente para rotas /ajax/ (header X-Glpi-Csrf-Token).
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

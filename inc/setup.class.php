@@ -5,7 +5,7 @@
  * Classe de setup responsável por adicionar a aba do Nextools em
  * "Configurar → Geral" e integrar o formulário principal de configuração.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

@@ -4,7 +4,7 @@
  *
  * Dispatcher central para hooks de Ticket. Módulos registram em onInit(); setup registra os dispatch após loadActiveModules().
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

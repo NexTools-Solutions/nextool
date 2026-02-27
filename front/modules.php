@@ -6,7 +6,7 @@
  * front dos módulos e soluciona o roteamento do Symfony no GLPI 11 que intercepta
  * URLs diretas. Uso: modules.php?module=[module_key]&file=[arquivo].php
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

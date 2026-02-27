@@ -5,7 +5,7 @@
  * Processa POST do formulário de configuração: salvar opções, validar licença,
  * regenerar HMAC, aceitar políticas. Requer sessão e CSRF (validado pelo core no GLPI 10).
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

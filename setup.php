@@ -6,7 +6,7 @@
  * BaseModule (classe base), módulos em modules/[nome]/[nome].class.php.
  * Documentação em docs/.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 
@@ -17,7 +17,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '3.6.0');
+define('PLUGIN_NEXTOOL_VERSION', '3.6.5');
 
 /** GLPI mínimo e máximo suportados */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');

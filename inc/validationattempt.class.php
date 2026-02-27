@@ -6,7 +6,7 @@
  * Armazena histórico das chamadas à API administrativa (ContainerAPI):
  * data/hora, resultado, mensagem, código HTTP, tempo de resposta.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

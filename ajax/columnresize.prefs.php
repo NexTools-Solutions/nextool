@@ -14,6 +14,9 @@
  *
  * POST: path, widths_json, reduce_state_json (form urlencoded ou JSON body)
  *   -> { ok: true|false }
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 
 include('../../../inc/includes.php');

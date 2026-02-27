@@ -5,7 +5,7 @@
  * Funções utilitárias para operações de arquivo (ex.: remoção recursiva de
  * diretórios). Centraliza lógica usada em hook.php e distributionclient.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

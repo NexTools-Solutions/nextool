@@ -5,7 +5,7 @@
  * Tela administrativa que lista as tabelas de dados associadas a um módulo
  * do Nextools, permitindo inspeção e apagamento seguro via UI.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 

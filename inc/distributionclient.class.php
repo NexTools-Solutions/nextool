@@ -5,7 +5,7 @@
  * Cliente responsável por conversar com o ContainerAPI: manifestos de módulos,
  * download de pacotes, bootstrap de segredo HMAC, etc.
  *
- * @author Richard Loureiro - https://linkedin.com/in/richard-ti/
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
  */
 
