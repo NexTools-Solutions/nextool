@@ -7,7 +7,7 @@
  * remota de módulos (manifestos, download de pacotes, bootstrap de
  * segredo HMAC, etc.).
  * -------------------------------------------------------------------------
- * @author    Richard Loureiro
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
  * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
  * @link      https://linkedin.com/in/richard-ti
@@ -398,8 +398,12 @@ class PluginNextoolDistributionClient {
 
       if (!is_writable($dir)) {
          if (!@chmod($dir, 0775)) {
+            $parent = dirname($dir);
+            $hint = $parent !== $dir && $parent !== '.'
+               ? sprintf(__(' Ajuste o proprietário em toda a árvore, ex.: chown -R %s %s', 'nextool'), 'www-data:www-data', $parent)
+               : sprintf(__(' Ajuste o proprietário/permissões (ex.: chown %s).', 'nextool'), 'www-data:www-data');
             throw new RuntimeException(sprintf(
-               __('O diretório %s não é gravável pelo GLPI. Ajuste o proprietário/permissões (ex.: chown apache:apache).', 'nextool'),
+               __('O diretório %s não é gravável pelo GLPI (pode ter sido criado por outro usuário, ex.: root).', 'nextool') . $hint,
                $dir
             ));
          }

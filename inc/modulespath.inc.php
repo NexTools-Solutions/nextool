@@ -6,7 +6,9 @@
  * Define NEXTOOL_MODULES_DIR e NEXTOOL_DOC_DIR para que o plugin grave
  * módulos baixados em files/_plugins/nextool/ (sem pedir permissão em plugins/).
  * Incluir este arquivo antes de usar os paths (setup.php, hook.php, module_ajax, etc.).
- * -------------------------------------------------------------------------
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT') || defined('NEXTOOL_MODULES_DIR')) {

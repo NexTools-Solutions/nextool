@@ -7,7 +7,7 @@
  * Desinstalação: sql/uninstall.sql (tabelas operacionais), remoção de
  * diretórios dos módulos baixados. MassiveActions, giveItem, redefine_menus.
  * -------------------------------------------------------------------------
- * @author    Richard Loureiro
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
  * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
  * @link      https://linkedin.com/in/richard-ti
@@ -249,11 +249,26 @@ function plugin_nextool_redefine_menus($menu) {
       ];
    }
 
+   $modManager = null;
+   try {
+      if (class_exists('PluginNextoolModuleManager')) {
+         $modManager = PluginNextoolModuleManager::getInstance();
+      }
+   } catch (Throwable $e) {}
+
    // Abas dinâmicas: cada módulo instalado com config (exceto standalone)
-   // Cada aba de módulo só aparece se o perfil tem READ no módulo
+   // Cada aba de módulo só aparece se o perfil tem READ no módulo e o módulo está ativo
    $moduleConfigTabs = PluginNextoolMainConfig::getModuleConfigTabs();
    foreach ($moduleConfigTabs as $tabNum => $meta) {
       $moduleKey = $meta['module_key'] ?? '';
+
+      if ($modManager !== null && $moduleKey !== '') {
+         $mod = $modManager->getModule($moduleKey);
+         if ($mod && !$mod->isEnabled()) {
+            continue;
+         }
+      }
+
       if ($moduleKey !== '' && !PluginNextoolPermissionManager::canViewModule($moduleKey) && !$hasGlobalAdmin) {
          continue;
       }
@@ -266,31 +281,28 @@ function plugin_nextool_redefine_menus($menu) {
    }
 
    // Módulos standalone instalados: submenu aponta para getConfigPage()
-   // Aparece no menu quando instalado (mesmo desativado); some apenas ao desinstalar.
-   try {
-      if (class_exists('PluginNextoolModuleManager')) {
-         $standaloneManager = PluginNextoolModuleManager::getInstance();
-         if ($standaloneManager !== null) {
-            foreach ($standaloneManager->getAllModules() as $mk => $mod) {
-               if (!$mod->isInstalled()) {
+   // Aparece no menu quando instalado E ativo.
+   if ($modManager !== null) {
+      try {
+         foreach ($modManager->getAllModules() as $mk => $mod) {
+            if (!$mod->isInstalled() || !$mod->isEnabled()) {
+               continue;
+            }
+            if (method_exists($mod, 'usesStandaloneConfig') && $mod->usesStandaloneConfig() && $mod->hasConfig()) {
+               if (!PluginNextoolPermissionManager::canViewModule($mk)) {
                   continue;
                }
-               if (method_exists($mod, 'usesStandaloneConfig') && $mod->usesStandaloneConfig() && $mod->hasConfig()) {
-                  if (!PluginNextoolPermissionManager::canViewModule($mk)) {
-                     continue;
-                  }
-                  $key = 'module_' . $mk;
-                  $nextoolsItem['content'][$key] = [
-                     'title' => $mod->getName(),
-                     'page'  => $mod->getConfigPage(),
-                     'icon'  => $mod->getIcon(),
-                  ];
-               }
+               $key = 'module_' . $mk;
+               $nextoolsItem['content'][$key] = [
+                  'title' => $mod->getName(),
+                  'page'  => $mod->getConfigPage(),
+                  'icon'  => $mod->getIcon(),
+               ];
             }
          }
+      } catch (Throwable $e) {
+         // Silenciar erros na construção do menu
       }
-   } catch (Throwable $e) {
-      // Silenciar erros na construção do menu
    }
 
    // Ordem fixa: Módulos primeiro, depois Contato, Licenciamento, Logs, depois módulos

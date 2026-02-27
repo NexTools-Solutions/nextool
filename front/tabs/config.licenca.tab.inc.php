@@ -6,6 +6,9 @@
  * $licenseStatusCode, $config, $distributionBaseUrl, $distributionClientIdentifier,
  * $distributionClientSecret, $hmacSecretRow, $allowedModules, $licenseWarnings,
  * $canManageAdminTabs.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 ?>
 
@@ -198,7 +201,7 @@
                                        <div class="d-flex flex-wrap gap-2 mt-2">
                                           <button type="button"
                                                  class="btn btn-outline-primary btn-sm"
-                                                 data-secret-endpoint="<?php echo Html::entities_deep(Plugin::getWebDir('nextool') . '/front/hmac_secret.php'); ?>"
+                                                 data-secret-endpoint="<?php echo Html::entities_deep(Plugin::getWebDir('nextool') . '/ajax/hmac_secret.php'); ?>"
                                                  onclick="nextoolCopyHmacSecret(this);">
                                              <i class="ti ti-copy me-1"></i><?php echo __('Copiar chave', 'nextool'); ?>
                                           </button>

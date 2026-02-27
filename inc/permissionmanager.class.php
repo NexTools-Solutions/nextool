@@ -7,7 +7,7 @@
  * utilizados pelo Nextool. Centraliza a definição dos direitos e expõe
  * helpers reutilizáveis na UI e nos endpoints.
  * -------------------------------------------------------------------------
- * @author    Richard Loureiro
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
  * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
  * @link      https://linkedin.com/in/richard-ti
@@ -273,8 +273,21 @@ class PluginNextoolPermissionManager {
    private static function ensureRightExists(string $rightName, Migration $migration, array $inherit = []): bool {
       $isNew = false;
       if (!self::rightExists($rightName)) {
-         ProfileRight::addProfileRights([$rightName]);
-         $isNew = true;
+         try {
+            ProfileRight::addProfileRights([$rightName]);
+            $isNew = true;
+         } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            $code = method_exists($e, 'getCode') ? (int) $e->getCode() : 0;
+            // 1062 = Duplicate entry (concorrência ou direito já criado para parte dos perfis)
+            if ($code !== 1062 && strpos($msg, '1062') === false && strpos($msg, 'Duplicate entry') === false) {
+               throw $e;
+            }
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               'PermissionManager: direito %s já existia em glpi_profilerights (1062 ignorado).',
+               $rightName
+            ) . "\n");
+         }
       }
 
       if ($isNew) {

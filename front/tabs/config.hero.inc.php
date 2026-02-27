@@ -15,6 +15,9 @@
  * - $nextoolHeroDisableSync (bool) desabilita botão Sincronizar
  * - $nextoolHeroHideSync (bool) oculta botão Sincronizar
  * - $nextoolHeroForcetab (string) forcetab de retorno após sincronização
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 
 $nextoolHeroWithMarginTop = !empty($nextoolHeroWithMarginTop);

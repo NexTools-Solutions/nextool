@@ -7,6 +7,9 @@
  *
  * Variáveis esperadas via $GLOBALS:
  *   'nextool_about_module_key' => string (module_key do módulo)
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 
 if (!defined('GLPI_ROOT')) {

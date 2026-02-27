@@ -4,6 +4,9 @@
  * Contexto/variáveis esperadas: $nextool_is_standalone, $nextool_standalone_output_tab,
  * $canViewAdminTabs, $firstTabKey, $nextool_hero_standalone, $distributionConfigured,
  * $distributionClientIdentifier, $contactModuleOptions, $canManageAdminTabs.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 ?>
 
@@ -41,7 +44,7 @@
          <?php endif; ?>
 
          <form id="nextool-contact-form"
-               action="<?php echo Plugin::getWebDir('nextool') . '/front/contact.form.php'; ?>"
+               action="<?php echo Plugin::getWebDir('nextool') . '/ajax/contact.form.php'; ?>"
                method="post"
                class="needs-validation"
                novalidate>

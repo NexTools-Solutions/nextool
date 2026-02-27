@@ -6,7 +6,7 @@
  * Processa POST do formulário de configuração: salvar opções, validar licença,
  * regenerar HMAC, aceitar políticas. Requer sessão e CSRF.
  * -------------------------------------------------------------------------
- * @author    Richard Loureiro
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
  * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
  * @link      https://linkedin.com/in/richard-ti
@@ -38,15 +38,8 @@ function plugin_nextool_redirect_after_action(): void
    Html::back();
 }
 
-// Validação CSRF para todas as ações POST (não afeta endpoints stateless dos módulos)
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-   if (!isset($_POST['_glpi_csrf_token'])) {
-      Session::addMessageAfterRedirect(__('Token CSRF ausente.', 'nextool'), false, ERROR);
-      plugin_nextool_redirect_after_action();
-      exit;
-   }
-   Session::validateCSRF($_POST['_glpi_csrf_token']);
-}
+// CSRF no GLPI 10 e 11:
+// O core valida automaticamente no `inc/includes.php` para qualquer POST.
 
 // Inclui classes adicionais
 require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';

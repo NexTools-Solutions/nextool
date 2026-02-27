@@ -1,3 +1,16 @@
+Nextool Plugin for GLPI
+Copyright (C) NexTool Solutions / Richard Loureiro
+
+This distribution includes or is based on the following works:
+
+- SmartAssign module: based on Round Robin plugin for GLPI (Iniziativa). Licensed under GPL-3.0.
+- MailAnalyzer module: based on Mail Analyzer GLPI Plugin (tomolimo). Licensed under GPL.
+- TelegramBot module: based on Telegram Bot for GLPI (pluginsGLPI community). Licensed under GPLv3.
+- ColumnResize module: based on Colresize plugin for GLPI (Olivier Moron, Juan Carlos Acosta Perabá). Licensed under GPLv2+.
+
+For a summary of third-party attributions, see the NOTICE file in the root of this distribution.
+For the full license of this distribution, see the GNU General Public License v3 text below.
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 

@@ -19,7 +19,7 @@
  * - Se o cache não existir (primeira instalação), retorna array vazio.
  * - O ModuleManager regenera o cache toda vez que discoverModules() roda.
  * -------------------------------------------------------------------------
- * @author    Richard Loureiro
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
  * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
  * @link      https://linkedin.com/in/richard-ti

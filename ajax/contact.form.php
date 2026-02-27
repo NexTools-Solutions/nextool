@@ -1,25 +1,38 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Contact Form Endpoint
- * -------------------------------------------------------------------------
- * Endpoint AJAX para envio do formulário de contato do NexTool Solutions,
- * usado para solicitar informações sobre planos, módulos e suporte.
- * -------------------------------------------------------------------------
+ * Nextools - Contact Form Endpoint (AJAX)
+ *
+ * Endpoint para envio do formulário de contato do Nextools, usado para solicitar
+ * informações sobre planos, módulos e suporte.
+ * GLPI 10: CSRF validado automaticamente para rotas /ajax/ (header X-Glpi-Csrf-Token).
+ *
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * @license GPLv3+
  */
 
-include ('../../../inc/includes.php');
+include('../../../inc/includes.php');
 
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=UTF-8');
 
-Session::checkRight("config", READ);
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-PluginNextoolPermissionManager::assertCanManageAdminTabs();
+if (!Session::getLoginUserID()) {
+   http_response_code(403);
+   echo json_encode([
+      'success' => false,
+      'message' => __('Sessão inválida.', 'nextool'),
+   ]);
+   exit;
+}
+
+if (!PluginNextoolPermissionManager::canManageAdminTabs()) {
+   http_response_code(403);
+   echo json_encode([
+      'success' => false,
+      'message' => __('Você não tem permissão para enviar este contato.', 'nextool'),
+   ]);
+   exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
    echo json_encode([
       'success' => false,
@@ -27,17 +40,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
    ]);
    exit;
 }
-if (!isset($_POST['_glpi_csrf_token'])) {
-   echo json_encode([
-      'success' => false,
-      'message' => __('Token CSRF ausente.', 'nextool'),
-   ]);
-   exit;
-}
-Session::validateCSRF($_POST['_glpi_csrf_token']);
+
+// CSRF: o GLPI valida automaticamente em inc/includes.php.
+// Não revalidar aqui com Session::checkCSRF()/validateCSRF(), pois essas rotinas
+// podem renderizar HTML de acesso negado e quebrar o contrato JSON do endpoint.
 
 require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
 $config = PluginNextoolConfig::getConfig();
 
@@ -151,9 +159,9 @@ try {
    $response = $client->submitContactLead($payload);
    $ticketId = $response['ticket_id'] ?? null;
    echo json_encode([
-      'success' => true,
+      'success'   => true,
       'ticket_id' => $ticketId,
-      'message' => __('Contato enviado com sucesso! Nossa equipe retornará em breve.', 'nextool'),
+      'message'   => __('Contato enviado com sucesso! Nossa equipe retornará em breve.', 'nextool'),
    ]);
 } catch (Throwable $e) {
    $rawMessage = (string)$e->getMessage();

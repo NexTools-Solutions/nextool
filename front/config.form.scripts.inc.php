@@ -1,16 +1,11 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Config Form Scripts
- * -------------------------------------------------------------------------
- * Scripts compartilhados do formulário de configuração (contato, abas,
- * validação). Incluído por config.form.php (modo standalone e full).
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Config Form Scripts
+ *
+ * Scripts compartilhados do formulário de configuração (contato, abas, validação).
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 ?>
 <script type="text/javascript">
@@ -38,137 +33,94 @@ if (document.readyState === 'loading') {
 }
 document.addEventListener('glpi.load', nextoolActivateDefaultTab);
 
-function nextoolExtractMainConfigForcetab(value) {
-   if (!value) return '';
-   var decoded = String(value);
-   try {
-      decoded = decodeURIComponent(decoded);
-   } catch (e) {
-      // mantém valor bruto quando não for URI-encoded
+function nextoolGetAjaxCsrfToken() {
+   // GLPI 10 expõe getAjaxCsrfToken() via common.js; manter fallback por segurança.
+   if (typeof window.getAjaxCsrfToken === 'function') {
+      return window.getAjaxCsrfToken();
    }
-   var explicitMatch = decoded.match(/PluginNextoolMainConfig\$\d+/);
-   if (explicitMatch) {
-      return explicitMatch[0];
-   }
-
-   // IDs/panes do GLPI (ex.: tab-PluginNextoolMainConfig_4-123456789)
-   var glpiPaneMatch = decoded.match(/PluginNextoolMainConfig_(\d+)/);
-   if (glpiPaneMatch && glpiPaneMatch[1]) {
-      return 'PluginNextoolMainConfig$' + glpiPaneMatch[1];
-   }
-
-   // Mapeamento das abas internas do config.form.php (modo não-standalone)
-   var normalized = decoded.toLowerCase();
-   if (normalized.indexOf('rt-tab-modulos') !== -1) return 'PluginNextoolMainConfig$1';
-   if (normalized.indexOf('rt-tab-contato') !== -1) return 'PluginNextoolMainConfig$2';
-   if (normalized.indexOf('rt-tab-licenca') !== -1) return 'PluginNextoolMainConfig$3';
-   if (normalized.indexOf('rt-tab-logs') !== -1) return 'PluginNextoolMainConfig$4';
-
-   return '';
+   var meta = document.querySelector('meta[property="glpi:csrf_token"]');
+   return meta ? meta.getAttribute('content') : '';
 }
 
-function nextoolResolveActiveForcetab() {
-   var candidates = [];
+function nextoolInitModuleActions() {
+   if (document.documentElement.dataset.nextoolModuleActionsBound === '1') return;
+   document.documentElement.dataset.nextoolModuleActionsBound = '1';
 
-   // 1) Aba ativa no bloco interno (config.form.php em modo não-standalone)
-   var internalActiveTab = document.querySelector('#nextool-config-tabs .nav-link.active');
-   if (internalActiveTab) {
-      candidates.push(internalActiveTab.getAttribute('data-nextool-forcetab'));
-      candidates.push(internalActiveTab.getAttribute('data-bs-target'));
-      candidates.push(internalActiveTab.getAttribute('href'));
-      candidates.push(internalActiveTab.getAttribute('id'));
-   }
+   var endpoint = <?php echo json_encode(Plugin::getWebDir('nextool') . '/ajax/module_action.php'); ?>;
 
-   // 2) Aba ativa nativa do GLPI (standalone nextoolconfig.form.php)
-   var glpiActiveTab = document.querySelector('[role="tab"][aria-selected="true"], .nav-tabs .nav-link.active');
-   if (glpiActiveTab) {
-      candidates.push(glpiActiveTab.getAttribute('data-glpi-tab'));
-      candidates.push(glpiActiveTab.getAttribute('data-tab'));
-      candidates.push(glpiActiveTab.getAttribute('data-bs-target'));
-      candidates.push(glpiActiveTab.getAttribute('href'));
-      candidates.push(glpiActiveTab.getAttribute('id'));
-   }
+   document.addEventListener('click', function (event) {
+      var btn = event.target && typeof event.target.closest === 'function'
+         ? event.target.closest('button.nextool-module-action')
+         : null;
+      if (!btn) return;
 
-   // 3) Query string atual (fallback)
-   try {
-      var params = new URLSearchParams(window.location.search);
-      candidates.push(params.get('forcetab'));
-      candidates.push(params.get('_glpi_tab'));
-   } catch (e) {
-      // sem fallback adicional
-   }
+      event.preventDefault();
+      event.stopPropagation();
 
-   for (var i = 0; i < candidates.length; i++) {
-      var resolved = nextoolExtractMainConfigForcetab(candidates[i]);
-      if (resolved !== '') return resolved;
-   }
+      if (btn.disabled) return;
+      var action = (btn.dataset && btn.dataset.action) ? String(btn.dataset.action) : '';
+      var moduleKey = (btn.dataset && btn.dataset.module) ? String(btn.dataset.module) : '';
+      if (action === '' || moduleKey === '') return;
 
-   // 4) Último fallback seguro para Nextool
-   return 'PluginNextoolMainConfig$1';
-}
+      var confirmMsg = (btn.dataset && btn.dataset.confirm) ? String(btn.dataset.confirm) : '';
+      if (confirmMsg !== '' && !window.confirm(confirmMsg)) return;
 
-function nextoolResolveForcetabFromTrigger(triggerElement) {
-   if (!triggerElement || typeof triggerElement.closest !== 'function') {
-      return '';
-   }
-
-   // Fonte mais confiável: valor explicitamente definido no botão do hero.
-   var buttonForcetab = nextoolExtractMainConfigForcetab(triggerElement.getAttribute('data-nextool-forcetab'));
-   if (buttonForcetab !== '') {
-      return buttonForcetab;
-   }
-
-   // GLPI standalone: id costuma vir como tab-PluginNextoolMainConfig_4-xxxxxxxx
-   var glpiPane = triggerElement.closest('[id^="tab-PluginNextoolMainConfig_"]');
-   if (glpiPane && glpiPane.id) {
-      var glpiMatch = glpiPane.id.match(/tab-PluginNextoolMainConfig_(\d+)/);
-      if (glpiMatch && glpiMatch[1]) {
-         return 'PluginNextoolMainConfig$' + glpiMatch[1];
+      var csrfToken = nextoolGetAjaxCsrfToken();
+      if (!csrfToken) {
+         // Sem token: a página está inconsistente; recarregar resolve.
+         window.location.reload();
+         return;
       }
-   }
 
-   // Fallback para o modo não-standalone do arquivo config.form.php
-   var internalPane = triggerElement.closest('[id^="rt-tab-"]');
-   if (internalPane && internalPane.id) {
-      var map = {
-         'rt-tab-modulos': 'PluginNextoolMainConfig$1',
-         'rt-tab-contato': 'PluginNextoolMainConfig$2',
-         'rt-tab-licenca': 'PluginNextoolMainConfig$3',
-         'rt-tab-logs': 'PluginNextoolMainConfig$4'
-      };
-      if (Object.prototype.hasOwnProperty.call(map, internalPane.id)) {
-         return map[internalPane.id];
-      }
-   }
+      // Mantém a aba atual ao voltar do redirect
+      var params = new URLSearchParams(window.location.search || '');
+      var forcetab = params.get('forcetab') || 'PluginNextoolMainConfig$1';
 
-   return '';
+      var originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i><?php echo Html::entities_deep(__('Processando...', 'nextool')); ?>';
+
+      fetch(endpoint, {
+         method: 'POST',
+         headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-Glpi-Csrf-Token': csrfToken
+         },
+         body: new URLSearchParams({
+            action: action,
+            module: moduleKey,
+            forcetab: forcetab
+         }).toString(),
+         credentials: 'same-origin'
+      })
+         .then(function (r) { return r.json().catch(function () { return {}; }); })
+         .then(function (data) {
+            if (data && data.redirect_url) {
+               window.location.assign(String(data.redirect_url));
+               return;
+            }
+            // Fallback: recarregar para exibir mensagens (se existirem)
+            window.location.reload();
+         })
+         .catch(function () {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+         });
+   });
 }
 
-function nextoolEnsureForcetabInput(form, triggerElement) {
-   if (!form) return;
-   var forcetabInput = form.querySelector('input[name="forcetab"]');
-   if (!forcetabInput) {
-      forcetabInput = document.createElement('input');
-      forcetabInput.type = 'hidden';
-      forcetabInput.name = 'forcetab';
-      form.appendChild(forcetabInput);
-   }
-
-   var resolvedForcetab = nextoolResolveForcetabFromTrigger(triggerElement);
-   if (!resolvedForcetab) {
-      resolvedForcetab = nextoolResolveActiveForcetab();
-   }
-   forcetabInput.value = resolvedForcetab;
+if (document.readyState === 'loading') {
+   document.addEventListener('DOMContentLoaded', nextoolInitModuleActions);
+} else {
+   nextoolInitModuleActions();
 }
+document.addEventListener('glpi.load', nextoolInitModuleActions);
 
 function nextoolValidateLicense(btn) {
-   // Prioriza o formulário dedicado para sincronização (evita enviar campos
-   // de configuração por engano quando o botão fica fora de um <form>).
-   var form = (btn && btn.form)
-      ? btn.form
-      : document.getElementById('nextoolSyncForm') || document.getElementById('configForm');
+   var form = (btn && btn.form) ? btn.form : document.getElementById('configForm') || document.getElementById('nextoolSyncForm');
    if (!form) return false;
-   nextoolEnsureForcetabInput(form, btn);
    var hasAcceptedPolicies = <?php echo !empty($hasAcceptedPolicies) ? 'true' : 'false'; ?>;
    if (!hasAcceptedPolicies) {
       var msg = 'Ao sincronizar a licença do NexTool pela primeira vez, serão enviados apenas dados técnicos do ambiente (domínio, código do ambiente, chave da licença, IP do servidor e versões do sistema) para a plataforma de licenciamento NexTool. Nenhum dado de chamados, usuários finais ou anexos é coletado.\n\nVocê concorda com esta política de uso e coleta de dados?';
@@ -189,7 +141,6 @@ function nextoolValidateLicense(btn) {
 function nextoolRegenerateHmac(btn) {
    var form = document.getElementById('configForm');
    if (!form) return false;
-   nextoolEnsureForcetabInput(form, btn);
    if (!window.confirm('Gerar uma nova chave de segurança invalida a chave atual imediatamente. Todas as integrações que usam a chave antiga deixarão de funcionar até que o novo valor seja atualizado. Deseja continuar?')) return false;
    var actionInput = form.querySelector('input[name="action"]');
    if (!actionInput) {
@@ -201,57 +152,6 @@ function nextoolRegenerateHmac(btn) {
    actionInput.value = 'regenerate_hmac';
    form.submit();
    return false;
-}
-
-function nextoolCopyHmacSecret(btn) {
-   if (!btn || !btn.dataset) return;
-   var endpoint = btn.dataset.secretEndpoint || '';
-   if (endpoint === '') return;
-
-   var csrfInput = null;
-   if (typeof btn.closest === 'function') {
-      var parentForm = btn.closest('form');
-      if (parentForm) {
-         csrfInput = parentForm.querySelector('input[name="_glpi_csrf_token"]');
-      }
-   }
-   if (!csrfInput) {
-      csrfInput = document.querySelector('#nextoolSyncForm input[name="_glpi_csrf_token"]');
-   }
-   if (!csrfInput) {
-      csrfInput = document.querySelector('#configForm input[name="_glpi_csrf_token"]');
-   }
-   var csrfToken = csrfInput ? csrfInput.value : '';
-   if (csrfToken === '') return;
-
-   var original = btn.innerHTML;
-   btn.disabled = true;
-
-   fetch(endpoint, {
-      method: 'POST',
-      headers: {
-         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-         'X-Requested-With': 'XMLHttpRequest',
-         'X-Glpi-Csrf-Token': csrfToken
-      },
-      body: '_glpi_csrf_token=' + encodeURIComponent(csrfToken),
-      credentials: 'same-origin'
-   })
-      .then(function (response) { return response.json().catch(function () { return {}; }); })
-      .then(function (data) {
-         if (!data || !data.success || !data.secret) {
-            throw new Error((data && data.message) ? data.message : 'Falha ao copiar chave.');
-         }
-         return navigator.clipboard.writeText(String(data.secret)).then(function () {
-            btn.innerHTML = '<i class="ti ti-check me-1"></i><?php echo Html::entities_deep(__('Copiado!', 'nextool')); ?>';
-         });
-      })
-      .catch(function () {
-         btn.innerHTML = '<i class="ti ti-alert-circle me-1"></i><?php echo Html::entities_deep(__('Falha ao copiar', 'nextool')); ?>';
-      })
-      .finally(function () {
-         setTimeout(function () { btn.innerHTML = original; btn.disabled = false; }, 2000);
-      });
 }
 
 function nextoolInitContactForm() {
@@ -266,8 +166,17 @@ function nextoolInitContactForm() {
       form.classList.add('was-validated');
       if (!form.checkValidity()) return;
       var formData = new FormData(form);
-      var csrfInput = form.querySelector('input[name="_glpi_csrf_token"]');
-      var csrfToken = csrfInput ? csrfInput.value : '';
+      // GLPI 10: para requisições AJAX, usar o token do meta `glpi:csrf_token` no header.
+      // O token do formulário continua indo no body via FormData.
+      var csrfToken = nextoolGetAjaxCsrfToken();
+      if (!csrfToken) {
+         // Fallback: se o meta não existir por algum motivo, tentar o token do formulário.
+         try {
+            csrfToken = String(formData.get('_glpi_csrf_token') || '');
+         } catch (e) {
+            csrfToken = '';
+         }
+      }
       if (submitButton) submitButton.disabled = true;
       if (feedback) { feedback.classList.remove('text-danger', 'text-success'); feedback.classList.add('text-muted'); feedback.textContent = 'Enviando contato...'; }
       fetch(form.action, { method: 'POST', body: formData, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-Glpi-Csrf-Token': csrfToken }, credentials: 'same-origin' })

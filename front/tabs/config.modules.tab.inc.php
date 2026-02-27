@@ -4,6 +4,9 @@
  * Contexto/variáveis esperadas: $nextool_is_standalone, $nextool_standalone_output_tab,
  * $canViewAnyModule, $firstTabKey, $nextool_hero_standalone, $stats, $canManageModules,
  * $requiresPolicyAcceptance, $canManageAdminTabs, $modulesState.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 ?>
 

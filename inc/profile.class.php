@@ -6,7 +6,7 @@
  * Adiciona aba na tela de Perfis do GLPI para configurar direitos do Nextool
  * por perfil (READ/UPDATE/DELETE/PURGE).
  * -------------------------------------------------------------------------
- * @author    Richard Loureiro
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
  * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
  * @link      https://linkedin.com/in/richard-ti

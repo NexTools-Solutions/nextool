@@ -6,7 +6,7 @@
  * Classe de setup responsável por adicionar a aba do NexTool Solutions em
  * "Configurar → Geral" e integrar o formulário principal de configuração.
  * -------------------------------------------------------------------------
- * @author    Richard Loureiro
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
  * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
  * @link      https://linkedin.com/in/richard-ti

@@ -1,6 +1,11 @@
 <?php
 /**
+ * Plugin NexTool - Leitura do segredo HMAC
+ *
  * Endpoint seguro para leitura do segredo HMAC (uso exclusivo via AJAX).
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 
 include ('../../../inc/includes.php');

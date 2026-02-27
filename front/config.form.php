@@ -7,7 +7,7 @@
  * Este arquivo é incluído via setup.class.php::displayTabContentForItem()
  * e assume que o GLPI já carregou todos os includes necessários.
  * -------------------------------------------------------------------------
- * @author    Richard Loureiro
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
  * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
  * @link      https://linkedin.com/in/richard-ti
@@ -191,6 +191,10 @@ foreach ($allModuleKeys as $moduleKey) {
             : false;
       }
    }
+   // Se a pasta do módulo não existe, não sinalizar atualização (trata como download pendente)
+   if (!$moduleDownloaded) {
+      $updateAvailable = false;
+   }
 
    if ($isInstalled) {
       $stats['installed']++;
@@ -247,18 +251,18 @@ foreach ($allModuleKeys as $moduleKey) {
    $moduleCanPurge = PluginNextoolPermissionManager::canPurgeModuleDataForModule($moduleKey);
 
    // Ordenação: 1=Atualização disponível, 2=Ativos, 3=Instalados, 4=Disponível para instalar,
-   // 5=Disponível para download, 6=Bloqueados
-   $sortGroup = 6;
+   // 5=Bloqueados, 6=Disponível para download (sempre por último)
+   $sortGroup = 5;
    if (!empty($updateAvailable)) {
       $sortGroup = 1;
-   } elseif ($isEnabled) {
+   } elseif ($isEnabled && $moduleDownloaded) {
       $sortGroup = 2;
-   } elseif ($isInstalled) {
+   } elseif ($isInstalled && $moduleDownloaded) {
       $sortGroup = 3;
    } elseif ($canUseModule && $moduleDownloaded) {
       $sortGroup = 4;  // Pronto para instalar
    } elseif ($canUseModule && $requiresRemoteDownload) {
-      $sortGroup = 5;  // Precisa baixar primeiro
+      $sortGroup = 6;  // Precisa baixar primeiro (sempre por último)
    }
 
    $modulesState[] = [
@@ -341,7 +345,7 @@ if ($nextool_is_standalone) {
    ];
    $canShow = ($nextool_show_only_tab === 'modules' && $canViewAnyModule)
       || (in_array($nextool_show_only_tab, ['contato', 'licenca', 'logs'], true) && $canViewAdminTabs);
-   echo "<div class='m-3'>";
+   echo "<div class='m-3' id='nextool-config-form'>";
    if (!$canShow) {
       echo "<div class='alert alert-warning'><i class='ti ti-lock me-2'></i>" . __('Sem permissão para acessar esta seção.', 'nextool') . "</div>";
    }
@@ -404,7 +408,7 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
 ?>
 
 <?php if (!$nextool_is_standalone): ?>
-<div class="m-3">
+<div class="m-3" id="nextool-config-form">
    <h3>NexTool Solutions - Conectando soluções, gerando valor</h3>
      <!-- Abas internas do Nextool -->
      <?php if ($firstTabKey === null): ?>

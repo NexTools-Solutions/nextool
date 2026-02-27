@@ -109,14 +109,9 @@ Cada módulo puede ser instalado, activado y configurado de forma independiente.
     </authors>
     <versions>
         <version>
-            <num>3.5.6</num>
+            <num>3.5.11</num>
             <compatibility>~11.0.0</compatibility>
-            <download_url>https://github.com/RPGMais/nextool/releases/download/v3.5.6/nextool-3.5.6.tar.gz</download_url>
-        </version>
-        <version>
-            <num>3.6.5</num>
-            <compatibility>~10.0.0</compatibility>
-            <download_url>https://github.com/RPGMais/nextool/releases/download/v3.6.5-glpi10/nextool-3.6.5.tar.gz</download_url>
+            <download_url>https://github.com/RPGMais/nextool/releases/download/v3.5.11/nextool-3.5.11.tar.gz</download_url>
         </version>
     </versions>
     <langs>

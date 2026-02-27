@@ -1,34 +1,41 @@
 <?php
 /**
- * -------------------------------------------------------------------------
- * NexTool Solutions - Module Action Endpoint
- * -------------------------------------------------------------------------
- * Endpoint AJAX responsável por processar ações dos módulos do
- * NexTool Solutions (install, uninstall, enable, disable, update),
- * centralizando o gerenciamento via GLPI.
- * -------------------------------------------------------------------------
- * @author    Richard Loureiro
- * @copyright 2025 Richard Loureiro
- * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
- * @link      https://linkedin.com/in/richard-ti
- * -------------------------------------------------------------------------
+ * Nextools - Module Action Endpoint (AJAX)
+ *
+ * Endpoint AJAX para processar ações dos módulos: install, uninstall, enable,
+ * disable, update, download, purge_data.
+ * GLPI 10: CSRF validado automaticamente para rotas /ajax/ (header X-Glpi-Csrf-Token).
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 
-include ('../../../inc/includes.php');
+include('../../../inc/includes.php');
+
+header('Content-Type: application/json; charset=UTF-8');
 
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-PluginNextoolPermissionManager::assertCanManageModules();
+if (!PluginNextoolPermissionManager::canManageModules()) {
+   http_response_code(403);
+   echo json_encode([
+      'success' => false,
+      'message' => __('Você não tem permissão para gerenciar os módulos do NexTool.', 'nextool'),
+   ]);
+   exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-   Session::addMessageAfterRedirect(__('Método inválido para esta ação.', 'nextool'), false, ERROR);
-   Html::back();
+   http_response_code(405);
+   echo json_encode([
+      'success' => false,
+      'message' => __('Método inválido para esta ação.', 'nextool'),
+   ]);
+   exit;
 }
 
-if (!isset($_POST['_glpi_csrf_token'])) {
-   Session::addMessageAfterRedirect(__('Token CSRF ausente', 'nextool'), false, ERROR);
-   Html::back();
-}
-Session::validateCSRF($_POST['_glpi_csrf_token']);
+// CSRF: o GLPI valida automaticamente em inc/includes.php.
+// Não revalidar aqui com Session::checkCSRF()/validateCSRF(), pois essas rotinas
+// podem renderizar HTML de acesso negado e quebrar o contrato JSON do endpoint.
 
 $action = isset($_POST['action']) ? trim((string) $_POST['action']) : '';
 $moduleKeyRaw = isset($_POST['module']) ? trim((string) $_POST['module']) : '';
@@ -36,31 +43,42 @@ if ($action === '' || $moduleKeyRaw === '') {
    http_response_code(400);
    echo json_encode([
       'success' => false,
-      'message' => 'Parâmetros inválidos'
+      'message' => __('Parâmetros inválidos.', 'nextool'),
    ]);
    exit;
 }
 
-// Defende contra path traversal / caracteres inesperados em chave de módulo.
 if (!preg_match('/^[a-z0-9_-]+$/i', $moduleKeyRaw)) {
    http_response_code(400);
    echo json_encode([
       'success' => false,
-      'message' => 'Módulo inválido'
+      'message' => __('Módulo inválido.', 'nextool'),
    ]);
    exit;
 }
 $moduleKey = strtolower($moduleKeyRaw);
 
 if (in_array($action, ['install', 'uninstall', 'enable', 'disable', 'update', 'download'], true)) {
-   PluginNextoolPermissionManager::assertCanManageModule($moduleKey);
+   if (!PluginNextoolPermissionManager::canManageModule($moduleKey)) {
+      http_response_code(403);
+      echo json_encode([
+         'success' => false,
+         'message' => __('Você não tem permissão para gerenciar este módulo.', 'nextool'),
+      ]);
+      exit;
+   }
 }
-
 if ($action === 'purge_data') {
-   PluginNextoolPermissionManager::assertCanPurgeModuleDataForModule($moduleKey);
+   if (!PluginNextoolPermissionManager::canPurgeModuleDataForModule($moduleKey)) {
+      http_response_code(403);
+      echo json_encode([
+         'success' => false,
+         'message' => __('Você não tem permissão para apagar os dados deste módulo.', 'nextool'),
+      ]);
+      exit;
+   }
 }
 
-// Carrega ModuleManager e MainConfig (para validar forcetab)
 require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/basemodule.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
@@ -69,21 +87,14 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/nextoolmainconfig.class.php';
 
 $manager = PluginNextoolModuleManager::getInstance();
 
-// Importante:
-// Ações de módulo NÃO devem "desvalidar" o plano/licença do ambiente.
-// Resetar o cache de licença aqui fazia o UI cair para "Plano não validado"
-// após desinstalar um módulo, até o usuário clicar em "Sincronizar".
-//
-// Mantemos apenas a limpeza do cache de módulos (discovery) quando houver
-// impacto real em arquivos/estrutura local.
+// Limpa cache de módulos apenas quando há impacto em arquivos/estrutura local.
 $actionsThatResetModuleCache = ['download', 'purge_data'];
 if (in_array($action, $actionsThatResetModuleCache, true)) {
    $manager->clearCache();
    $manager->refreshModules();
 }
 
-// Para download remoto, forçamos refresh do snapshot (ContainerAPI),
-// pois o fluxo de distribuição depende do estado mais recente.
+// Para download remoto, forçamos refresh do snapshot (ContainerAPI).
 if ($action === 'download') {
    PluginNextoolLicenseValidator::validateLicense([
       'force_refresh' => true,
@@ -120,54 +131,46 @@ if ($action === 'update') {
                __('Atualize o plugin em:', 'nextool') . ' ' . NEXTOOL_SITE_URL
             );
             Session::addMessageAfterRedirect($msg, false, ERROR);
-            Html::redirect(Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=' . urlencode('PluginNextoolMainConfig$1'));
+            echo json_encode([
+               'success'      => false,
+               'message'      => $msg,
+               'redirect_url' => Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=' . urlencode('PluginNextoolMainConfig$1'),
+            ]);
             exit;
          }
       }
    }
 }
 
-// Executa ação
-$result = ['success' => false, 'message' => 'Ação inválida', 'forcetab' => 'PluginNextoolMainConfig$1'];
-
+$result = ['success' => false, 'message' => __('Ação inválida', 'nextool'), 'forcetab' => 'PluginNextoolMainConfig$1'];
 switch ($action) {
    case 'install':
       $result = $manager->installModule($moduleKey);
       break;
-   
    case 'uninstall':
       $result = $manager->uninstallModule($moduleKey);
       break;
-   
    case 'enable':
       $result = $manager->enableModule($moduleKey);
       break;
-   
    case 'disable':
       $result = $manager->disableModule($moduleKey);
       break;
-
    case 'download':
       $result = $manager->downloadRemoteModule($moduleKey);
       break;
-
-case 'purge_data':
-   $result = $manager->purgeModuleData($moduleKey);
-   break;
-
-case 'update':
-   $result = $manager->updateModule($moduleKey);
-   break;
+   case 'purge_data':
+      $result = $manager->purgeModuleData($moduleKey);
+      break;
+   case 'update':
+      $result = $manager->updateModule($moduleKey);
+      break;
 }
 
-// Adiciona mensagem na sessão do GLPI (INFO, WARNING ou ERROR conforme resultado)
-$msgType = $result['message_type'] ?? ($result['success'] ? INFO : ERROR);
+$msgType = $result['message_type'] ?? (!empty($result['success']) ? INFO : ERROR);
 Session::addMessageAfterRedirect($result['message'], false, $msgType);
 
-// Declarar variáveis globais do GLPI
-global $CFG_GLPI;
-
-// Ao ativar (enable) com sucesso: abrir a aba lateral do módulo na mesma tela do plugin
+// Ao ativar (enable) com sucesso: abrir a aba lateral do módulo
 $returnTab = null;
 if ($action === 'enable' && !empty($result['success'])) {
    $moduleTabs = PluginNextoolMainConfig::getModuleConfigTabs();
@@ -180,14 +183,12 @@ if ($action === 'enable' && !empty($result['success'])) {
 }
 
 if ($returnTab === null) {
-   // Tab de retorno: usar a mesma aba de onde veio o POST (forcetab), senão resultado ou padrão Módulos
    $returnTab = 'PluginNextoolMainConfig$1';
    if (isset($_POST['forcetab']) && $_POST['forcetab'] !== '') {
-      $returnTab = $_POST['forcetab'];
+      $returnTab = (string) $_POST['forcetab'];
    } elseif (isset($result['forcetab']) && $result['forcetab'] !== '') {
-      $returnTab = $result['forcetab'];
+      $returnTab = (string) $result['forcetab'];
    }
-   // Validar contra abas conhecidas para evitar tab inválida
    $validTabs = PluginNextoolMainConfig::getValidTabIds();
    if (!in_array($returnTab, $validTabs, true)) {
       $returnTab = 'PluginNextoolMainConfig$1';
@@ -195,6 +196,11 @@ if ($returnTab === null) {
 }
 
 $redirectUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=' . urlencode($returnTab);
-Html::redirect($redirectUrl);
 
-
+echo json_encode([
+   'success'      => !empty($result['success']),
+   'message'      => (string) ($result['message'] ?? ''),
+   'message_type' => $msgType,
+   'redirect_url' => $redirectUrl,
+]);
+exit;

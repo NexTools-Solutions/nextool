@@ -3,6 +3,9 @@
  * Aba Logs do Nextool.
  * Contexto/variáveis esperadas: $nextool_is_standalone, $nextool_standalone_output_tab,
  * $canViewAdminTabs, $firstTabKey, $nextool_hero_standalone.
+ *
+ * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
+ * @license GPLv3+
  */
 ?>
 
