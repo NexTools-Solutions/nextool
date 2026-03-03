@@ -25,10 +25,21 @@ class PluginNextoolDistributionClient {
    ) {
       $this->baseUrl = rtrim($this->baseUrl, '/');
    }
-   public static function bootstrapClientSecret(string $baseUrl, string $clientIdentifier): ?string {
+   /**
+    * Tenta obter o client_secret via bootstrap no ContainerAPI.
+    *
+    * @return array{secret: ?string, error: ?string, http_code: int, message: ?string, retry_after: ?int}
+    */
+   public static function bootstrapClientSecret(string $baseUrl, string $clientIdentifier): array {
       $baseUrl = rtrim($baseUrl, '/');
       if ($baseUrl === '' || $clientIdentifier === '') {
-         return null;
+         return [
+            'secret'      => null,
+            'error'       => 'invalid_config',
+            'http_code'   => 0,
+            'message'     => __('URL do ContainerAPI ou identificador do ambiente não configurados.', 'nextool'),
+            'retry_after' => null,
+         ];
       }
 
       $payload = json_encode([
@@ -45,26 +56,118 @@ class PluginNextoolDistributionClient {
       ]);
 
       $response = curl_exec($ch);
-      $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      $err = curl_error($ch);
+      $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      $curlError = curl_error($ch);
+      $curlErrno = curl_errno($ch);
       curl_close($ch);
 
-      if ($response === false || $httpCode >= 300) {
+      // Falha de conexão (DNS, timeout, SSL, rede)
+      if ($response === false) {
+         $networkMessage = match (true) {
+            $curlErrno === CURLE_OPERATION_TIMEDOUT
+               => __('Tempo limite excedido ao conectar com o servidor de licenciamento. Verifique se o servidor está acessível.', 'nextool'),
+            $curlErrno === CURLE_COULDNT_RESOLVE_HOST
+               => sprintf(__('Não foi possível resolver o endereço do servidor de licenciamento (%s). Verifique a configuração de DNS.', 'nextool'), parse_url($baseUrl, PHP_URL_HOST) ?: $baseUrl),
+            in_array($curlErrno, [CURLE_SSL_CONNECT_ERROR, CURLE_SSL_CERTPROBLEM, CURLE_SSL_CIPHER, CURLE_SSL_CACERT], true)
+               => __('Erro de certificado SSL ao conectar com o servidor de licenciamento. Verifique se o certificado do servidor é válido.', 'nextool'),
+            $curlErrno === CURLE_COULDNT_CONNECT
+               => sprintf(__('Não foi possível conectar com o servidor de licenciamento (%s). Verifique se há um firewall bloqueando a conexão.', 'nextool'), parse_url($baseUrl, PHP_URL_HOST) ?: $baseUrl),
+            default
+               => sprintf(__('Erro de rede ao conectar com o servidor de licenciamento: %s', 'nextool'), $curlError),
+         };
+
          Toolbox::logInFile('plugin_nextool', sprintf(
-            'Falha ao solicitar client_secret no ContainerAPI (HTTP %s): %s',
-            $httpCode,
-            $err
+            'Bootstrap HMAC falhou — erro de rede (curl errno %d): %s',
+            $curlErrno,
+            $curlError
          ));
-         return null;
+
+         return [
+            'secret'      => null,
+            'error'       => 'network_error',
+            'http_code'   => 0,
+            'message'     => $networkMessage,
+            'retry_after' => null,
+         ];
       }
 
       $data = json_decode($response, true);
-      if (!is_array($data)) {
-         return null;
+
+      // Resposta HTTP com erro
+      if ($httpCode >= 300) {
+         $serverError = is_array($data) ? ($data['error'] ?? null) : null;
+         $serverMessage = is_array($data) ? ($data['message'] ?? null) : null;
+         $retryAfter = is_array($data) ? (isset($data['retry_after']) ? (int) $data['retry_after'] : null) : null;
+
+         $userMessage = match (true) {
+            $httpCode === 429
+               => sprintf(__('O servidor de licenciamento está temporariamente limitando requisições. Tente novamente em %d segundos.', 'nextool'), $retryAfter ?? 60),
+            $httpCode === 503
+               => __('O servidor de licenciamento está temporariamente indisponível por medida de segurança. Tente novamente em alguns minutos.', 'nextool'),
+            $httpCode === 400
+               => sprintf(__('Requisição inválida para o servidor de licenciamento: %s', 'nextool'), $serverMessage ?? 'payload inválido'),
+            $httpCode >= 500
+               => sprintf(__('Erro interno no servidor de licenciamento (HTTP %d). Tente novamente em instantes.', 'nextool'), $httpCode),
+            default
+               => sprintf(__('O servidor de licenciamento retornou um erro inesperado (HTTP %d): %s', 'nextool'), $httpCode, $serverMessage ?? 'sem detalhes'),
+         };
+
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'Bootstrap HMAC falhou — HTTP %d, error: %s, message: %s',
+            $httpCode,
+            $serverError ?? '(none)',
+            $serverMessage ?? '(none)'
+         ));
+
+         return [
+            'secret'      => null,
+            'error'       => $serverError ?? 'http_error',
+            'http_code'   => $httpCode,
+            'message'     => $userMessage,
+            'retry_after' => $retryAfter,
+         ];
       }
 
+      // Resposta 2xx mas JSON inválido
+      if (!is_array($data)) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'Bootstrap HMAC falhou — resposta não é JSON válido (HTTP %d): %s',
+            $httpCode,
+            substr((string) $response, 0, 500)
+         ));
+         return [
+            'secret'      => null,
+            'error'       => 'invalid_response',
+            'http_code'   => $httpCode,
+            'message'     => __('O servidor de licenciamento retornou uma resposta inválida. Tente novamente em instantes.', 'nextool'),
+            'retry_after' => null,
+         ];
+      }
+
+      // Resposta 2xx, JSON válido, mas sem client_secret
       $secret = $data['client_secret'] ?? null;
-      return is_string($secret) && $secret !== '' ? $secret : null;
+      if (!is_string($secret) || $secret === '') {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'Bootstrap HMAC falhou — resposta JSON sem client_secret (HTTP %d): %s',
+            $httpCode,
+            substr(json_encode($data), 0, 500)
+         ));
+         return [
+            'secret'      => null,
+            'error'       => 'missing_secret',
+            'http_code'   => $httpCode,
+            'message'     => __('O servidor de licenciamento não retornou a chave de segurança esperada. Tente novamente em instantes.', 'nextool'),
+            'retry_after' => null,
+         ];
+      }
+
+      return [
+         'secret'      => $secret,
+         'error'       => null,
+         'http_code'   => $httpCode,
+         'message'     => null,
+         'retry_after' => null,
+      ];
    }
 
    /**
@@ -483,20 +586,47 @@ class PluginNextoolDistributionClient {
     * @param string $baseUrl URL base do ContainerAPI
     * @param string $clientIdentifier Identificador do ambiente
     * @param bool|null &$reused Preenchido com true se reutilizou segredo existente
-    * @return string|null Segredo HMAC ou null se não obtido
+    * @return array{secret: ?string, reused: bool, error: ?string, http_code: int, message: ?string, retry_after: ?int}
     */
-   public static function obtainOrReuseClientSecret(string $baseUrl, string $clientIdentifier, ?bool &$reused = null): ?string {
+   public static function obtainOrReuseClientSecret(string $baseUrl, string $clientIdentifier, ?bool &$reused = null): array {
       $reused = false;
-      $secret = self::bootstrapClientSecret($baseUrl, $clientIdentifier);
-      if ($secret === null) {
-         $row = self::getEnvSecretRow($clientIdentifier);
-         if ($row && !empty($row['client_secret'])) {
-            $secret = (string)$row['client_secret'];
-            $reused = true;
-            Toolbox::logInFile('plugin_nextool', sprintf('HMAC reutilizado a partir do registro existente para %s.', $clientIdentifier));
-         }
+      $bootstrapResult = self::bootstrapClientSecret($baseUrl, $clientIdentifier);
+
+      if ($bootstrapResult['secret'] !== null) {
+         return [
+            'secret'      => $bootstrapResult['secret'],
+            'reused'      => false,
+            'error'       => null,
+            'http_code'   => $bootstrapResult['http_code'],
+            'message'     => null,
+            'retry_after' => null,
+         ];
       }
-      return $secret;
+
+      // Bootstrap falhou — tentar fallback na tabela local
+      $row = self::getEnvSecretRow($clientIdentifier);
+      if ($row && !empty($row['client_secret'])) {
+         $reused = true;
+         Toolbox::logInFile('plugin_nextool', sprintf('HMAC reutilizado a partir do registro existente para %s.', $clientIdentifier));
+         return [
+            'secret'      => (string) $row['client_secret'],
+            'reused'      => true,
+            'error'       => null,
+            'http_code'   => 0,
+            'message'     => null,
+            'retry_after' => null,
+         ];
+      }
+
+      // Ambos falharam — propagar o motivo do bootstrap
+      return [
+         'secret'      => null,
+         'reused'      => false,
+         'error'       => $bootstrapResult['error'],
+         'http_code'   => $bootstrapResult['http_code'],
+         'message'     => $bootstrapResult['message'],
+         'retry_after' => $bootstrapResult['retry_after'],
+      ];
    }
 
    public static function deleteEnvSecret(?string $clientIdentifier): bool {
