@@ -135,7 +135,7 @@
                                        <button type="button"
                                                class="btn btn-outline-secondary"
                                                onclick="navigator.clipboard.writeText(document.getElementById('rt-client-identifier').value); this.innerText='Copiado!'; setTimeout(() => { this.innerText='Copiar'; }, 2000);">
-                                          <i class="ti ti-copy me-1"></i><?php echo __('Copiar'); ?>
+                                          <i class="ti ti-copy me-1"></i><?php echo __('Copiar', 'nextool'); ?>
                                        </button>
                                     </div>
                                  <?php else: ?>
@@ -155,7 +155,7 @@
                                     <button type="button"
                                             class="btn btn-outline-secondary"
                                             onclick="const el=document.getElementById('rt-endpoint-url'); navigator.clipboard.writeText(el ? el.value : ''); this.innerText='Copiado!'; setTimeout(() => { this.innerText='Copiar'; }, 2000);">
-                                       <i class="ti ti-copy me-1"></i><?php echo __('Copiar'); ?>
+                                       <i class="ti ti-copy me-1"></i><?php echo __('Copiar', 'nextool'); ?>
                                     </button>
                                  </div>
                                  <div class="form-text">

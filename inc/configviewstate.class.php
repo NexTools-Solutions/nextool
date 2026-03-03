@@ -129,35 +129,35 @@ class PluginNextoolConfigViewState {
          case 'FREE':
             return [
                'label'       => __('Não licenciado', 'nextool'),
-               'description' => 'Acesso apenas a módulos FREE. Vincule uma licença para desbloquear módulos adicionais.',
+               'description' => __('Acesso apenas a módulos FREE. Vincule uma licença para desbloquear módulos adicionais.', 'nextool'),
                'badgeClass'  => 'bg-teal',
             ];
 
          case 'DESENVOLVIMENTO':
             return [
                'label'       => __('Desenvolvimento', 'nextool'),
-               'description' => 'Plano de desenvolvimento com acesso a todos os módulos (incluindo DEV).',
+               'description' => __('Plano de desenvolvimento com acesso a todos os módulos (incluindo DEV).', 'nextool'),
                'badgeClass'  => 'bg-blue',
             ];
 
          case 'PRO':
             return [
                'label'       => __('Licenciado', 'nextool'),
-               'description' => 'Plano licenciado com acesso aos módulos permitidos pelo contrato.',
+               'description' => __('Plano licenciado com acesso aos módulos permitidos pelo contrato.', 'nextool'),
                'badgeClass'  => 'bg-indigo',
             ];
 
          case 'ENTERPRISE':
             return [
                'label'       => __('Enterprise', 'nextool'),
-               'description' => 'Plano corporativo com acesso a todos os módulos exceto os de desenvolvimento (DEV).',
+               'description' => __('Plano corporativo com acesso a todos os módulos exceto os de desenvolvimento (DEV).', 'nextool'),
                'badgeClass'  => 'bg-purple',
             ];
 
          case 'BUSINESS':
             return [
                'label'       => __('Licenciado', 'nextool'),
-               'description' => 'Plano pago com acesso a módulos licenciados conforme seu contrato atual.',
+               'description' => __('Plano pago com acesso a módulos licenciados conforme seu contrato atual.', 'nextool'),
                'badgeClass'  => 'bg-primary',
             ];
 
@@ -165,7 +165,7 @@ class PluginNextoolConfigViewState {
          default:
             return [
                'label'       => __('Não validado', 'nextool'),
-               'description' => 'Valide sua licença para descobrir seu plano, registrar seu ambiente e desbloquear módulos.',
+               'description' => __('Valide sua licença para descobrir seu plano, registrar seu ambiente e desbloquear módulos.', 'nextool'),
                'badgeClass'  => 'bg-secondary',
             ];
       }

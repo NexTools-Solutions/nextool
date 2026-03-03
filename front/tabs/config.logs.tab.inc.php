@@ -20,13 +20,12 @@
             <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-orange s-1">
                <i class="fs-2x ti ti-report-analytics"></i>
             </div>
-            <span>Logs de Licenciamento</span>
+            <span><?php echo __('Logs de Licenciamento', 'nextool'); ?></span>
          </h4>
       </div>
       <div class="card-body">
          <p class="text-muted">
-            Histórico das últimas sincronizações de licença realizadas pelo NexTool.
-            Use este painel para acompanhar resultados e identificar eventuais falhas de conexão ou configuração.
+            <?php echo __('Histórico das últimas sincronizações de licença realizadas pelo NexTool. Use este painel para acompanhar resultados e identificar eventuais falhas de conexão ou configuração.', 'nextool'); ?>
          </p>
 
          <hr class="my-4">

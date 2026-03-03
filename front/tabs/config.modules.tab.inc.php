@@ -23,9 +23,7 @@
                <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-purple s-1">
                   <i class="fs-2x ti ti-puzzle"></i>
                </div>
-               <span>Módulos Disponíveis</span>
-               <span class="badge text-white bg-secondary ms-2"><?php echo $stats['total']; ?> total</span>
-               <span class="badge text-white bg-success ms-1"><?php echo $stats['enabled']; ?> ativos</span>
+               <span><?php echo __('Módulos Disponíveis', 'nextool'); ?></span>
             </h4>
          </div>
          <div class="card-body">
@@ -78,13 +76,64 @@
                   <?php echo __('Nenhum módulo está disponível para este perfil no momento. Solicite ao administrador a liberação de acesso.', 'nextool'); ?>
                </div>
             <?php else: ?>
+               <?php
+                  // Contadores dos chips — calculados server-side
+                  $fc = ['enabled' => 0, 'disabled' => 0, 'download' => 0, 'update' => 0, 'free' => 0, 'licensed' => 0];
+                  foreach ($modulesState as $m) {
+                     if (!empty($m['is_enabled']))                                   $fc['enabled']++;
+                     if (!empty($m['is_installed']) && empty($m['is_enabled']))       $fc['disabled']++;
+                     if (empty($m['module_downloaded']))                              $fc['download']++;
+                     if (!empty($m['update_available']))                              $fc['update']++;
+                     if (strtoupper($m['billing_tier'] ?? '') === 'FREE')             $fc['free']++;
+                     if (strtoupper($m['billing_tier'] ?? '') !== 'FREE')             $fc['licensed']++;
+                  }
+               ?>
+               <div class="mb-3" id="nextool-module-filter-bar">
+                  <div class="input-group mb-2">
+                     <span class="input-group-text bg-white border-end-0">
+                        <i class="ti ti-search text-muted"></i>
+                     </span>
+                     <input type="text"
+                            class="form-control border-start-0"
+                            id="nextool-module-search"
+                            placeholder="<?php echo __('Buscar módulo por nome ou descrição...', 'nextool'); ?>"
+                            autocomplete="off">
+                  </div>
+                  <div class="d-flex gap-2 flex-wrap" id="nextool-module-chips">
+                     <button type="button" class="btn btn-sm btn-outline-success nextool-filter-chip rounded-pill" data-filter="enabled">
+                        <i class="ti ti-player-play me-1"></i><?php echo __('Ativado', 'nextool'); ?> <span class="badge bg-success ms-1"><?php echo $fc['enabled']; ?></span>
+                     </button>
+                     <button type="button" class="btn btn-sm btn-outline-warning nextool-filter-chip rounded-pill" data-filter="disabled">
+                        <i class="ti ti-player-pause me-1"></i><?php echo __('Desativado', 'nextool'); ?> <span class="badge bg-warning text-dark ms-1"><?php echo $fc['disabled']; ?></span>
+                     </button>
+                     <button type="button" class="btn btn-sm btn-outline-secondary nextool-filter-chip rounded-pill" data-filter="download">
+                        <i class="ti ti-cloud-download me-1"></i><?php echo __('Download', 'nextool'); ?> <span class="badge bg-secondary ms-1"><?php echo $fc['download']; ?></span>
+                     </button>
+                     <button type="button" class="btn btn-sm btn-outline-info nextool-filter-chip rounded-pill" data-filter="update">
+                        <i class="ti ti-arrow-up me-1"></i><?php echo __('Atualização', 'nextool'); ?> <span class="badge bg-info ms-1"><?php echo $fc['update']; ?></span>
+                     </button>
+                     <button type="button" class="btn btn-sm btn-outline-teal nextool-filter-chip rounded-pill" data-filter="free">
+                        <i class="ti ti-free-rights me-1"></i><?php echo __('Gratuito', 'nextool'); ?> <span class="badge bg-teal text-white ms-1"><?php echo $fc['free']; ?></span>
+                     </button>
+                     <button type="button" class="btn btn-sm btn-outline-licensing nextool-filter-chip rounded-pill" data-filter="licensed">
+                        <i class="ti ti-certificate me-1"></i><?php echo __('Licenciado', 'nextool'); ?> <span class="badge bg-licensing text-white ms-1"><?php echo $fc['licensed']; ?></span>
+                     </button>
+                  </div>
+               </div>
                <div class="row g-3">
                   <?php foreach ($modulesState as $module):
                      $borderClass = $module['is_enabled']
                         ? 'border-success'
                         : ($module['is_installed'] ? 'border-warning' : 'border-secondary');
                   ?>
-                  <div class="col-md-6">
+                  <div class="col-md-6 nextool-module-card"
+                       data-module-name="<?php echo strtolower(Html::entities_deep($module['name'])); ?>"
+                       data-module-desc="<?php echo strtolower(Html::entities_deep($module['description'])); ?>"
+                       data-module-enabled="<?php echo $module['is_enabled'] ? '1' : '0'; ?>"
+                       data-module-installed="<?php echo $module['is_installed'] ? '1' : '0'; ?>"
+                       data-module-downloaded="<?php echo $module['module_downloaded'] ? '1' : '0'; ?>"
+                       data-module-update="<?php echo $module['update_available'] ? '1' : '0'; ?>"
+                       data-module-tier="<?php echo strtoupper($module['billing_tier']); ?>">
                      <div class="card border <?php echo $borderClass; ?> h-100">
                         <div class="card-body d-flex flex-column">
                            <div class="d-flex align-items-start justify-content-between mb-2">
@@ -144,6 +193,10 @@
                      </div>
                   </div>
                   <?php endforeach; ?>
+               </div>
+               <div class="alert alert-secondary text-center mt-3 d-none" id="nextool-module-no-results">
+                  <i class="ti ti-search-off me-2"></i>
+                  <?php echo __('Nenhum módulo encontrado com os filtros selecionados.', 'nextool'); ?>
                </div>
             <?php endif; ?>
          </div>

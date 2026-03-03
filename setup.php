@@ -96,6 +96,8 @@ function plugin_init_nextool() {
 
    $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
 
+   Plugin::loadLang('nextool');
+
    $permissionfile = GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
    if (file_exists($permissionfile)) {
       require_once $permissionfile;

@@ -46,18 +46,21 @@ Html::header(
    'nextools'
 );
 
-// Respeita forcetab da URL para que links do menu abram a aba correta (igual Config > Geral)
+// Respeita forcetab da URL para que links do menu abram a aba correta (igual Config > Geral).
+// Quando forcetab NÃO está na URL (ex: refresh após trocar aba pelo dropdown), preservar
+// o valor da sessão (atualizado via AJAX pelo GLPI ao clicar na aba).
 $validTabs = PluginNextoolMainConfig::getValidTabIds();
-$forcetab = isset($_GET['forcetab']) && in_array($_GET['forcetab'], $validTabs, true)
-   ? $_GET['forcetab']
-   : 'PluginNextoolMainConfig$1';
-
-// O GLPI usa $_SESSION['glpi_tabs'][itemtype] para lembrar a última aba; sobrescrever quando forcetab na URL
 $tabKey = strtolower($item::getType());
 if (!isset($_SESSION['glpi_tabs'])) {
    $_SESSION['glpi_tabs'] = [];
 }
-$_SESSION['glpi_tabs'][$tabKey] = $forcetab;
+
+if (isset($_GET['forcetab']) && in_array($_GET['forcetab'], $validTabs, true)) {
+   $forcetab = $_GET['forcetab'];
+   $_SESSION['glpi_tabs'][$tabKey] = $forcetab;
+} else {
+   $forcetab = $_SESSION['glpi_tabs'][$tabKey] ?? 'PluginNextoolMainConfig$1';
+}
 
 // Garante que nextoolValidateLicense e funções relacionadas existam na página principal.
 // Necessário porque o conteúdo das abas pode ser carregado via AJAX e scripts injetados

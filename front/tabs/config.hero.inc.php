@@ -31,7 +31,7 @@ $nextoolHeroForcetab = isset($nextoolHeroForcetab) ? trim((string) $nextoolHeroF
          <div class="col-12 col-lg-8">
             <h4 class="mb-1">
                <i class="ti ti-crown"></i>
-               <span>Plano atual:</span>
+               <span><?php echo __('Plano atual:', 'nextool'); ?></span>
                <span class="badge <?php echo $heroPlanBadgeClass; ?> text-white">
                   <?php echo Html::entities_deep($heroPlanLabel); ?>
                </span>
@@ -43,29 +43,29 @@ $nextoolHeroForcetab = isset($nextoolHeroForcetab) ? trim((string) $nextoolHeroF
                <?php endif; ?>
                <span class="small text-warning fw-semibold">
                   <i class="ti ti-bolt"></i>
-                  Desbloqueie módulos pagos, integrações avançadas e automações sob demanda.
+                  <?php echo __('Desbloqueie módulos pagos, integrações avançadas e automações sob demanda.', 'nextool'); ?>
                </span>
                <br>
                <span class="small text-info fw-semibold">
                   <i class="ti ti-plug-connected"></i>
-                  Precisa de um módulo específico ou integração personalizada?
-                  <a href="<?= NEXTOOL_BOOKING_URL ?>" target="_blank" class="text-white text-decoration-underline">Agende uma reunião.</a>
+                  <?php echo __('Precisa de um módulo específico ou integração personalizada?', 'nextool'); ?>
+                  <a href="<?= NEXTOOL_BOOKING_URL ?>" target="_blank" class="text-white text-decoration-underline"><?php echo __('Agende uma reunião.', 'nextool'); ?></a>
                </span>
                <br>
                <span class="small text-licensing-hero fw-semibold">
                   <i class="ti ti-lifebuoy"></i>
-                  Planos de licenciamento com suporte oficial, atualizações contínuas e acompanhamento técnico.
+                  <?php echo __('Planos de licenciamento com suporte oficial, atualizações contínuas e acompanhamento técnico.', 'nextool'); ?>
                </span>
             </p>
             <?php if ($contractActive === false && !$isFreeTier): ?>
                <div class="alert alert-danger mt-3 mb-0">
                   <i class="ti ti-ban me-2"></i>
-                  Contrato inativo: o acesso aos módulos licenciados está temporariamente bloqueado até a regularização com o suporte NexTool.
+                  <?php echo __('Contrato inativo: o acesso aos módulos licenciados está temporariamente bloqueado até a regularização com o suporte NexTool.', 'nextool'); ?>
                </div>
             <?php elseif ($contractActive === true && $licenseStatusCode === 'EXPIRED'): ?>
                <div class="alert alert-warning mt-3 mb-0 text-dark">
                   <i class="ti ti-alert-triangle me-2"></i>
-                  Licença vencida com contrato ativo: os módulos continuam funcionando normalmente, mas recomenda-se renovar a licença para evitar interrupções futuras.
+                  <?php echo __('Licença vencida com contrato ativo: os módulos continuam funcionando normalmente, mas recomenda-se renovar a licença para evitar interrupções futuras.', 'nextool'); ?>
                </div>
             <?php endif; ?>
          </div>
@@ -78,20 +78,20 @@ $nextoolHeroForcetab = isset($nextoolHeroForcetab) ? trim((string) $nextoolHeroF
                        data-nextool-forcetab="<?php echo Html::entities_deep($nextoolHeroForcetab); ?>"
                        <?php echo $nextoolHeroDisableSync ? ' disabled' : ''; ?>>
                   <i class="ti ti-refresh me-1"></i>
-                  Sincronizar
+                  <?php echo __('Sincronizar', 'nextool'); ?>
                </button>
             <?php endif; ?>
             <div class="small text-white-50">
                <a href="<?= NEXTOOL_WHATSAPP_URL ?>" target="_blank" class="text-white text-decoration-underline">
-                  Atendimento Whatsapp
+                  <?php echo __('Atendimento Whatsapp', 'nextool'); ?>
                </a>
             </div>
             <div class="small mt-2">
-               <a href="<?= NEXTOOL_SITE_URL ?>" target="_blank" rel="noopener noreferrer" class="text-white text-decoration-underline">Site</a>
+               <a href="<?= NEXTOOL_SITE_URL ?>" target="_blank" rel="noopener noreferrer" class="text-white text-decoration-underline"><?php echo __('Site', 'nextool'); ?></a>
                <span class="text-white-50 mx-1">/</span>
                <a href="<?= NEXTOOL_RELEASES_URL ?>" target="_blank" rel="noopener noreferrer" class="text-white text-decoration-underline">Releases</a>
                <span class="text-white-50 mx-1">/</span>
-               <a href="<?= NEXTOOL_TERMS_URL ?>" target="_blank" class="text-white text-decoration-underline">Termos de uso</a>
+               <a href="<?= NEXTOOL_TERMS_URL ?>" target="_blank" class="text-white text-decoration-underline"><?php echo __('Termos de uso', 'nextool'); ?></a>
             </div>
             </div>
          </div>

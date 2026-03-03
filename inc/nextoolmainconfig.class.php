@@ -59,7 +59,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
          'id'            => '1',
          'table'         => $this->getTable(),
          'field'         => 'id',
-         'name'          => __('ID'),
+         'name'          => __('ID', 'nextool'),
          'searchtype'    => ['equals', 'notequals', 'lessthan', 'morethan'],
          'datatype'      => 'number',
          'massiveaction' => false,

@@ -75,28 +75,34 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
          'reused_secret'     => false,
          'settings'          => $distributionSettings,
          'client_identifier' => $clientIdentifier,
+         'error'             => null,
+         'error_message'     => null,
+         'http_code'         => 0,
+         'retry_after'       => null,
       ];
    }
 
-   $reusedSecret = false;
-   $secret = PluginNextoolDistributionClient::obtainOrReuseClientSecret(
+   $result = PluginNextoolDistributionClient::obtainOrReuseClientSecret(
       $baseUrl,
-      $clientIdentifier,
-      $reusedSecret
+      $clientIdentifier
    );
 
-   if ($secret === null) {
+   if ($result['secret'] === null) {
       return [
          'attempted'         => true,
          'success'           => false,
          'reused_secret'     => false,
          'settings'          => $distributionSettings,
          'client_identifier' => $clientIdentifier,
+         'error'             => $result['error'],
+         'error_message'     => $result['message'],
+         'http_code'         => $result['http_code'],
+         'retry_after'       => $result['retry_after'],
       ];
    }
 
    Config::setConfigurationValues('plugin:nextool_distribution', array_merge($distributionSettings, [
-      'client_secret' => $secret,
+      'client_secret' => $result['secret'],
    ]));
 
    if ($logAudit) {
@@ -107,7 +113,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
          'message' => __('Chave de segurança gerada automaticamente.', 'nextool'),
          'details' => [
             'base_url'               => $baseUrl,
-            'reused_existing_secret' => $reusedSecret ? 1 : 0,
+            'reused_existing_secret' => $result['reused'] ? 1 : 0,
          ],
       ]);
    }
@@ -117,9 +123,13 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
    return [
       'attempted'         => true,
       'success'           => true,
-      'reused_secret'     => $reusedSecret,
+      'reused_secret'     => $result['reused'],
       'settings'          => $updatedSettings,
       'client_identifier' => trim((string) ($updatedSettings['client_identifier'] ?? $clientIdentifier)),
+      'error'             => null,
+      'error_message'     => null,
+      'http_code'         => 0,
+      'retry_after'       => null,
    ];
 }
 
@@ -154,21 +164,38 @@ if ($action === 'regenerate_hmac') {
       'client_secret' => null,
    ]));
 
-   $reusedSecret = false;
-   $secret = PluginNextoolDistributionClient::obtainOrReuseClientSecret($baseUrl, $clientIdentifier, $reusedSecret);
+   $result = PluginNextoolDistributionClient::obtainOrReuseClientSecret($baseUrl, $clientIdentifier);
 
-   if ($secret === null) {
-      Session::addMessageAfterRedirect(
-         __('Não foi possível recriar o segredo HMAC. Verifique os logs e tente novamente.', 'nextool'),
-         false,
-         ERROR
-      );
+   if ($result['secret'] === null) {
+      $errorMessage = $result['message']
+         ?? __('Não foi possível recriar o segredo HMAC. Verifique os logs e tente novamente.', 'nextool');
+      Session::addMessageAfterRedirect($errorMessage, false, ERROR);
+
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         'Regeneração de HMAC falhou — error: %s, http_code: %d, message: %s',
+         $result['error'] ?? '(unknown)',
+         $result['http_code'] ?? 0,
+         $result['message'] ?? '(none)'
+      ));
+
+      PluginNextoolConfigAudit::log([
+         'section' => 'distribution',
+         'action'  => 'regenerate_hmac',
+         'result'  => 0,
+         'message' => $errorMessage,
+         'details' => [
+            'error'             => $result['error'] ?? null,
+            'http_code'         => $result['http_code'] ?? 0,
+            'client_identifier' => $clientIdentifier ?? null,
+         ],
+      ]);
+
       plugin_nextool_redirect_after_action();
       exit;
    }
 
    Config::setConfigurationValues('plugin:nextool_distribution', array_merge($distributionSettings, [
-      'client_secret' => $secret,
+      'client_secret' => $result['secret'],
    ]));
 
    PluginNextoolConfigAudit::log([
@@ -178,12 +205,12 @@ if ($action === 'regenerate_hmac') {
       'message' => __('Segredo HMAC recriado com sucesso.', 'nextool'),
       'details' => [
          'environment_identifier' => $clientIdentifier,
-         'reused_existing_secret' => $reusedSecret ? 1 : 0,
+         'reused_existing_secret' => $result['reused'] ? 1 : 0,
       ],
    ]);
 
    Session::addMessageAfterRedirect(
-      $reusedSecret
+      $result['reused']
          ? __('Segredo HMAC já existia e foi reutilizado com sucesso.', 'nextool')
          : __('Novo segredo HMAC provisionado automaticamente.', 'nextool'),
       false,
@@ -221,11 +248,29 @@ if ($action === 'accept_policies') {
          );
          $distributionSettings = $bootstrap['settings'];
       } else {
-         Session::addMessageAfterRedirect(
-            __('Não foi possível gerar a chave de segurança automaticamente. Verifique a configuração e tente novamente mais tarde.', 'nextool'),
-            false,
-            WARNING
-         );
+         $errorMessage = $bootstrap['error_message']
+            ?? __('Não foi possível gerar a chave de segurança automaticamente. Tente novamente em instantes.', 'nextool');
+         Session::addMessageAfterRedirect($errorMessage, false, WARNING);
+
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'Bootstrap falhou durante aceite de políticas — error: %s, http_code: %d, message: %s',
+            $bootstrap['error'] ?? '(unknown)',
+            $bootstrap['http_code'] ?? 0,
+            $bootstrap['error_message'] ?? '(none)'
+         ));
+
+         PluginNextoolConfigAudit::log([
+            'section' => 'distribution',
+            'action'  => 'bootstrap_accept_policies',
+            'result'  => 0,
+            'message' => $errorMessage,
+            'details' => [
+               'error'       => $bootstrap['error'] ?? null,
+               'http_code'   => $bootstrap['http_code'] ?? 0,
+               'retry_after' => $bootstrap['retry_after'] ?? null,
+            ],
+         ]);
+
          plugin_nextool_redirect_after_action();
          exit;
       }
@@ -301,6 +346,13 @@ if ($shouldPersistGlobal) {
       $newEndpoint = trim((string) $_POST['endpoint_url']);
       if ($newEndpoint === '') {
          $newEndpoint = null;
+      } elseif (!filter_var($newEndpoint, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $newEndpoint)) {
+         Session::addMessageAfterRedirect(
+            __('URL do ContainerAPI inválida. Informe uma URL válida com protocolo (https://).', 'nextool'),
+            false,
+            ERROR
+         );
+         plugin_nextool_redirect_after_action();
       }
    } else {
       $newEndpoint = $previousGlobalConfig['endpoint_url'] ?? null;
@@ -399,11 +451,28 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
          $distributionClientIdentifier = $bootstrap['client_identifier']
             ?? ($previousGlobalConfig['client_identifier'] ?? '');
       } else {
-         Session::addMessageAfterRedirect(
-            __('Não foi possível gerar a chave de segurança automaticamente. Verifique a configuração e tente novamente mais tarde.', 'nextool'),
-            false,
-            WARNING
-         );
+         $errorMessage = $bootstrap['error_message']
+            ?? __('Não foi possível gerar a chave de segurança automaticamente. Tente novamente em instantes.', 'nextool');
+         Session::addMessageAfterRedirect($errorMessage, false, WARNING);
+
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'Bootstrap falhou durante validação de licença — error: %s, http_code: %d, message: %s',
+            $bootstrap['error'] ?? '(unknown)',
+            $bootstrap['http_code'] ?? 0,
+            $bootstrap['error_message'] ?? '(none)'
+         ));
+
+         PluginNextoolConfigAudit::log([
+            'section' => 'distribution',
+            'action'  => 'bootstrap_validate_license',
+            'result'  => 0,
+            'message' => $errorMessage,
+            'details' => [
+               'error'       => $bootstrap['error'] ?? null,
+               'http_code'   => $bootstrap['http_code'] ?? 0,
+               'retry_after' => $bootstrap['retry_after'] ?? null,
+            ],
+         ]);
       }
    }
 
@@ -437,6 +506,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
          ? $result['licenses']
          : [];
 
+      $resultHttpCode = $result['http_code'] ?? null;
+      $isCommError = $resultHttpCode !== null && ($resultHttpCode >= 400 || $resultHttpCode === 0);
+
       if ($resultError === 'unauthorized') {
          $msg = __('Ainda estamos preparando este ambiente na plataforma NexTool. Aguarde alguns instantes e clique novamente em "Sincronizar" para concluir. Enquanto isso, o ambiente permanece no plano gratuito.', 'nextool');
          Session::addMessageAfterRedirect(
@@ -444,11 +516,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
             false,
             INFO
          );
+      } elseif ($isCommError) {
+         // Erro de comunicação (rate limit, timeout, indisponibilidade): exibir apenas a mensagem
+         // do servidor sem inferir nada sobre o estado da licença.
+         Session::addMessageAfterRedirect($msg, false, WARNING);
       } elseif (empty($licensesInfo)) {
          $noLicenseMsg = __('Sincronização concluída: nenhuma licença ativa encontrada. O ambiente permanece no plano gratuito.', 'nextool');
-         if ($msg !== '' && stripos((string) $msg, 'nenhuma licença') === false) {
-            $noLicenseMsg .= ' ' . sprintf(__('Detalhes: %s.', 'nextool'), $msg);
-         }
          Session::addMessageAfterRedirect(
             $noLicenseMsg,
             false,

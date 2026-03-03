@@ -73,7 +73,7 @@ Links de filtro (uma página com todas as releases do módulo nesta linha):
 
 Depois de instalado e ativado, o **NexTool Solutions** aparece como um novo item de menu no GLPI (ao lado dos menus principais), com uma tela central que reúne:
 
-- Uma aba de **Módulos** contendo cards com nome, descrição, status e plano, e botões para Download, Instalar/Ativar e Configurações.
+- Uma aba de **Módulos** com busca por nome/descrição, filtros por status (chips de Ativado, Desativado, Download, Atualização, Gratuito, Licenciado), cards com nome, descrição, status e plano, e botões para Download, Instalar/Ativar e Configurações.
 - Uma aba de **Contato**, com canais oficiais de suporte e materiais de ajuda.
 - Uma aba de **Licenciamento** do ambiente (plano, módulos disponíveis, status de validação).
 - Uma aba de **Logs**, para acompanhar registros importantes do plugin.

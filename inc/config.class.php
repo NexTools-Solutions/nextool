@@ -190,6 +190,8 @@ class PluginNextoolConfig extends CommonDBTM {
       $endpoint_url = isset($data['endpoint_url']) ? trim((string)$data['endpoint_url']) : null;
       if ($endpoint_url === '') {
          $endpoint_url = null;
+      } elseif ($endpoint_url !== null && (!filter_var($endpoint_url, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $endpoint_url))) {
+         $endpoint_url = null;
       }
 
       $configObj = new self();

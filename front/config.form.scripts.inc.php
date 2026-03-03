@@ -33,6 +33,50 @@ if (document.readyState === 'loading') {
 }
 document.addEventListener('glpi.load', nextoolActivateDefaultTab);
 
+// --- Persistência de aba ativa ---
+// Quando o GLPI troca de aba via dropdown (AJAX), a URL não muda.
+// Se forcetab ficasse na URL, um refresh forçaria a aba original do sidebar.
+// Solução: limpar forcetab da URL após o load e rastrear a aba ativa em JS.
+(function() {
+   // 1. Limpar forcetab da URL para que refreshes respeitem a sessão do GLPI
+   if (window.history && window.history.replaceState) {
+      var url = new URL(window.location.href);
+      if (url.searchParams.has('forcetab')) {
+         url.searchParams.delete('forcetab');
+         window.history.replaceState(null, '', url.toString());
+      }
+   }
+
+   // 2. Rastrear aba ativa: quando GLPI troca aba, extrair _glpi_tab do link
+   function getTabKeyFromLink(link) {
+      var ajaxUrl = link.getAttribute('data-glpi-ajax-content') || '';
+      var match = ajaxUrl.match(/_glpi_tab=([^&]+)/);
+      return match ? decodeURIComponent(match[1]) : null;
+   }
+
+   document.addEventListener('shown.bs.tab', function(e) {
+      var tabKey = getTabKeyFromLink(e.target);
+      if (!tabKey) return;
+
+      // Guardar globalmente para ações de módulo e formulários
+      window._nextoolCurrentTab = tabKey;
+
+      // Atualizar hidden forcetab no nextoolSyncForm
+      var syncForm = document.getElementById('nextoolSyncForm');
+      if (syncForm) {
+         var field = syncForm.querySelector('input[name="forcetab"]');
+         if (field) field.value = tabKey;
+      }
+
+      // Atualizar hidden forcetab em configForm (se existir)
+      var configForm = document.getElementById('configForm');
+      if (configForm) {
+         var cfField = configForm.querySelector('input[name="forcetab"]');
+         if (cfField) cfField.value = tabKey;
+      }
+   });
+})();
+
 function nextoolGetAjaxCsrfToken() {
    // GLPI 10 expõe getAjaxCsrfToken() via common.js; manter fallback por segurança.
    if (typeof window.getAjaxCsrfToken === 'function') {
@@ -72,9 +116,8 @@ function nextoolInitModuleActions() {
          return;
       }
 
-      // Mantém a aba atual ao voltar do redirect
-      var params = new URLSearchParams(window.location.search || '');
-      var forcetab = params.get('forcetab') || 'PluginNextoolMainConfig$1';
+      // Mantém a aba atual ao voltar do redirect (usa aba rastreada pelo listener shown.bs.tab)
+      var forcetab = window._nextoolCurrentTab || new URLSearchParams(window.location.search || '').get('forcetab') || 'PluginNextoolMainConfig$1';
 
       var originalHtml = btn.innerHTML;
       btn.disabled = true;
@@ -237,4 +280,78 @@ if (document.readyState === 'loading') {
    _nextoolInitContactAll();
 }
 document.addEventListener('glpi.load', _nextoolInitContactAll);
+
+// ─── Module Filter/Search (event delegation — robusto para AJAX) ────────────
+(function() {
+   var activeFilters = new Set();
+   var debounceTimer = null;
+
+   function applyFilters() {
+      var searchInput = document.getElementById('nextool-module-search');
+      var noResults = document.getElementById('nextool-module-no-results');
+      var cards = document.querySelectorAll('.nextool-module-card');
+      if (!searchInput || !cards.length) return;
+
+      var query = searchInput.value.toLowerCase().trim();
+      var visibleCount = 0;
+
+      cards.forEach(function(card) {
+         var matchesText = true;
+         if (query) {
+            matchesText = (card.dataset.moduleName || '').indexOf(query) !== -1
+                       || (card.dataset.moduleDesc || '').indexOf(query) !== -1;
+         }
+
+         var matchesChip = true;
+         if (activeFilters.size > 0) {
+            matchesChip = false;
+            if (activeFilters.has('enabled') && card.dataset.moduleEnabled === '1') matchesChip = true;
+            if (activeFilters.has('disabled') && card.dataset.moduleInstalled === '1' && card.dataset.moduleEnabled === '0') matchesChip = true;
+            if (activeFilters.has('download') && card.dataset.moduleDownloaded === '0') matchesChip = true;
+            if (activeFilters.has('update') && card.dataset.moduleUpdate === '1') matchesChip = true;
+            if (activeFilters.has('free') && card.dataset.moduleTier === 'FREE') matchesChip = true;
+            if (activeFilters.has('licensed') && card.dataset.moduleTier !== 'FREE') matchesChip = true;
+         }
+
+         var visible = matchesText && matchesChip;
+         card.style.display = visible ? '' : 'none';
+         if (visible) visibleCount++;
+      });
+
+      if (noResults) {
+         noResults.classList.toggle('d-none', visibleCount > 0);
+      }
+   }
+
+   // Event delegation no document — funciona mesmo após replace do DOM via AJAX
+   document.addEventListener('input', function(e) {
+      if (e.target && e.target.id === 'nextool-module-search') {
+         clearTimeout(debounceTimer);
+         debounceTimer = setTimeout(applyFilters, 250);
+      }
+   });
+
+   document.addEventListener('keydown', function(e) {
+      if (e.target && e.target.id === 'nextool-module-search' && e.key === 'Escape') {
+         e.target.value = '';
+         applyFilters();
+      }
+   });
+
+   document.addEventListener('click', function(e) {
+      var chip = e.target.closest('.nextool-filter-chip');
+      if (!chip) return;
+      var filter = chip.dataset.filter;
+      if (!filter) return;
+
+      if (activeFilters.has(filter)) {
+         activeFilters.delete(filter);
+         chip.classList.remove('active');
+      } else {
+         activeFilters.add(filter);
+         chip.classList.add('active');
+      }
+      applyFilters();
+   });
+})();
 </script>
