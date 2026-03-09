@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Nextools - HMAC Secret Endpoint (AJAX)
  *
@@ -44,9 +45,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // CSRF: o GLPI valida automaticamente em inc/includes.php.
 // Não revalidar aqui com Session::checkCSRF()/validateCSRF(), pois essas rotinas
 // podem renderizar HTML de acesso negado e quebrar o contrato JSON do endpoint.
-
-require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
 
 // Por segurança, o segredo HMAC (client_secret) não é exposto para o browser.
 // A chave deve permanecer apenas no servidor e ser gerenciada via sincronização/regeneração.

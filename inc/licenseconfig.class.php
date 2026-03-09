@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - License Configuration
@@ -64,7 +65,6 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
       return [
          'license_key'            => null,
          'plan'                   => null,
-         'contract_active'        => null,
          'license_status'         => null,
          'expires_at'             => null,
          'policies_accepted_at'   => null,
@@ -98,7 +98,6 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
 
       $defaults = [
          'plan'                   => null,
-         'contract_active'        => null,
          'license_status'         => null,
          'expires_at'             => null,
          'last_validation_date'   => null,
@@ -141,20 +140,6 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
       $schemaUpdated = false;
       $migration = new Migration(2141);
 
-      if (!$DB->fieldExists($table, 'contract_active')) {
-         $migration->addField(
-            $table,
-            'contract_active',
-            'tinyint',
-            [
-               'value'   => null,
-               'comment' => 'Último estado do contrato retornado pelo administrativo',
-               'after'   => 'plan',
-            ]
-         );
-         $schemaUpdated = true;
-      }
-
       if (!$DB->fieldExists($table, 'license_status')) {
          $migration->addField(
             $table,
@@ -163,7 +148,7 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
             [
                'value'   => null,
                'comment' => 'Último status retornado pelo administrativo',
-               'after'   => 'contract_active',
+               'after'   => 'plan',
             ]
          );
          $schemaUpdated = true;

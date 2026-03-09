@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Config Audit
@@ -54,7 +55,27 @@ class PluginNextoolConfigAudit extends CommonDBTM {
       ];
 
       $audit = new self();
-      return $audit->add($record);
+      $result = $audit->add($record);
+
+      if (class_exists('Log') && method_exists('Log', 'history')) {
+         Log::history(
+            1,
+            'PluginNextoolMainConfig',
+            [
+               0,
+               '',
+               sprintf('[%s] %s — %s',
+                  strtoupper($data['section'] ?? ''),
+                  $data['action'] ?? '',
+                  mb_substr($data['message'] ?? '', 0, 180)
+               )
+            ],
+            '',
+            Log::HISTORY_LOG_SIMPLE_MESSAGE
+         );
+      }
+
+      return $result;
    }
 
    public static function showSimpleList() {
@@ -112,9 +133,9 @@ class PluginNextoolConfigAudit extends CommonDBTM {
             echo "<td>" . ($action !== '' ? Html::entities_deep($action) : '-') . "</td>";
             echo "<td>";
             if ($result === 1) {
-               echo "<span class='badge bg-green'>" . __('Sucesso', 'nextool') . "</span>";
+               echo "<span class='badge bg-green text-white'>" . __('Sucesso', 'nextool') . "</span>";
             } elseif ($result === 0) {
-               echo "<span class='badge bg-red'>" . __('Falha', 'nextool') . "</span>";
+               echo "<span class='badge bg-red text-white'>" . __('Falha', 'nextool') . "</span>";
             } else {
                echo "-";
             }

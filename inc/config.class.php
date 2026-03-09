@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Plugin Configuration
@@ -22,7 +23,27 @@ class PluginNextoolConfig extends CommonDBTM {
 
    const DEFAULT_CONTAINERAPI_BASE_URL = 'https://containerapi.nextoolsolutions.ai/';
 
+   private const CLIENT_ID_SALT = 'RITEC_SALT_V2';
+
    static $rightname = 'config';
+
+   public static function getPluginVersion(): string {
+      if (function_exists('plugin_version_nextool')) {
+         $info = plugin_version_nextool();
+         if (is_array($info) && isset($info['version'])) {
+            return (string)$info['version'];
+         }
+      }
+      return '0.0.0';
+   }
+
+   public static function generateRequestGroupId(): string {
+      return 'evt_' . (int)(microtime(true) * 1000000);
+   }
+
+   public static function isDebugEnabled(): bool {
+      return isset($_SESSION['glpi_use_mode']) && $_SESSION['glpi_use_mode'] === Session::DEBUG_MODE;
+   }
 
    public static function getTable($classname = null) {
       return 'glpi_plugin_nextool_main_configs';
@@ -59,34 +80,11 @@ class PluginNextoolConfig extends CommonDBTM {
       $host = strtolower(trim($host));
 
       // Base determinística para hash (usa apenas o host normalizado)
-      $baseString = $host . '|RITEC_SALT_V2';
+      $baseString = $host . '|' . self::CLIENT_ID_SALT;
 
       // Gera ID8: 8 chars A-Z0-9
       $hash = hash('sha256', $baseString);
-      $id8  = '';
-      $i    = 0;
-      while (strlen($id8) < 8 && $i < strlen($hash)) {
-         $c = strtoupper($hash[$i]);
-         if (ctype_xdigit($c)) {
-            // Mapeia hex para A-Z0-9
-            // 0-9 ficam 0-9; A-F mapeamos para letras fixas
-            if (ctype_digit($c)) {
-               $id8 .= $c;
-            } else {
-               // A-F -> letras específicas (A-F)
-               $map = [
-                  'A' => 'A',
-                  'B' => 'B',
-                  'C' => 'C',
-                  'D' => 'D',
-                  'E' => 'E',
-                  'F' => 'F',
-               ];
-               $id8 .= $map[$c];
-            }
-         }
-         $i++;
-      }
+      $id8 = strtoupper(substr($hash, 0, 8));
 
       if ($id8 === '') {
          $id8 = 'RITECID8';

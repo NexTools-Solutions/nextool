@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Path dos módulos (GLPI_PLUGIN_DOC_DIR)

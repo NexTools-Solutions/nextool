@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Module Front Router
@@ -55,7 +56,7 @@ $filePath = $modulePath . '/front/' . $filename;
 
 if (!file_exists($filePath)) {
    http_response_code(404);
-   die("Arquivo não encontrado: modules/{$moduleKey}/front/{$filename}");
+   die("Recurso não encontrado.");
 }
 
 // Verifica extensão do arquivo
@@ -74,12 +75,10 @@ if (preg_match('/\.(css|js)\.php$/', $filename)) {
    exit;
 }
 
-// Arquivos stateless (webhook.php) - definem suas próprias constantes antes de includes
-// Verifica se o arquivo define constantes stateless
-$fileContent = @file_get_contents($filePath);
-$isStateless = ($fileContent !== false && 
-                (strpos($fileContent, 'NO_CHECK_FROMOUTSIDE') !== false || 
-                 strpos($fileContent, 'DO_NOT_CHECK_LOGIN') !== false));
+// Arquivos stateless (webhook.php) — usa whitelist do cache stateless
+require_once GLPI_ROOT . '/plugins/nextool/inc/statelessmodules.inc.php';
+$statelessFiles = plugin_nextool_stateless_files();
+$isStateless = isset($statelessFiles[$moduleKey]) && in_array($filename, $statelessFiles[$moduleKey], true);
 
 if ($isStateless) {
    // Para arquivos stateless, não inclui includes.php aqui

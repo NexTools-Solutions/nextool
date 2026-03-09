@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Plugin NexTool - Estilos do formulário de configuração
  *
@@ -10,7 +11,7 @@
    /* Escopado a #nextool-config-form para não afetar o resto do GLPI e resistir a CSS genérico (padrão container raiz + seletores escopados). */
 
    /* Mitiga entity.css: .btn-outline-primary { border: none } que remove borda dos botões toggle (btn-check) */
-   #nextool-config-form .btn-outline-primary {
+   #nextool-config-form .btn-outline-primary:not(.nextool-filter-chip) {
       border: 1px solid currentColor !important;
    }
 
@@ -118,6 +119,11 @@
       box-shadow: 0 3px 8px rgba(0,0,0,0.3);
       filter: brightness(1.1);
    }
+   #nextool-config-form .nextool-filter-chip:focus:not(.active),
+   #nextool-config-form .nextool-filter-chip:focus-visible:not(.active) {
+      outline: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+   }
    #nextool-config-form .nextool-filter-chip .badge {
       font-size: 0.7rem;
       min-width: 1.2rem;
@@ -130,14 +136,18 @@
       background-color: #198754;
       border-color: #198754;
    }
+   #nextool-config-form .nextool-filter-chip.btn-outline-primary {
+      background-color: #0d6efd;
+      border-color: #0d6efd;
+   }
    #nextool-config-form .nextool-filter-chip.btn-outline-warning {
       background-color: #ffc107;
       border-color: #ffc107;
-      color: #000 !important;
+      color: #fff !important;
    }
    #nextool-config-form .nextool-filter-chip.btn-outline-warning .badge {
       background: rgba(0,0,0,0.15) !important;
-      color: #000 !important;
+      color: #fff !important;
    }
    #nextool-config-form .nextool-filter-chip.btn-outline-secondary {
       background-color: #6c757d;
@@ -146,11 +156,11 @@
    #nextool-config-form .nextool-filter-chip.btn-outline-info {
       background-color: #0dcaf0;
       border-color: #0dcaf0;
-      color: #000 !important;
+      color: #fff !important;
    }
    #nextool-config-form .nextool-filter-chip.btn-outline-info .badge {
       background: rgba(0,0,0,0.15) !important;
-      color: #000 !important;
+      color: #fff !important;
    }
    #nextool-config-form .nextool-filter-chip.btn-outline-teal,
    #nextool-config-form .btn-outline-teal {
@@ -171,6 +181,11 @@
       background-color: #146c43;
       border-color: #146c43;
       box-shadow: 0 0 0 2px #fff, 0 0 0 4px #198754;
+   }
+   #nextool-config-form .nextool-filter-chip.btn-outline-primary.active {
+      background-color: #0b5ed7;
+      border-color: #0b5ed7;
+      box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0d6efd;
    }
    #nextool-config-form .nextool-filter-chip.btn-outline-warning.active {
       background-color: #e0a800;

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - BaseModule
@@ -437,17 +438,6 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
-    * Retorna caminho web base do módulo
-    * Usa a nova estrutura se disponível, senão usa estrutura antiga
-    * 
-    * @return string Caminho web relativo ao plugin
-    */
-   protected function getModuleWebPath() {
-      // Path lógico para URL (módulos podem estar em files/_plugins/nextool/modules/)
-      return Plugin::getWebDir('nextool') . '/modules/' . $this->getModuleKey();
-   }
-
-   /**
     * Retorna caminho web para arquivo front-end do módulo
     * 
     * Usa o roteador central em front/modules.php para evitar problemas
@@ -519,44 +509,6 @@ abstract class PluginNextoolBaseModule {
       // Formato: front/module_assets.php?module=[key]&file=[filename]
       // O roteador serve o arquivo JS do módulo sem passar pelo roteamento do Symfony
       return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename);
-   }
-
-   /**
-    * Retorna caminho físico para arquivo CSS do módulo
-    * 
-    * @param string $filename Nome do arquivo (ex: 'style.css')
-    * @return string Caminho físico completo
-    */
-   protected function getCssFilePath($filename) {
-      $modulePath = $this->getModulePath();
-      
-      // Detecta estrutura
-      if (is_dir($modulePath . '/css')) {
-         // Nova estrutura: modules/[nome]/css/[arquivo]
-         return $modulePath . '/css/' . $filename;
-      } else {
-         // Estrutura antiga: css/[arquivo]
-         return GLPI_ROOT . '/plugins/nextool/css/' . $filename;
-      }
-   }
-
-   /**
-    * Retorna caminho físico para arquivo JS do módulo
-    * 
-    * @param string $filename Nome do arquivo (ex: 'script.js')
-    * @return string Caminho físico completo
-    */
-   protected function getJsFilePath($filename) {
-      $modulePath = $this->getModulePath();
-      
-      // Detecta estrutura
-      if (is_dir($modulePath . '/js')) {
-         // Nova estrutura: modules/[nome]/js/[arquivo]
-         return $modulePath . '/js/' . $filename;
-      } else {
-         // Estrutura antiga: js/[arquivo]
-         return GLPI_ROOT . '/plugins/nextool/js/' . $filename;
-      }
    }
 
    /**
@@ -639,11 +591,3 @@ abstract class PluginNextoolBaseModule {
       return $this->executeSqlFile('uninstall.sql');
    }
 }
-
-// Compatibilidade legado: alguns módulos antigos ainda estendem PluginRitectoolsBaseModule.
-if (!class_exists('PluginRitectoolsBaseModule')) {
-   abstract class PluginRitectoolsBaseModule extends PluginNextoolBaseModule {
-   }
-}
-
-

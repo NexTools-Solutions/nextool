@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Module Audit
@@ -62,16 +63,33 @@ class PluginNextoolModuleAudit extends CommonDBTM {
          'origin'           => isset($data['origin']) ? substr((string)$data['origin'], 0, 64) : null,
          'source_ip'        => $data['source_ip'] ?? null,
          'license_status'   => isset($data['license_status']) ? substr((string)$data['license_status'], 0, 32) : null,
-         'contract_active'  => array_key_exists('contract_active', $data)
-            ? ($data['contract_active'] === null ? null : (!empty($data['contract_active']) ? 1 : 0))
-            : null,
          'plan'             => isset($data['plan']) ? substr((string)$data['plan'], 0, 32) : null,
          'allowed_modules'  => $allowedModules,
          'requested_modules'=> $requestedModules,
       ];
 
       $audit = new self();
-      return $audit->add($record);
+      $result = $audit->add($record);
+
+      if (class_exists('Log') && method_exists('Log', 'history')) {
+         Log::history(
+            1,
+            'PluginNextoolMainConfig',
+            [
+               0,
+               '',
+               sprintf('[%s] %s — %s',
+                  strtoupper($data['action'] ?? ''),
+                  $data['module_key'] ?? '',
+                  mb_substr($data['message'] ?? '', 0, 180)
+               )
+            ],
+            '',
+            Log::HISTORY_LOG_SIMPLE_MESSAGE
+         );
+      }
+
+      return $result;
    }
 
    /**
@@ -103,14 +121,13 @@ class PluginNextoolModuleAudit extends CommonDBTM {
       echo "<th>" . __('Ação', 'nextool') . "</th>";
       echo "<th>" . __('Resultado', 'nextool') . "</th>";
       echo "<th>" . __('Usuário / Origem', 'nextool') . "</th>";
-      echo "<th>" . __('Licença', 'nextool') . "</th>";
       echo "<th>" . __('Mensagem', 'nextool') . "</th>";
       echo "</tr>";
       echo "</thead>";
       echo "<tbody>";
 
       if (!count($iterator)) {
-         echo "<tr><td colspan='7' class='text-center text-muted'>";
+         echo "<tr><td colspan='6' class='text-center text-muted'>";
          echo __('Nenhuma ação registrada ainda.', 'nextool');
          echo "</td></tr>";
       } else {
@@ -122,9 +139,6 @@ class PluginNextoolModuleAudit extends CommonDBTM {
             $message   = $row['message'] ?? '';
             $origin    = $row['origin'] ?? '';
             $sourceIp  = $row['source_ip'] ?? '';
-            $plan      = $row['plan'] ?? '';
-            $status    = $row['license_status'] ?? '';
-            $contract  = $row['contract_active'] ?? null;
             $userId    = isset($row['user_id']) ? (int)$row['user_id'] : 0;
 
             if (class_exists('Html') && !empty($when)) {
@@ -137,9 +151,9 @@ class PluginNextoolModuleAudit extends CommonDBTM {
             echo "<td><span class='badge bg-gray-lt'>" . Html::entities_deep($action) . "</span></td>";
             echo "<td>";
             if ($result === 1) {
-               echo "<span class='badge bg-green'>" . __('Sucesso', 'nextool') . "</span>";
+               echo "<span class='badge bg-green text-white'>" . __('Sucesso', 'nextool') . "</span>";
             } elseif ($result === 0) {
-               echo "<span class='badge bg-red'>" . __('Falhou', 'nextool') . "</span>";
+               echo "<span class='badge bg-red text-white'>" . __('Falhou', 'nextool') . "</span>";
             } else {
                echo "-";
             }
@@ -160,20 +174,6 @@ class PluginNextoolModuleAudit extends CommonDBTM {
             }
             if ($sourceIp !== '') {
                echo "<br><small class='text-muted'>" . Html::entities_deep($sourceIp) . "</small>";
-            }
-            echo "</td>";
-
-            echo "<td>";
-            if ($status !== '') {
-               echo "<span class='badge bg-secondary me-1'>" . Html::entities_deep($status) . "</span>";
-            }
-            if ($plan !== '') {
-               echo "<span class='badge bg-blue-lt me-1'>" . Html::entities_deep($plan) . "</span>";
-            }
-            if ($contract !== null) {
-               $label = $contract ? __('Contrato ativo', 'nextool') : __('Contrato inativo', 'nextool');
-               $class = $contract ? 'bg-green' : 'bg-red';
-               echo "<span class='badge {$class}'>" . Html::entities_deep($label) . "</span>";
             }
             echo "</td>";
 

@@ -1,10 +1,11 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Main Config
  * -------------------------------------------------------------------------
- * Item type nativo com abas verticais: Módulos, Contato, Licenciamento, Logs
- * e abas dinâmicas por módulo instalado com página de configuração.
+ * Item type nativo com abas verticais: Módulos, Contato, Licenciamento,
+ * Logs e abas dinâmicas por módulo instalado com página de configuração.
  * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
@@ -71,7 +72,12 @@ class PluginNextoolMainConfig extends CommonDBTM {
    public function defineTabs($options = []) {
       $ong = [];
       $this->addStandardTab(self::class, $ong, $options);
+      $this->addStandardTab('Log', $ong, $options);
       return $ong;
+   }
+
+   public static function getFormURL($full = true) {
+      return Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php';
    }
 
    /**
@@ -242,7 +248,12 @@ class PluginNextoolMainConfig extends CommonDBTM {
          if ($requestedSection !== '') {
             $nextool_redirect_after_save .= '&section=' . urlencode($requestedSection);
          }
-         include $configPath;
+         $realConfigPath = realpath($configPath);
+         if ($realConfigPath === false || strpos($realConfigPath, realpath(NEXTOOL_MODULES_BASE)) !== 0) {
+            echo '<div class="alert alert-danger m-3">' . __('Caminho de configuração inválido.', 'nextool') . '</div>';
+            return true;
+         }
+         include $realConfigPath;
          unset($_GET['embedded'], $_GET['in_config_form'], $nextool_redirect_after_save);
          if (isset($GLOBALS['nextool_config_form_test_url'])) {
             unset($GLOBALS['nextool_config_form_test_url']);

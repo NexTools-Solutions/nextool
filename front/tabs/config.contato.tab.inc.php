@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Aba Contato do Nextool.
  * Contexto/variáveis esperadas: $nextool_is_standalone, $nextool_standalone_output_tab,

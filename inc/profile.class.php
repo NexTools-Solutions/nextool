@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Profile
@@ -87,7 +88,7 @@ class PluginNextoolProfile extends Profile {
          ];
          $rights[] = [
             'itemtype' => self::class,
-            'label'    => __('Abas administrativas (Licença, Contato, Logs)', 'nextool'),
+            'label'    => __('Abas administrativas (Licença, Contato, Logs, Atualização)', 'nextool'),
             'field'    => PluginNextoolPermissionManager::RIGHT_ADMIN_TABS,
          ];
       }
@@ -145,4 +146,3 @@ class PluginNextoolProfile extends Profile {
       echo '</div>';
    }
 }
-

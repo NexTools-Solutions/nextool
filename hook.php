@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Hooks
@@ -81,7 +82,19 @@ function plugin_nextool_install() {
 }
 
 function plugin_nextool_upgrade($old_version) {
+   global $DB;
+
    $result = plugin_nextool_install();
+
+   // Migração 3.7.0: remover coluna legada contract_active de 3 tabelas
+   if (version_compare($old_version, '3.7.0', '<')) {
+      $migFile = GLPI_ROOT . '/plugins/nextool/sql/migration_remove_contract_active.sql';
+      if (file_exists($migFile)) {
+         $DB->runFile($migFile);
+         Toolbox::logInFile('plugin_nextool', "Upgrade {$old_version} → 3.7.0: migração contract_active executada.");
+      }
+   }
+
    PluginNextoolPermissionManager::syncModuleRights();
    return $result;
 }
@@ -130,6 +143,10 @@ function plugin_nextool_uninstall() {
    if (is_dir($tmpRemoteDir)) {
       nextool_delete_dir($tmpRemoteDir);
    }
+
+   // Remove configurações do self-updater em glpi_configs
+   $DB->delete('glpi_configs', ['context' => 'plugin:nextool_core_update']);
+   $DB->delete('glpi_configs', ['context' => 'plugin:nextool_distribution']);
 
    Toolbox::logInFile('plugin_nextool', 'Plugin desinstalado: módulos removidos, caches limpos e diretórios temporários apagados.');
 
@@ -246,6 +263,11 @@ function plugin_nextool_redefine_menus($menu) {
          'title' => __('Logs', 'nextool'),
          'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$4',
          'icon'  => 'ti ti-report-analytics',
+      ];
+      $nextoolsItem['content']['historico'] = [
+         'title' => __('Histórico', 'nextool'),
+         'page'  => $configBase . '&forcetab=Log$1',
+         'icon'  => 'ti ti-history',
       ];
    }
 

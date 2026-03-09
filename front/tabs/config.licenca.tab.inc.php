@@ -1,8 +1,9 @@
 <?php
+declare(strict_types=1);
 /**
  * Aba Licenciamento do Nextool.
  * Contexto/variáveis esperadas: $nextool_is_standalone, $nextool_standalone_output_tab,
- * $canViewAdminTabs, $nextool_hero_standalone, $licensesSnapshot, $contractActive,
+ * $canViewAdminTabs, $nextool_hero_standalone, $licensesSnapshot,
  * $licenseStatusCode, $config, $distributionBaseUrl, $distributionClientIdentifier,
  * $distributionClientSecret, $hmacSecretRow, $allowedModules, $licenseWarnings,
  * $canManageAdminTabs.
@@ -32,17 +33,17 @@
                </h4>
             </div>
             <div class="card-body">
-               <?php if (!empty($licensesSnapshot) && $contractActive === false): ?>
-                  <div class="alert alert-danger mb-4">
-                     <i class="ti ti-ban me-2"></i>
-                     <?php echo __('Contrato inativo: os módulos licenciados ficarão bloqueados até a regularização com o suporte NexTool.', 'nextool'); ?>
-                  </div>
-               <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode === 'EXPIRED'): ?>
+               <?php if (!empty($licensesSnapshot) && $licenseStatusCode === 'SUSPENDED'): ?>
                   <div class="alert alert-warning mb-4">
                      <i class="ti ti-alert-triangle me-2"></i>
-                     <?php echo __('Licença expirada. Os módulos ativos continuam funcionando, mas recomendamos renovar a validade.', 'nextool'); ?>
+                     <?php echo __('Licença suspensa. Os módulos já instalados continuam funcionando normalmente. Renove seu contrato para restaurar o acesso a suporte técnico, atualizações e novos downloads.', 'nextool'); ?>
                   </div>
-               <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode && $licenseStatusCode !== 'ACTIVE'): ?>
+               <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode === 'CANCELLED'): ?>
+                  <div class="alert alert-danger mb-4">
+                     <i class="ti ti-ban me-2"></i>
+                     <?php echo __('Licença cancelada. Os módulos licenciados ficarão bloqueados até a regularização com o suporte NexTool.', 'nextool'); ?>
+                  </div>
+               <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode === 'INACTIVE'): ?>
                   <div class="alert alert-info mb-4">
                      <i class="ti ti-info-circle me-2"></i>
                      <?php echo __('A licença ainda não está ativa. O ambiente permanece no plano gratuito até que uma licença válida seja vinculada.', 'nextool'); ?>
@@ -64,7 +65,7 @@
                                     <tr>
                                        <th><?php echo __('Licença', 'nextool'); ?></th>
                                        <th><?php echo __('Plano', 'nextool'); ?></th>
-                                       <th><?php echo __('Status do contrato', 'nextool'); ?></th>
+                                       <th><?php echo __('Status', 'nextool'); ?></th>
                                        <th><?php echo __('Validade da licença', 'nextool'); ?></th>
                                        <th><?php echo __('Módulos liberados', 'nextool'); ?></th>
                                     </tr>
@@ -73,19 +74,30 @@
                                     <?php foreach ($licensesSnapshot as $licenseRow):
                                        $rowKey = $licenseRow['license_key'] ?? __('(desconhecida)', 'nextool');
                                        $rowPlan = strtoupper($licenseRow['plan'] ?? 'FREE');
-                                       $rowContract = !empty($licenseRow['contract_active']);
+                                       $rowStatus = strtoupper($licenseRow['license_status'] ?? 'INACTIVE');
                                        $rowExpires = $licenseRow['expires_at'] ?? null;
                                        $rowModules = [];
                                        if (!empty($licenseRow['allowed_modules']) && is_array($licenseRow['allowed_modules'])) {
                                           $rowModules = $licenseRow['allowed_modules'];
                                        }
                                        $planBadge = [
-                                          'FREE'       => 'bg-teal',
-                                          'STARTER'    => 'bg-blue',
-                                          'PRO'        => 'bg-indigo',
-                                          'ENTERPRISE' => 'bg-purple',
+                                          'FREE'           => 'bg-teal',
+                                          'DESENVOLVIMENTO'=> 'bg-blue',
+                                          'LICENCIADO'     => 'bg-indigo',
+                                          'ENTERPRISE'     => 'bg-purple',
                                        ][$rowPlan] ?? 'bg-secondary';
-                                       $contractBadge = $rowContract ? 'bg-green' : 'bg-red';
+                                       $statusBadge = [
+                                          'ACTIVE'    => 'bg-green',
+                                          'INACTIVE'  => 'bg-red',
+                                          'SUSPENDED' => 'bg-orange',
+                                          'CANCELLED' => 'bg-red',
+                                       ][$rowStatus] ?? 'bg-secondary';
+                                       $statusLabel = [
+                                          'ACTIVE'    => __('Ativa', 'nextool'),
+                                          'INACTIVE'  => __('Inativa', 'nextool'),
+                                          'SUSPENDED' => __('Suspensa', 'nextool'),
+                                          'CANCELLED' => __('Cancelada', 'nextool'),
+                                       ][$rowStatus] ?? $rowStatus;
                                        $validityDisplay = __('Sem expiração', 'nextool');
                                        if (!empty($rowExpires)) {
                                           $formatted = $rowExpires;
@@ -98,7 +110,7 @@
                                     <tr>
                                        <td><code><?php echo Html::entities_deep($rowKey); ?></code></td>
                                        <td><span class="badge text-white <?php echo $planBadge; ?>"><?php echo Html::entities_deep(ucfirst(strtolower($rowPlan))); ?></span></td>
-                                       <td><span class="badge text-white <?php echo $contractBadge; ?>"><?php echo $rowContract ? __('Ativo', 'nextool') : __('Inativo', 'nextool'); ?></span></td>
+                                       <td><span class="badge text-white <?php echo $statusBadge; ?>"><?php echo Html::entities_deep($statusLabel); ?></span></td>
                                        <td><?php echo Html::entities_deep($validityDisplay); ?></td>
                                        <td>
                                           <?php if (empty($rowModules) || in_array('*', $rowModules, true)): ?>
@@ -200,12 +212,6 @@
                                     <?php if ($canManageAdminTabs): ?>
                                        <div class="d-flex flex-wrap gap-2 mt-2">
                                           <button type="button"
-                                                 class="btn btn-outline-primary btn-sm"
-                                                 data-secret-endpoint="<?php echo Html::entities_deep(Plugin::getWebDir('nextool') . '/ajax/hmac_secret.php'); ?>"
-                                                 onclick="nextoolCopyHmacSecret(this);">
-                                             <i class="ti ti-copy me-1"></i><?php echo __('Copiar chave', 'nextool'); ?>
-                                          </button>
-                                          <button type="button"
                                                  class="btn btn-outline-danger btn-sm"
                                                  onclick="nextoolRegenerateHmac(this);">
                                              <i class="ti ti-refresh me-1"></i><?php echo __('Regerar chave', 'nextool'); ?>
@@ -275,5 +281,18 @@
          </div>
       </div>
    </form>
+
+   <div class="card shadow-sm nextool-tab-card mt-3">
+      <div class="card-body">
+         <h5 class="fw-semibold mb-2">
+            <i class="ti ti-history me-1"></i>
+            <?php echo __('Histórico de alterações', 'nextool'); ?>
+         </h5>
+         <p class="text-muted">
+            <?php echo __('Mostra quem alterou configurações da licença ou executou sincronizações manuais.', 'nextool'); ?>
+         </p>
+         <?php PluginNextoolConfigAudit::showSimpleList(); ?>
+      </div>
+   </div>
 <?php if (!$nextool_is_standalone): ?></div><?php endif; ?>
 <?php endif; ?>

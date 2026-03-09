@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Permission Manager
@@ -85,24 +86,6 @@ class PluginNextoolPermissionManager {
 
    public static function canManageAdminTabs(): bool {
       return self::haveRight(self::RIGHT_ADMIN_TABS, UPDATE) || self::hasGlobalAdminAccess();
-   }
-
-   public static function assertCanViewModules(): void {
-      if (!self::canViewModules()) {
-         self::deny(__('Você não tem permissão para visualizar os módulos do NexTool.', 'nextool'));
-      }
-   }
-
-   public static function assertCanManageModules(): void {
-      if (!self::canManageModules()) {
-         self::deny(__('Você não tem permissão para gerenciar os módulos do NexTool.', 'nextool'));
-      }
-   }
-
-   public static function assertCanPurgeModuleData(): void {
-      if (!self::canPurgeModuleData()) {
-         self::deny(__('Você não tem permissão para apagar os dados do módulo.', 'nextool'));
-      }
    }
 
    public static function assertCanAccessAdminTabs(): void {
@@ -204,12 +187,6 @@ class PluginNextoolPermissionManager {
    public static function assertCanManageModule(string $moduleKey): void {
       if (!self::canManageModule($moduleKey)) {
          self::deny(__('Você não tem permissão para gerenciar este módulo.', 'nextool'));
-      }
-   }
-
-   public static function assertCanPurgeModuleDataForModule(string $moduleKey): void {
-      if (!self::canPurgeModuleDataForModule($moduleKey)) {
-         self::deny(__('Você não tem permissão para apagar os dados deste módulo.', 'nextool'));
       }
    }
 

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Config Form (Layout)
@@ -69,6 +70,27 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
 $licenseConfig = PluginNextoolLicenseConfig::getDefaultConfig();
 $policiesAcceptedAt = $licenseConfig['policies_accepted_at'] ?? null;
 $hasAcceptedPolicies = !empty($policiesAcceptedAt);
+
+// Define version vars for JS before scripts load (scripts are in the main page,
+// but the modal HTML comes via AJAX tab — so these must be set here, not inside the tab).
+$_nxCurrentVersion = '-';
+if (function_exists('plugin_version_nextool')) {
+   $info = plugin_version_nextool();
+   $_nxCurrentVersion = isset($info['version']) ? (string) $info['version'] : '-';
+}
+$_nxTargetVersion = '';
+if (PluginNextoolPermissionManager::canAccessAdminTabs()) {
+   require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+   $_nxCoreState = PluginNextoolCoreUpdater::getState();
+   // Use staged version if available, otherwise fall back to latest known version
+   $_nxTargetVersion = trim((string) ($_nxCoreState['staged_target_version'] ?? ''));
+   if ($_nxTargetVersion === '') {
+      $_nxTargetVersion = trim((string) ($_nxCoreState['latest_available_version'] ?? ''));
+   }
+}
+echo '<script>window._nextoolCurrentVersion=' . json_encode($_nxCurrentVersion) . ';';
+echo 'window._nextoolTargetVersion=' . json_encode($_nxTargetVersion) . ';</script>';
+
 include GLPI_ROOT . '/plugins/nextool/front/config.form.scripts.inc.php';
 
 // Formulário fallback para o botão Sincronizar na aba Módulos (onde o hero não está dentro de form).

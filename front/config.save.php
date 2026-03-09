@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Config Save
@@ -49,6 +50,10 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/configaudit.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+
+// UUID v4 para correlacionar todos os eventos desta ação no ContainerAPI
+$GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
 
 /**
  * Realiza bootstrap automático do segredo HMAC quando necessário.
@@ -69,6 +74,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
    $needsBootstrap = $baseUrl !== '' && $clientIdentifier !== '' && empty($distributionSettings['client_secret']);
 
    if (!$needsBootstrap) {
+      Toolbox::logInFile('plugin_nextool', "[DEBUG] [ConfigSave] bootstrap_hmac_if_needed: não necessário (secret já existe ou config incompleta)\n");
       return [
          'attempted'         => false,
          'success'           => true,
@@ -82,6 +88,10 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
       ];
    }
 
+   Toolbox::logInFile('plugin_nextool', sprintf(
+      "[DEBUG] [ConfigSave] bootstrap_hmac_if_needed: tentando obter secret para %s\n",
+      $clientIdentifier
+   ));
    $result = PluginNextoolDistributionClient::obtainOrReuseClientSecret(
       $baseUrl,
       $clientIdentifier
@@ -135,6 +145,12 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
 
 // Verificação de permissão depende da ação
 $action = $_POST['action'] ?? '';
+
+$validActions = ['', 'validate_license', 'regenerate_hmac', 'accept_policies'];
+if (!in_array($action, $validActions, true)) {
+   http_response_code(400);
+   die(json_encode(['success' => false, 'message' => __('Ação inválida.', 'nextool')]));
+}
 
 // Ação "validate_license" requer apenas READ (visualizar/consultar)
 if ($action === 'validate_license') {
@@ -317,7 +333,6 @@ if ($action === 'accept_policies') {
       'details' => [
          'http_code'       => $result['http_code'] ?? null,
          'plan'            => $result['plan'] ?? null,
-         'contract_active' => $result['contract_active'] ?? null,
          'license_status'  => $result['license_status'] ?? null,
       ],
    ]);
@@ -492,7 +507,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
    $resultError = $result['error'] ?? null;
    if (!empty($result['valid'])) {
       // Usa diretamente a mensagem retornada pelo validador (já enriquecida com o plano),
-      // evitando redundâncias do tipo "Licença válida: Licença válida (PRO)".
+      // evitando redundâncias do tipo "Licença válida: Licença válida (LICENCIADO)".
       $msg = $result['message'] ?? __('Licença válida', 'nextool');
 
       Session::addMessageAfterRedirect(
@@ -509,6 +524,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
       $resultHttpCode = $result['http_code'] ?? null;
       $isCommError = $resultHttpCode !== null && ($resultHttpCode >= 400 || $resultHttpCode === 0);
 
+      // Verificar license_status ANTES de isCommError: HTTP 403 com license_status
+      // é resposta de negócio (SUSPENDED, CANCELLED), não erro de comunicação.
+      $licenseStatus = strtoupper((string)($result['license_status'] ?? ''));
+      $planLabel = !empty($result['plan']) ? $result['plan'] : 'FREE';
+
       if ($resultError === 'unauthorized') {
          $msg = __('Ainda estamos preparando este ambiente na plataforma NexTool. Aguarde alguns instantes e clique novamente em "Sincronizar" para concluir. Enquanto isso, o ambiente permanece no plano gratuito.', 'nextool');
          Session::addMessageAfterRedirect(
@@ -516,14 +536,43 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
             false,
             INFO
          );
+      } elseif ($licenseStatus === 'SUSPENDED') {
+         $contactUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?forcetab=PluginNextoolMainConfig%242';
+         Session::addMessageAfterRedirect(
+            sprintf(__('Sincronização concluída: a licença do plano %s está suspensa. Os módulos já instalados continuam funcionando. Regularize sua situação para restaurar o acesso a suporte técnico, atualizações e novos downloads.', 'nextool'), $planLabel)
+            . ' <a href="' . htmlspecialchars($contactUrl) . '">' . __('Entre em contato com o suporte.', 'nextool') . '</a>',
+            false,
+            WARNING
+         );
+      } elseif ($licenseStatus === 'CANCELLED') {
+         $contactUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?forcetab=PluginNextoolMainConfig%242';
+         Session::addMessageAfterRedirect(
+            sprintf(__('Sincronização concluída: a licença do plano %s foi cancelada. Os módulos licenciados ficarão bloqueados.', 'nextool'), $planLabel)
+            . ' <a href="' . htmlspecialchars($contactUrl) . '">' . __('Entre em contato com o suporte para reativar.', 'nextool') . '</a>',
+            false,
+            WARNING
+         );
+      } elseif ($licenseStatus === 'INACTIVE') {
+         if (strtoupper($planLabel) === 'FREE') {
+            Session::addMessageAfterRedirect(
+               __('Sincronização concluída com sucesso. Seu ambiente está no plano gratuito — todos os módulos gratuitos estão disponíveis.', 'nextool'),
+               false,
+               INFO
+            );
+         } else {
+            Session::addMessageAfterRedirect(
+               sprintf(__('Sincronização concluída: a licença do plano %s foi encontrada, mas ainda não está ativa. Entre em contato com o suporte para ativação.', 'nextool'), $planLabel),
+               false,
+               INFO
+            );
+         }
       } elseif ($isCommError) {
-         // Erro de comunicação (rate limit, timeout, indisponibilidade): exibir apenas a mensagem
-         // do servidor sem inferir nada sobre o estado da licença.
+         // Erro de comunicação real (rate limit, timeout, indisponibilidade):
+         // só chega aqui se NÃO há license_status na resposta.
          Session::addMessageAfterRedirect($msg, false, WARNING);
       } elseif (empty($licensesInfo)) {
-         $noLicenseMsg = __('Sincronização concluída: nenhuma licença ativa encontrada. O ambiente permanece no plano gratuito.', 'nextool');
          Session::addMessageAfterRedirect(
-            $noLicenseMsg,
+            __('Sincronização concluída com sucesso. Nenhuma licença comercial vinculada — o ambiente opera no plano gratuito.', 'nextool'),
             false,
             INFO
          );
@@ -558,25 +607,47 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
       'message'           => $result['message'] ?? null,
       'plan'              => $result['plan'] ?? null,
       'license_status'    => $result['license_status'] ?? null,
-      'contract_active'   => $result['contract_active'] ?? null,
       'licenses_count'    => isset($result['licenses']) && is_array($result['licenses']) ? count($result['licenses']) : 0,
    ];
    Toolbox::logInFile('plugin_nextool', 'Manual validation payload: ' . json_encode($logPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
+   // Resultado para auditoria: sucesso = sincronização concluída (servidor respondeu).
+   // Falha = erro real de comunicação (timeout, sem resposta, 5xx).
+   // HTTP 200 + valid=false + plan=FREE é sincronização bem-sucedida, não falha.
+   // HTTP 403 com license_status/plan = resposta de negócio válida (ex: SUSPENDED), não erro.
+   $syncHttpCode = (int) ($result['http_code'] ?? 0);
+   $syncSucceeded = ($syncHttpCode >= 200 && $syncHttpCode < 500) && $syncHttpCode !== 0;
+
    PluginNextoolConfigAudit::log([
       'section' => 'validation',
       'action'  => 'manual_validation',
-      'result'  => !empty($result['valid']) ? 1 : 0,
+      'result'  => $syncSucceeded ? 1 : 0,
       'message' => $msg,
       'details' => [
          'http_code'        => $result['http_code'] ?? null,
-         'contract_active'  => $result['contract_active'] ?? null,
          'license_status'   => $result['license_status'] ?? null,
          'plan'             => $result['plan'] ?? null,
       ],
    ]);
+
+   // Após "Sincronizar", atualiza o estado de core update para acender
+   // automaticamente o botão do quick-flow quando houver versão nova.
+   try {
+      $coreUpdater = new PluginNextoolCoreUpdater();
+      $coreCheck = $coreUpdater->check('stable', 'manual_sync');
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         'Core check após sincronização: success=%s update_available=%s target=%s',
+         !empty($coreCheck['success']) ? 'true' : 'false',
+         (!empty($coreCheck['data']['update_available']) ? 'true' : 'false'),
+         (string)($coreCheck['data']['target_version'] ?? '')
+      ));
+   } catch (Throwable $e) {
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         'Falha ao atualizar estado de core update após sincronização: %s',
+         $e->getMessage()
+      ));
+   }
 }
 
 // Redireciona de volta para a página de configuração
 plugin_nextool_redirect_after_action();
-

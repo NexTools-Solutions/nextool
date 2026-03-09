@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Aba Módulos do Nextool.
  * Contexto/variáveis esperadas: $nextool_is_standalone, $nextool_standalone_output_tab,
@@ -78,11 +79,12 @@
             <?php else: ?>
                <?php
                   // Contadores dos chips — calculados server-side
-                  $fc = ['enabled' => 0, 'disabled' => 0, 'download' => 0, 'update' => 0, 'free' => 0, 'licensed' => 0];
+                  $fc = ['enabled' => 0, 'disabled' => 0, 'download' => 0, 'install' => 0, 'update' => 0, 'free' => 0, 'licensed' => 0];
                   foreach ($modulesState as $m) {
                      if (!empty($m['is_enabled']))                                   $fc['enabled']++;
                      if (!empty($m['is_installed']) && empty($m['is_enabled']))       $fc['disabled']++;
                      if (empty($m['module_downloaded']))                              $fc['download']++;
+                     if (!empty($m['module_downloaded']) && empty($m['is_installed'])) $fc['install']++;
                      if (!empty($m['update_available']))                              $fc['update']++;
                      if (strtoupper($m['billing_tier'] ?? '') === 'FREE')             $fc['free']++;
                      if (strtoupper($m['billing_tier'] ?? '') !== 'FREE')             $fc['licensed']++;
@@ -109,6 +111,9 @@
                      <button type="button" class="btn btn-sm btn-outline-secondary nextool-filter-chip rounded-pill" data-filter="download">
                         <i class="ti ti-cloud-download me-1"></i><?php echo __('Download', 'nextool'); ?> <span class="badge bg-secondary ms-1"><?php echo $fc['download']; ?></span>
                      </button>
+                     <button type="button" class="btn btn-sm btn-outline-primary nextool-filter-chip rounded-pill" data-filter="install">
+                        <i class="ti ti-download me-1"></i><?php echo __('Instalar', 'nextool'); ?> <span class="badge bg-primary ms-1"><?php echo $fc['install']; ?></span>
+                     </button>
                      <button type="button" class="btn btn-sm btn-outline-info nextool-filter-chip rounded-pill" data-filter="update">
                         <i class="ti ti-arrow-up me-1"></i><?php echo __('Atualização', 'nextool'); ?> <span class="badge bg-info ms-1"><?php echo $fc['update']; ?></span>
                      </button>
@@ -132,6 +137,7 @@
                        data-module-enabled="<?php echo $module['is_enabled'] ? '1' : '0'; ?>"
                        data-module-installed="<?php echo $module['is_installed'] ? '1' : '0'; ?>"
                        data-module-downloaded="<?php echo $module['module_downloaded'] ? '1' : '0'; ?>"
+                       data-module-install-ready="<?php echo (!$module['is_installed'] && $module['module_downloaded']) ? '1' : '0'; ?>"
                        data-module-update="<?php echo $module['update_available'] ? '1' : '0'; ?>"
                        data-module-tier="<?php echo strtoupper($module['billing_tier']); ?>">
                      <div class="card border <?php echo $borderClass; ?> h-100">

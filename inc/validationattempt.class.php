@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - License Validation Attempts
@@ -12,6 +13,9 @@
  * - mensagem
  * - código HTTP
  * - tempo de resposta
+ *
+ * Exibição via Search::show() nativo do GLPI (grade com filtros, ordenação
+ * e paginação).
  * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
@@ -24,9 +28,12 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-class PluginNextoolValidationAttempt extends CommonDBTM {
+use Glpi\Search\DefaultSearchRequestInterface;
+
+class PluginNextoolValidationAttempt extends CommonDBTM implements DefaultSearchRequestInterface {
 
    public static $rightname = 'config';
+   public $dont_pass_handled = true;
 
    /**
     * Nome da tabela
@@ -42,6 +49,209 @@ class PluginNextoolValidationAttempt extends CommonDBTM {
       return _n('Tentativa de Validação', 'Tentativas de Validação', $nb, 'nextool');
    }
 
+   public static function getIcon() {
+      return 'ti ti-report-analytics';
+   }
+
+   public static function getSearchURL($full = true) {
+      if (!empty($GLOBALS['nextool_validation_attempts_forcetab_url'])) {
+         return $GLOBALS['nextool_validation_attempts_forcetab_url'];
+      }
+      return Plugin::getWebDir('nextool')
+         . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$4';
+   }
+
+   public static function getDefaultSearchRequest(): array {
+      return [
+         'sort'  => 2,
+         'order' => 'DESC',
+      ];
+   }
+
+   public function rawSearchOptions() {
+      $tab = [];
+
+      $tab[] = [
+         'id'   => 'common',
+         'name' => __('Tentativas de Validação', 'nextool'),
+      ];
+
+      $tab[] = [
+         'id'            => '1',
+         'table'         => $this->getTable(),
+         'field'         => 'id',
+         'name'          => __('ID', 'nextool'),
+         'searchtype'    => ['equals', 'notequals'],
+         'datatype'      => 'number',
+         'massiveaction' => false,
+      ];
+
+      $tab[] = [
+         'id'            => '2',
+         'table'         => $this->getTable(),
+         'field'         => 'attempt_date',
+         'name'          => __('Data', 'nextool'),
+         'searchtype'    => ['contains', 'equals', 'notequals'],
+         'datatype'      => 'datetime',
+         'massiveaction' => false,
+      ];
+
+      $tab[] = [
+         'id'               => '3',
+         'table'            => $this->getTable(),
+         'field'            => 'result',
+         'name'             => __('Resultado', 'nextool'),
+         'searchtype'       => ['equals', 'notequals'],
+         'datatype'         => 'specific',
+         'massiveaction'    => false,
+         'additionalfields' => ['plan', 'http_code'],
+      ];
+
+      $tab[] = [
+         'id'            => '4',
+         'table'         => $this->getTable(),
+         'field'         => 'http_code',
+         'name'          => __('Código HTTP', 'nextool'),
+         'searchtype'    => ['equals', 'notequals'],
+         'datatype'      => 'number',
+         'massiveaction' => false,
+      ];
+
+      $tab[] = [
+         'id'            => '5',
+         'table'         => $this->getTable(),
+         'field'         => 'response_time_ms',
+         'name'          => __('Tempo (ms)', 'nextool'),
+         'searchtype'    => ['equals', 'notequals'],
+         'datatype'      => 'number',
+         'massiveaction' => false,
+      ];
+
+      $tab[] = [
+         'id'            => '6',
+         'table'         => $this->getTable(),
+         'field'         => 'origin',
+         'name'          => __('Origem', 'nextool'),
+         'searchtype'    => ['contains', 'equals'],
+         'datatype'      => 'string',
+         'massiveaction' => false,
+      ];
+
+      $tab[] = [
+         'id'            => '7',
+         'table'         => $this->getTable(),
+         'field'         => 'client_identifier',
+         'name'          => __('Ambiente', 'nextool'),
+         'searchtype'    => ['contains', 'equals'],
+         'datatype'      => 'string',
+         'massiveaction' => false,
+      ];
+
+      $tab[] = [
+         'id'            => '8',
+         'table'         => $this->getTable(),
+         'field'         => 'plan',
+         'name'          => __('Plano', 'nextool'),
+         'searchtype'    => ['contains', 'equals'],
+         'datatype'      => 'string',
+         'massiveaction' => false,
+      ];
+
+      $tab[] = [
+         'id'            => '9',
+         'table'         => $this->getTable(),
+         'field'         => 'license_status',
+         'name'          => __('Status', 'nextool'),
+         'searchtype'    => ['contains', 'equals'],
+         'datatype'      => 'string',
+         'massiveaction' => false,
+      ];
+
+      $tab[] = [
+         'id'            => '10',
+         'table'         => $this->getTable(),
+         'field'         => 'message',
+         'name'          => __('Mensagem', 'nextool'),
+         'searchtype'    => ['contains'],
+         'datatype'      => 'string',
+         'massiveaction' => false,
+      ];
+
+      $tab[] = [
+         'id'            => '11',
+         'table'         => 'glpi_users',
+         'field'         => 'name',
+         'name'          => __('Usuário', 'nextool'),
+         'searchtype'    => ['contains', 'equals'],
+         'datatype'      => 'dropdown',
+         'massiveaction' => false,
+         'linkfield'     => 'user_id',
+      ];
+
+      $tab[] = [
+         'id'            => '12',
+         'table'         => $this->getTable(),
+         'field'         => 'requested_modules',
+         'name'          => __('Módulos', 'nextool'),
+         'searchtype'    => ['contains'],
+         'datatype'      => 'string',
+         'massiveaction' => false,
+      ];
+
+      return $tab;
+   }
+
+   public static function getSpecificValueToDisplay($field, $values, array $options = []) {
+      if ($field === 'result') {
+         $result = (int)($values['result'] ?? 0);
+         $plan = strtoupper($values['plan'] ?? '');
+         $httpCode = (int)($values['http_code'] ?? 0);
+
+         if ($result === 1) {
+            return "<span class='badge text-white bg-green'>" . __('Válida', 'nextool') . "</span>";
+         }
+         if ($plan === 'FREE') {
+            return "<span class='badge text-white bg-teal'>" . __('Free Tier', 'nextool') . "</span>";
+         }
+         // Servidor respondeu (2xx-4xx) mas sem licença ativa — comunicação OK, plano free liberado
+         if ($httpCode >= 200 && $httpCode < 500) {
+            return "<span class='badge text-white bg-orange'>" . __('Sem Licença', 'nextool') . "</span>";
+         }
+         // Erro real: 5xx, timeout, sem resposta
+         return "<span class='badge text-white bg-red'>" . __('Erro', 'nextool') . "</span>";
+      }
+      return parent::getSpecificValueToDisplay($field, $values, $options);
+   }
+
+   public static function ensureDisplayPreferences() {
+      global $DB;
+
+      $itemtype = self::class;
+      $d_pref = new DisplayPreference();
+      $found = $d_pref->find(['itemtype' => $itemtype, 'users_id' => 0]);
+
+      if (count($found) === 0 && isset($DB)) {
+         $default_cols = [
+            2  => 1,  // Data
+            3  => 2,  // Resultado
+            4  => 3,  // Código HTTP
+            5  => 4,  // Tempo (ms)
+            6  => 5,  // Origem
+            8  => 6,  // Plano
+            11 => 7,  // Usuário
+            10 => 8,  // Mensagem
+         ];
+         foreach ($default_cols as $num => $rank) {
+            $DB->insert(DisplayPreference::getTable(), [
+               'itemtype' => $itemtype,
+               'num'      => $num,
+               'rank'     => $rank,
+               'users_id' => 0,
+            ]);
+         }
+      }
+   }
+
    /**
     * Registra uma tentativa de validação
     *
@@ -54,7 +264,6 @@ class PluginNextoolValidationAttempt extends CommonDBTM {
     *   - requested_modules (array|string|null)
     *   - client_identifier (string)
     *   - license_status (string)
-    *   - contract_active (bool|int|null)
     *   - plan (string)
     *   - force_refresh (bool|int)
     *   - cache_hit (bool|int)
@@ -85,9 +294,6 @@ class PluginNextoolValidationAttempt extends CommonDBTM {
          'requested_modules'=> $requestedModules,
          'client_identifier'=> $data['client_identifier'] ?? null,
          'license_status'   => isset($data['license_status']) ? substr((string)$data['license_status'], 0, 32) : null,
-         'contract_active'  => array_key_exists('contract_active', $data)
-            ? ($data['contract_active'] === null ? null : (!empty($data['contract_active']) ? 1 : 0))
-            : null,
          'plan'             => isset($data['plan']) ? substr((string)$data['plan'], 0, 32) : null,
          'allowed_modules'  => isset($data['allowed_modules']) ? (string)$data['allowed_modules'] : null,
          'force_refresh'    => !empty($data['force_refresh']) ? 1 : 0,
@@ -97,172 +303,4 @@ class PluginNextoolValidationAttempt extends CommonDBTM {
 
       return $attempt->add($input);
    }
-
-   /**
-    * Exibe uma listagem simples das tentativas de validação
-    * (similar ao que o plugin administrativo faz em ritecadmin)
-    */
-   public static function showSimpleList() {
-      global $DB;
-
-      if (!$DB->tableExists(self::getTable())) {
-         echo "<div class='alert alert-warning'>";
-         echo "<i class='ti ti-alert-triangle me-2'></i>";
-         echo __('Tabela de tentativas de validação não encontrada. Verifique se as migrations de licenciamento foram executadas.', 'nextool');
-         echo "</div>";
-         return;
-      }
-
-      $iterator = $DB->request([
-         'FROM'  => self::getTable(),
-         'ORDER' => 'attempt_date DESC',
-         'LIMIT' => 100
-      ]);
-
-      echo "<div class='table-responsive' style='max-height: 500px; overflow-y: auto;'>";
-      echo "<table class='table table-sm table-hover table-striped'>";
-      echo "<thead class='table-light sticky-top'>";
-      echo "<tr>";
-      echo "<th>" . __('Data/Hora', 'nextool') . "</th>";
-      echo "<th>" . __('Resultado', 'nextool') . "</th>";
-      echo "<th>" . __('Código HTTP', 'nextool') . "</th>";
-      echo "<th>" . __('Tempo (ms)', 'nextool') . "</th>";
-      echo "<th>" . __('Origem', 'nextool') . "</th>";
-      echo "<th>" . __('Status / Plano', 'nextool') . "</th>";
-      echo "<th>" . __('Usuário', 'nextool') . "</th>";
-      echo "<th>" . __('Mensagem', 'nextool') . "</th>";
-      echo "</tr>";
-      echo "</thead>";
-      echo "<tbody>";
-
-      if (!count($iterator)) {
-         echo "<tr>";
-         echo "<td colspan='5' class='text-center text-muted'>";
-         echo __('Nenhuma tentativa de validação registrada até o momento.', 'nextool');
-         echo "</td>";
-         echo "</tr>";
-      } else {
-         foreach ($iterator as $row) {
-            $when    = $row['attempt_date'] ?? null;
-            $result  = isset($row['result']) ? (int)$row['result'] : null;
-            $http    = $row['http_code'] ?? null;
-            $timeMs  = $row['response_time_ms'] ?? null;
-            $message = $row['message'] ?? '';
-            $origin   = $row['origin'] ?? '';
-            $plan     = $row['plan'] ?? '';
-            $status   = $row['license_status'] ?? '';
-            $contract = $row['contract_active'] ?? null;
-            $userId   = isset($row['user_id']) ? (int)$row['user_id'] : 0;
-
-            if (class_exists('Html') && !empty($when)) {
-               $when = Html::convDateTime($when);
-            }
-
-            echo "<tr>";
-
-            // Data/Hora
-            echo "<td>" . (!empty($when) ? Html::entities_deep($when) : '-') . "</td>";
-
-            // Resultado
-            echo "<td>";
-            if ($result === 1) {
-               echo "<span class='badge bg-green'>" . __('Válida', 'nextool') . "</span>";
-            } elseif ($result === 0) {
-               echo "<span class='badge bg-red'>" . __('Inválida', 'nextool') . "</span>";
-            } else {
-               echo "-";
-            }
-            echo "</td>";
-
-            // Código HTTP
-            echo "<td>";
-            if ($http !== null && $http !== '') {
-               echo Html::entities_deep($http);
-            } else {
-               echo "-";
-            }
-            echo "</td>";
-
-            // Tempo de resposta
-            echo "<td>";
-            if ($timeMs !== null && $timeMs !== '') {
-               echo Html::entities_deep($timeMs);
-            } else {
-               echo "-";
-            }
-            echo "</td>";
-
-            // Origem
-            echo "<td>";
-            echo $origin !== '' ? Html::entities_deep($origin) : '-';
-            if (!empty($row['client_identifier'])) {
-               echo "<br><small class='text-muted'>" . Html::entities_deep($row['client_identifier']) . "</small>";
-            }
-            echo "</td>";
-
-            // Status / Plano
-            echo "<td>";
-            if ($status !== '') {
-               echo "<span class='badge bg-secondary me-1'>" . Html::entities_deep($status) . "</span>";
-            }
-            if ($plan !== '') {
-               echo "<span class='badge bg-blue-lt me-1'>" . Html::entities_deep($plan) . "</span>";
-            }
-            if ($contract !== null) {
-               $label = $contract ? __('Contrato ativo', 'nextool') : __('Contrato inativo', 'nextool');
-               $class = $contract ? 'bg-green' : 'bg-red';
-               echo "<span class='badge {$class}'>" . Html::entities_deep($label) . "</span>";
-            }
-            echo "</td>";
-
-            // Usuário
-            echo "<td>";
-            if ($userId > 0) {
-               $username = null;
-               if (class_exists('User')) {
-                  $username = User::getFriendlyNameById($userId);
-               }
-               echo Html::entities_deep($username ?: sprintf('#%d', $userId));
-            } else {
-               echo "-";
-            }
-            echo "</td>";
-
-            // Mensagem
-            echo "<td>";
-            echo Html::entities_deep($message);
-
-            $extras = [];
-            if (!empty($row['requested_modules'])) {
-               $modules = json_decode($row['requested_modules'], true);
-               if (is_array($modules) && count($modules)) {
-                  $modulesLabels = array_map(function ($module) {
-                     return Html::entities_deep($module);
-                  }, $modules);
-                  $extras[] = __('Módulos solicitados:', 'nextool') . ' ' . implode(', ', $modulesLabels);
-               }
-            }
-            if (!empty($row['force_refresh'])) {
-               $extras[] = __('Forçou refresh remoto', 'nextool');
-            }
-            if (!empty($row['cache_hit'])) {
-               $extras[] = __('Resposta via cache', 'nextool');
-            }
-
-            if (count($extras)) {
-               echo "<br><small class='text-muted'>" . implode(' • ', $extras) . "</small>";
-            }
-            echo "</td>";
-
-            echo "</tr>";
-         }
-      }
-
-      echo "</tbody>";
-      echo "</table>";
-      echo "</div>";
-      echo "<p class='text-muted small mb-0 mt-2'>" . __('Exibindo até as 100 tentativas mais recentes.', 'nextool') . "</p>";
-   }
 }
-
-

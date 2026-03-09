@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Module Card Helper
@@ -59,7 +60,15 @@ class PluginNextoolModuleCardHelper {
          return implode('', $html);
       }
 
+      $isSuspended = !empty($state['is_license_suspended']);
+
       if ($state['requires_remote_download']) {
+         if ($isSuspended && $state['is_paid']) {
+            $html[] = self::renderBadge(__('Download bloqueado: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
+            self::appendDataButtons($state, $html);
+            return implode('', $html);
+         }
+
          if ($state['has_validated_plan'] && $state['is_paid'] && !$state['can_use_module']) {
             // Licença válida mas módulo pago não permitido: incentivar licenciamento em vez de download
             $html[] = self::renderLink(
@@ -124,37 +133,41 @@ class PluginNextoolModuleCardHelper {
          }
 
          if (!empty($state['update_available'])) {
-            $pluginVersion = $state['plugin_version'] ?? '';
-            $minVerNextool = isset($state['min_version_nextools']) && $state['min_version_nextools'] !== '' && $state['min_version_nextools'] !== null
-               ? trim((string) $state['min_version_nextools']) : null;
-            $updateBlockedByNextoolVersion = false;
-            if ($minVerNextool !== null) {
-               $updateBlockedByNextoolVersion = $pluginVersion === '' || version_compare($pluginVersion, $minVerNextool, '<');
-            }
-            if ($updateBlockedByNextoolVersion) {
-               $msg = $minVerNextool !== null
-                  ? sprintf(
-                     __('Para atualizar é necessário estar utilizando o Nextool versão %s ou superior.', 'nextool'),
-                     $minVerNextool
-                  )
-                  : __('Atualize o Nextool para a versão mais recente para continuar.', 'nextool');
-               $html[] = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . ' </span>';
-               $html[] = self::renderLink(
-                  __('Atualizar Nextool', 'nextool'),
-                  'btn btn-sm btn-outline-warning',
-                  'ti ti-external-link',
-                  'https://nextoolsolutions.ai/produtos/plugin-nextools-glpi',
-                  true
-               );
+            if ($isSuspended && $state['is_paid']) {
+               $html[] = self::renderBadge(__('Atualização bloqueada: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
             } else {
-               $html[] = self::renderActionForm(
-                  $state,
-                  'update',
-                  __('Atualizar', 'nextool'),
-                  'btn btn-sm btn-outline-primary module-action',
-                  'ti ti-arrow-up',
-                  !$state['can_use_module'] || $catalogDisabled
-               );
+               $pluginVersion = $state['plugin_version'] ?? '';
+               $minVerNextool = isset($state['min_version_nextools']) && $state['min_version_nextools'] !== '' && $state['min_version_nextools'] !== null
+                  ? trim((string) $state['min_version_nextools']) : null;
+               $updateBlockedByNextoolVersion = false;
+               if ($minVerNextool !== null) {
+                  $updateBlockedByNextoolVersion = $pluginVersion === '' || version_compare($pluginVersion, $minVerNextool, '<');
+               }
+               if ($updateBlockedByNextoolVersion) {
+                  $msg = $minVerNextool !== null
+                     ? sprintf(
+                        __('Para atualizar é necessário estar utilizando o Nextool versão %s ou superior.', 'nextool'),
+                        $minVerNextool
+                     )
+                     : __('Atualize o Nextool para a versão mais recente para continuar.', 'nextool');
+                  $html[] = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . ' </span>';
+                  $html[] = self::renderLink(
+                     __('Atualizar Nextool', 'nextool'),
+                     'btn btn-sm btn-outline-warning',
+                     'ti ti-external-link',
+                     'https://nextoolsolutions.ai/produtos/plugin-nextools-glpi',
+                     true
+                  );
+               } else {
+                  $html[] = self::renderActionForm(
+                     $state,
+                     'update',
+                     __('Atualizar', 'nextool'),
+                     'btn btn-sm btn-outline-primary module-action',
+                     'ti ti-arrow-up',
+                     !$state['can_use_module'] || $catalogDisabled
+                  );
+               }
             }
          }
 
@@ -215,7 +228,8 @@ class PluginNextoolModuleCardHelper {
                'btn btn-sm btn-outline-danger module-action',
                'ti ti-database-off',
                false,
-               __('Esta ação remove tabelas e registros relacionados ao módulo. Deseja continuar?', 'nextool')
+               __('Esta ação remove permanentemente todas as tabelas e registros do módulo no banco de dados.', 'nextool'),
+               'typed'
             );
          }
 
@@ -229,16 +243,6 @@ class PluginNextoolModuleCardHelper {
             );
          }
       }
-   }
-
-   private static function renderPlainButton(string $label, string $classes, string $icon, string $onclick): string {
-      return sprintf(
-         "<button type='button' class='%s me-1' onclick=\"%s\"><i class='%s me-1'></i>%s</button>",
-         $classes,
-         Html::entities_deep($onclick),
-         $icon,
-         $label
-      );
    }
 
    private static function renderLink(string $label, string $classes, string $icon, string $url, bool $newTab = false): string {
@@ -264,13 +268,16 @@ class PluginNextoolModuleCardHelper {
       string $buttonClass,
       string $iconClass,
       bool $disabled = false,
-      ?string $confirmMessage = null
+      ?string $confirmMessage = null,
+      string $confirmType = 'simple'
    ): string {
       $disabledAttr = $disabled ? ' disabled' : '';
       $confirmAttr = '';
       if (!empty($confirmMessage)) {
-         // Confirm será tratado no JS para manter consistência em ações via AJAX.
-         $confirmAttr = " data-confirm=" . json_encode($confirmMessage, JSON_HEX_APOS | JSON_HEX_QUOT);
+         $confirmAttr = ' data-confirm="' . htmlspecialchars($confirmMessage, ENT_QUOTES, 'UTF-8') . '"';
+         if ($confirmType !== 'simple') {
+            $confirmAttr .= ' data-confirm-type="' . htmlspecialchars($confirmType, ENT_QUOTES, 'UTF-8') . '"';
+         }
       }
 
       $moduleKey = Html::entities_deep($state['module_key']);

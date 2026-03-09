@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Setup
@@ -21,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '3.5.11');
+define('PLUGIN_NEXTOOL_VERSION', '3.7.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -92,7 +93,42 @@ function plugin_nextool_boot() {
  * Inicialização do plugin
  */
 function plugin_init_nextool() {
-   global $PLUGIN_HOOKS;
+   global $PLUGIN_HOOKS, $CFG_GLPI;
+
+   // Maintenance mode: apply em andamento — skip init para evitar carregar código inconsistente
+   if (defined('NEXTOOL_DOC_DIR')) {
+      $maintenanceFlag = rtrim(NEXTOOL_DOC_DIR, '/') . '/core-update/.maintenance';
+      if (is_file($maintenanceFlag)) {
+         $ts = (int)trim((string)@file_get_contents($maintenanceFlag));
+         if ($ts > 0 && (time() - $ts) < 300) {
+            $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
+            return;
+         }
+         // Flag expirado (> 5 min) — remover e continuar normalmente
+         @unlink($maintenanceFlag);
+      }
+   }
+
+   // Apply pendente: após copy do staging para plugins/, executar Plugin::install na nova requisição
+   $coreUpdateState = Config::getConfigurationValues('plugin:nextool_core_update');
+   $pendingVersion = $coreUpdateState['pending_apply_version'] ?? null;
+   if ($pendingVersion !== null && $pendingVersion !== '') {
+      $plugin = new Plugin();
+      if ($plugin->getFromDBbyDir('nextool')) {
+         $plugin->install($plugin->fields['id']);
+         $plugin->getFromDB($plugin->fields['id']);
+         if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
+            $plugin->activate($plugin->fields['id']);
+         }
+         Config::setConfigurationValues('plugin:nextool_core_update', [
+            'pending_apply_version' => null,
+            'update_available' => 0,
+            'staged_target_version' => null,
+            'staged_source' => null,
+            'staged_at' => null,
+         ]);
+      }
+   }
 
    $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
 
@@ -113,6 +149,8 @@ function plugin_init_nextool() {
    if (Session::getLoginUserID()) {
       $PLUGIN_HOOKS['use_massive_action']['nextool'] = 1;
    }
+
+   Toolbox::logInFile('plugin_nextool', "[DEBUG] [Setup] Plugin nextool carregando (ativado)\n");
 
    // Gera e persiste o Identificador do Cliente no momento em que o plugin é carregado (ativado)
    // em vez de depender apenas da primeira leitura preguiçosa da configuração.
@@ -140,6 +178,15 @@ function plugin_init_nextool() {
    if (file_exists($mainconfigfile)) {
       require_once $mainconfigfile;
       Plugin::registerClass('PluginNextoolMainConfig');
+   }
+
+   $validationAttemptFile = GLPI_ROOT . '/plugins/nextool/inc/validationattempt.class.php';
+   if (file_exists($validationAttemptFile)) {
+      require_once $validationAttemptFile;
+      Plugin::registerClass('PluginNextoolValidationAttempt');
+      $CFG_GLPI['glpiitemtypetables']['glpi_plugin_nextool_main_validation_attempts'] = 'PluginNextoolValidationAttempt';
+      $CFG_GLPI['glpitablesitemtype']['PluginNextoolValidationAttempt'] = 'glpi_plugin_nextool_main_validation_attempts';
+      PluginNextoolValidationAttempt::ensureDisplayPreferences();
    }
 
    $profilefile = GLPI_ROOT . '/plugins/nextool/inc/profile.class.php';
@@ -298,4 +345,3 @@ function plugin_nextool_check_prerequisites() {
 function plugin_nextool_check_config() {
    return true;
 }
-

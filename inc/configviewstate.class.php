@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * -------------------------------------------------------------------------
  * NexTool Solutions - Config View State
@@ -26,16 +27,6 @@ class PluginNextoolConfigViewState {
     * @return array<string, mixed>
     */
    public static function fromLicenseConfig(array $licenseConfig): array {
-      $contractActive = null;
-      if (array_key_exists('contract_active', $licenseConfig)) {
-         $raw = $licenseConfig['contract_active'];
-         if ($raw === '' || $raw === null) {
-            $contractActive = null;
-         } else {
-            $contractActive = (bool) $raw;
-         }
-      }
-
       $licenseStatusCode = null;
       if (!empty($licenseConfig['license_status'])) {
          $licenseStatusCode = strtoupper((string) $licenseConfig['license_status']);
@@ -70,15 +61,16 @@ class PluginNextoolConfigViewState {
       $licenseTier = self::resolveLicenseTier($licenseConfig);
       $planPresentation = self::resolvePlanPresentation($licenseTier);
 
-      $isLicenseActive = ($licenseStatusCode === 'ACTIVE') && ($contractActive !== false);
-      $isFreeTier = (!$isLicenseActive) || $licenseStatusCode === 'FREE_TIER' || $licenseTier === 'FREE';
+      $isLicenseActive = ($licenseStatusCode === 'ACTIVE');
+      $isSuspended = ($licenseStatusCode === 'SUSPENDED');
+      // SUSPENDED com plano pago NÃO é free tier — módulos já baixados permanecem operáveis
+      $isFreeTier = ($licenseTier === 'FREE') || (!$isLicenseActive && !$isSuspended);
       $hasValidatedPlan = ($licenseTier !== 'UNKNOWN');
       $hasAssignedLicense = !empty($licensesSnapshot);
 
       $hasAcceptedPolicies = !empty($licenseConfig['policies_accepted_at'] ?? null);
 
       return [
-         'contractActive'           => $contractActive,
          'licenseStatusCode'        => $licenseStatusCode,
          'licenseWarnings'          => $licenseWarnings,
          'allowedModules'           => $allowedModules,
@@ -107,10 +99,7 @@ class PluginNextoolConfigViewState {
          : null;
 
       if (isset($licenseConfig['plan']) && is_string($licenseConfig['plan']) && $licenseConfig['plan'] !== '') {
-         $licenseTier = strtoupper($licenseConfig['plan']);
-         if ($licenseTier === 'STARTER') {
-            $licenseTier = 'DESENVOLVIMENTO';
-         }
+         $licenseTier = PluginNextoolLicenseValidator::normalizePlan($licenseConfig['plan']);
       } elseif ($lastResult === 1) {
          // Compatibilidade com versões antigas
          $licenseTier = 'BUSINESS';
@@ -140,7 +129,7 @@ class PluginNextoolConfigViewState {
                'badgeClass'  => 'bg-blue',
             ];
 
-         case 'PRO':
+         case 'LICENCIADO':
             return [
                'label'       => __('Licenciado', 'nextool'),
                'description' => __('Plano licenciado com acesso aos módulos permitidos pelo contrato.', 'nextool'),

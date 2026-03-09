@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS `glpi_plugin_nextool_main_validation_attempts`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_license_config`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_module_audit`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_config_audit`;
+DROP TABLE IF EXISTS `glpi_plugin_nextool_core_updates`;
 
 -- Remove tabela de módulos
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_modules`;

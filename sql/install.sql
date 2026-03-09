@@ -49,7 +49,6 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_license_config` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `license_key` varchar(255) DEFAULT NULL COMMENT 'Chave da licença configurada',
   `plan` varchar(32) DEFAULT NULL COMMENT 'Plano da licença (UNKNOWN/FREE/STARTER/PRO/ENTERPRISE)',
-  `contract_active` tinyint DEFAULT NULL COMMENT 'Último estado do contrato retornado pelo administrativo',
   `license_status` varchar(32) DEFAULT NULL COMMENT 'Último status retornado pelo administrativo',
   `expires_at` timestamp NULL DEFAULT NULL COMMENT 'Data de expiração retornada pelo administrativo',
   `policies_accepted_at` timestamp NULL DEFAULT NULL COMMENT 'Data/hora do aceite das Políticas de Uso no ambiente operacional',
@@ -80,7 +79,6 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_validation_attempts` (
   `requested_modules` text DEFAULT NULL COMMENT 'Lista de módulos solicitados (JSON)',
   `client_identifier` varchar(191) DEFAULT NULL COMMENT 'Identificador do ambiente local',
   `license_status` varchar(32) DEFAULT NULL COMMENT 'Status retornado pelo administrativo',
-  `contract_active` tinyint DEFAULT NULL COMMENT 'Contrato ativo retornado pelo administrativo',
   `plan` varchar(32) DEFAULT NULL COMMENT 'Plano retornado pelo administrativo',
   `force_refresh` tinyint DEFAULT NULL COMMENT '1 quando cache foi ignorado',
   `cache_hit` tinyint DEFAULT NULL COMMENT '1 quando resposta veio do cache local',
@@ -103,7 +101,6 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_module_audit` (
   `origin` varchar(64) DEFAULT NULL COMMENT 'Origem declarada pela ação',
   `source_ip` varchar(45) DEFAULT NULL COMMENT 'IP do solicitante (quando aplicável)',
   `license_status` varchar(32) DEFAULT NULL,
-  `contract_active` tinyint DEFAULT NULL,
   `plan` varchar(32) DEFAULT NULL,
   `allowed_modules` text DEFAULT NULL COMMENT 'Snapshot de allowed_modules (JSON)',
   `requested_modules` text DEFAULT NULL COMMENT 'Snapshot dos módulos solicitados (JSON)',
@@ -134,4 +131,30 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_config_display` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
-INSERT IGNORE INTO `glpi_plugin_nextool_main_config_display` (`id`) VALUES (1);
+INSERT INTO `glpi_plugin_nextool_main_config_display` (`id`)
+SELECT 1
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM `glpi_plugin_nextool_main_config_display`
+  WHERE `id` = 1
+);
+
+-- Histórico operacional do self-updater do core do plugin base
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_core_updates` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `action` varchar(32) NOT NULL COMMENT 'check/preflight/prepare/apply/cancel_staging/cron_*',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0=falha, 1=sucesso',
+  `source` varchar(64) DEFAULT NULL COMMENT 'manual|cron',
+  `current_version` varchar(64) DEFAULT NULL COMMENT 'Versão local antes da operação',
+  `target_version` varchar(64) DEFAULT NULL COMMENT 'Versão alvo da operação',
+  `message` text DEFAULT NULL COMMENT 'Resumo textual da execução',
+  `details` longtext DEFAULT NULL COMMENT 'Detalhes estruturados (JSON)',
+  `duration_ms` int unsigned DEFAULT NULL COMMENT 'Duração da operação em milissegundos',
+  `finished_at` timestamp NULL DEFAULT NULL COMMENT 'Momento de conclusão da operação',
+  `user_id` int unsigned DEFAULT NULL COMMENT 'Usuário autenticado que iniciou a ação',
+  `date_creation` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Momento de criação do registro',
+  PRIMARY KEY (`id`),
+  KEY `action` (`action`),
+  KEY `status` (`status`),
+  KEY `date_creation` (`date_creation`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
