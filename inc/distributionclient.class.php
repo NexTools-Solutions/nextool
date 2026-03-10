@@ -1,12 +1,18 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Distribution Client
- *
- * Cliente responsável por conversar com o ContainerAPI: manifestos de módulos,
- * download de pacotes, bootstrap de segredo HMAC, etc.
- *
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Distribution Client
+ * -------------------------------------------------------------------------
+ * Cliente responsável por conversar com o ContainerAPI para distribuição
+ * remota de módulos (manifestos, download de pacotes, bootstrap de
+ * segredo HMAC, etc.).
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -216,15 +222,20 @@ class PluginNextoolDistributionClient {
       $timestamp = (string) time();
       $signature = $this->generateSignature($body, $timestamp);
 
+      $requestHeaders = [
+         'Content-Type: application/json',
+         'X-Client-Identifier: ' . $this->clientIdentifier,
+         'X-Timestamp: ' . $timestamp,
+         'X-Signature: ' . $signature,
+      ];
+      if (isset($GLOBALS['nextool_request_group_id'])) {
+         $requestHeaders[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
+      }
+
       $response = $this->performRequest($this->baseUrl . '/api/distribution/install-request', [
          'method' => 'POST',
          'body' => $body,
-         'headers' => [
-            'Content-Type: application/json',
-            'X-Client-Identifier: ' . $this->clientIdentifier,
-            'X-Timestamp: ' . $timestamp,
-            'X-Signature: ' . $signature,
-         ],
+         'headers' => $requestHeaders,
          'timeout' => 60,
       ]);
 
@@ -250,6 +261,9 @@ class PluginNextoolDistributionClient {
       $headers = [];
       if ($this->clientIdentifier !== '') {
          $headers[] = 'X-Client-Identifier: ' . $this->clientIdentifier;
+      }
+      if (isset($GLOBALS['nextool_request_group_id'])) {
+         $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
       }
       if (!empty($headers)) {
          curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
@@ -316,36 +330,8 @@ class PluginNextoolDistributionClient {
    }
 
    private function performRequest(string $url, array $options = []): array {
-      $ch = curl_init($url);
-      $method = strtoupper($options['method'] ?? 'GET');
-      $bodyPayload = $options['body'] ?? null;
-
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-      curl_setopt($ch, CURLOPT_TIMEOUT, $options['timeout'] ?? 30);
-      curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-
-      if ($method === 'POST') {
-         curl_setopt($ch, CURLOPT_POST, true);
-         curl_setopt($ch, CURLOPT_POSTFIELDS, $bodyPayload ?? '');
-      }
-
-      if (!empty($options['headers'])) {
-         curl_setopt($ch, CURLOPT_HTTPHEADER, $options['headers']);
-      }
-
-      $body = curl_exec($ch);
-      $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      $err = curl_error($ch);
-      curl_close($ch);
-
-      if ($body === false) {
-         throw new RuntimeException(sprintf(__('Erro ao comunicar com ContainerAPI: %s', 'nextool'), $err));
-      }
-
-      return [
-         'body' => $body,
-         'http_code' => $httpCode,
-      ];
+      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      return PluginNextoolFileHelper::performHttpRequest($url, $options);
    }
 
    private function supportsSignedRequests(): bool {
@@ -394,7 +380,7 @@ class PluginNextoolDistributionClient {
       }
 
       $clientInfo = [
-         'plugin_version' => $this->getPluginVersion(),
+         'plugin_version' => PluginNextoolConfig::getPluginVersion(),
          'glpi_version'   => defined('GLPI_VERSION') ? GLPI_VERSION : null,
          'php_version'    => PHP_VERSION,
          'origin'         => 'module_download',
@@ -473,16 +459,6 @@ class PluginNextoolDistributionClient {
       return '';
    }
 
-   private function getPluginVersion(): ?string {
-      if (function_exists('plugin_version_nextool')) {
-         $info = plugin_version_nextool();
-         if (isset($info['version'])) {
-            return (string) $info['version'];
-         }
-      }
-
-      return null;
-   }
 
    private function ensureWritableDirectory(string $dir): void {
       if (!is_dir($dir)) {
@@ -496,8 +472,12 @@ class PluginNextoolDistributionClient {
 
       if (!is_writable($dir)) {
          if (!@chmod($dir, 0775)) {
+            $parent = dirname($dir);
+            $hint = $parent !== $dir && $parent !== '.'
+               ? sprintf(__(' Ajuste o proprietário em toda a árvore, ex.: chown -R %s %s', 'nextool'), 'www-data:www-data', $parent)
+               : sprintf(__(' Ajuste o proprietário/permissões (ex.: chown %s).', 'nextool'), 'www-data:www-data');
             throw new RuntimeException(sprintf(
-               __('O diretório %s não é gravável pelo GLPI. Ajuste o proprietário/permissões (ex.: chown apache:apache).', 'nextool'),
+               __('O diretório %s não é gravável pelo GLPI (pode ter sido criado por outro usuário, ex.: root).', 'nextool') . $hint,
                $dir
             ));
          }
@@ -510,36 +490,8 @@ class PluginNextoolDistributionClient {
    }
 
    private function recursiveCopy(string $source, string $dest): void {
-      if (!is_dir($source)) {
-         throw new RuntimeException(sprintf(__('Diretório de origem inválido: %s', 'nextool'), $source));
-      }
-      if (!is_dir($dest)) {
-         mkdir($dest, 0755, true);
-      }
-
-      $items = new RecursiveIteratorIterator(
-         new RecursiveDirectoryIterator($source, RecursiveDirectoryIterator::SKIP_DOTS),
-         RecursiveIteratorIterator::SELF_FIRST
-      );
-
-      foreach ($items as $item) {
-         $targetPath = $dest . DIRECTORY_SEPARATOR . $items->getSubPathName();
-         if ($item->isDir()) {
-            if (!is_dir($targetPath) && !@mkdir($targetPath, 0755, true)) {
-               throw new RuntimeException(sprintf(
-                  __('Falha ao criar diretório %s. Ajuste permissões.', 'nextool'),
-                  $targetPath
-               ));
-            }
-         } else {
-            if (!@copy($item->getRealPath(), $targetPath)) {
-               throw new RuntimeException(sprintf(
-                  __('Falha ao copiar arquivo para %s. O diretório é gravável?', 'nextool'),
-                  $targetPath
-               ));
-            }
-         }
-      }
+      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      PluginNextoolFileHelper::recursiveCopy($source, $dest);
    }
 
    private function invalidateOpcache(string $destination, string $moduleKey): void {

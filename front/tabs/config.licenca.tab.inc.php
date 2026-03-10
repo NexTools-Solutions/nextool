@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Nextools - Aba Licenciamento
  *
@@ -15,7 +16,7 @@
    <form method="post" action="<?php echo Plugin::getWebDir('nextool') . '/front/config.save.php'; ?>" id="configForm">
       <?php echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); ?>
       <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$3' : 'PluginNextoolSetup$1']); ?>
-      <div style="display:block">
+      <div class="d-flex flex-column gap-3">
 
          <?php echo $nextool_hero_standalone; ?>
 
@@ -29,25 +30,25 @@
                </h4>
             </div>
             <div class="card-body">
-               <?php if (!empty($licensesSnapshot) && $contractActive === false): ?>
-                  <div class="alert alert-danger mb-4">
-                     <i class="ti ti-ban me-2"></i>
-                     <?php echo __('Contrato inativo: os módulos licenciados ficarão bloqueados até a regularização com o suporte NexTool.', 'nextool'); ?>
-                  </div>
-               <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode === 'EXPIRED'): ?>
+               <?php if (!empty($licensesSnapshot) && $licenseStatusCode === 'SUSPENDED'): ?>
                   <div class="alert alert-warning mb-4">
                      <i class="ti ti-alert-triangle me-2"></i>
-                     <?php echo __('Licença expirada. Os módulos ativos continuam funcionando, mas recomendamos renovar a validade.', 'nextool'); ?>
+                     <?php echo __('Licença suspensa. Os módulos já instalados continuam funcionando normalmente. Renove seu contrato para restaurar o acesso a suporte técnico, atualizações e novos downloads.', 'nextool'); ?>
                   </div>
-               <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode && $licenseStatusCode !== 'ACTIVE'): ?>
+               <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode === 'CANCELLED'): ?>
+                  <div class="alert alert-danger mb-4">
+                     <i class="ti ti-ban me-2"></i>
+                     <?php echo __('Licença cancelada. Os módulos licenciados ficarão bloqueados até a regularização com o suporte NexTool.', 'nextool'); ?>
+                  </div>
+               <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode === 'INACTIVE'): ?>
                   <div class="alert alert-info mb-4">
                      <i class="ti ti-info-circle me-2"></i>
                      <?php echo __('A licença ainda não está ativa. O ambiente permanece no plano gratuito até que uma licença válida seja vinculada.', 'nextool'); ?>
                   </div>
                <?php endif; ?>
 
-               <div style="display:block">
-                  <div style="display:block;width:100%;margin-bottom:0.5rem">
+               <div class="row g-3">
+                  <div class="col-12">
                      <div class="border rounded p-3 h-100 bg-light text-dark">
                         <h6 class="fw-semibold mb-3 text-dark"><?php echo __('Licenças ativas no ambiente', 'nextool'); ?></h6>
                         <?php if (empty($licensesSnapshot)): ?>
@@ -61,7 +62,7 @@
                                     <tr>
                                        <th><?php echo __('Licença', 'nextool'); ?></th>
                                        <th><?php echo __('Plano', 'nextool'); ?></th>
-                                       <th><?php echo __('Status do contrato', 'nextool'); ?></th>
+                                       <th><?php echo __('Status', 'nextool'); ?></th>
                                        <th><?php echo __('Validade da licença', 'nextool'); ?></th>
                                        <th><?php echo __('Módulos liberados', 'nextool'); ?></th>
                                     </tr>
@@ -70,19 +71,30 @@
                                     <?php foreach ($licensesSnapshot as $licenseRow):
                                        $rowKey = $licenseRow['license_key'] ?? __('(desconhecida)', 'nextool');
                                        $rowPlan = strtoupper($licenseRow['plan'] ?? 'FREE');
-                                       $rowContract = !empty($licenseRow['contract_active']);
+                                       $rowStatus = strtoupper($licenseRow['license_status'] ?? 'INACTIVE');
                                        $rowExpires = $licenseRow['expires_at'] ?? null;
                                        $rowModules = [];
                                        if (!empty($licenseRow['allowed_modules']) && is_array($licenseRow['allowed_modules'])) {
                                           $rowModules = $licenseRow['allowed_modules'];
                                        }
                                        $planBadge = [
-                                          'FREE'       => 'bg-teal',
-                                          'STARTER'    => 'bg-blue',
-                                          'PRO'        => 'bg-indigo',
-                                          'ENTERPRISE' => 'bg-purple',
+                                          'FREE'           => 'bg-teal',
+                                          'DESENVOLVIMENTO'=> 'bg-blue',
+                                          'LICENCIADO'     => 'bg-indigo',
+                                          'ENTERPRISE'     => 'bg-purple',
                                        ][$rowPlan] ?? 'bg-secondary';
-                                       $contractBadge = $rowContract ? 'bg-green' : 'bg-red';
+                                       $statusBadge = [
+                                          'ACTIVE'    => 'bg-green',
+                                          'INACTIVE'  => 'bg-red',
+                                          'SUSPENDED' => 'bg-orange',
+                                          'CANCELLED' => 'bg-red',
+                                       ][$rowStatus] ?? 'bg-secondary';
+                                       $statusLabel = [
+                                          'ACTIVE'    => __('Ativa', 'nextool'),
+                                          'INACTIVE'  => __('Inativa', 'nextool'),
+                                          'SUSPENDED' => __('Suspensa', 'nextool'),
+                                          'CANCELLED' => __('Cancelada', 'nextool'),
+                                       ][$rowStatus] ?? $rowStatus;
                                        $validityDisplay = __('Sem expiração', 'nextool');
                                        if (!empty($rowExpires)) {
                                           $formatted = $rowExpires;
@@ -95,7 +107,7 @@
                                     <tr>
                                        <td><code><?php echo Html::entities_deep($rowKey); ?></code></td>
                                        <td><span class="badge text-white <?php echo $planBadge; ?>"><?php echo Html::entities_deep(ucfirst(strtolower($rowPlan))); ?></span></td>
-                                       <td><span class="badge text-white <?php echo $contractBadge; ?>"><?php echo $rowContract ? __('Ativo', 'nextool') : __('Inativo', 'nextool'); ?></span></td>
+                                       <td><span class="badge text-white <?php echo $statusBadge; ?>"><?php echo Html::entities_deep($statusLabel); ?></span></td>
                                        <td><?php echo Html::entities_deep($validityDisplay); ?></td>
                                        <td>
                                           <?php if (empty($rowModules) || in_array('*', $rowModules, true)): ?>
@@ -114,7 +126,7 @@
                         <?php endif; ?>
                      </div>
                   </div>
-                  <div style="display:block;width:100%;margin-bottom:0.5rem">
+                  <div class="col-12">
                      <div class="border rounded p-3 h-100 bg-light text-dark">
                         <h6 class="fw-semibold mb-3 text-dark"><?php echo __('Dados do ambiente', 'nextool'); ?></h6>
                         <div class="row g-3 small">
@@ -131,7 +143,7 @@
                                        <button type="button"
                                                class="btn btn-outline-secondary"
                                                onclick="navigator.clipboard.writeText(document.getElementById('rt-client-identifier').value); this.innerText='Copiado!'; setTimeout(() => { this.innerText='Copiar'; }, 2000);">
-                                          <i class="ti ti-copy me-1"></i><?php echo __('Copiar'); ?>
+                                          <i class="ti ti-copy me-1"></i><?php echo __('Copiar', 'nextool'); ?>
                                        </button>
                                     </div>
                                  <?php else: ?>
@@ -151,7 +163,7 @@
                                     <button type="button"
                                             class="btn btn-outline-secondary"
                                             onclick="const el=document.getElementById('rt-endpoint-url'); navigator.clipboard.writeText(el ? el.value : ''); this.innerText='Copiado!'; setTimeout(() => { this.innerText='Copiar'; }, 2000);">
-                                       <i class="ti ti-copy me-1"></i><?php echo __('Copiar'); ?>
+                                       <i class="ti ti-copy me-1"></i><?php echo __('Copiar', 'nextool'); ?>
                                     </button>
                                  </div>
                                  <div class="form-text">
@@ -193,21 +205,33 @@
                                           <?php echo __('Atualizado após a última sincronização bem-sucedida.', 'nextool'); ?>
                                        </div>
                                     <?php endif; ?>
-                                    <div style="display:block" class="mt-2">
-                                       <button type="button"
-                                              class="btn btn-outline-danger btn-sm"
-                                              onclick="nextoolRegenerateHmac(this);">
-                                          <i class="ti ti-refresh me-1"></i><?php echo __('Regerar chave', 'nextool'); ?>
-                                       </button>
-                                    </div>
+                                    <?php if ($canManageAdminTabs): ?>
+                                       <div class="d-flex flex-wrap gap-2 mt-2">
+                                          <button type="button"
+                                                 class="btn btn-outline-danger btn-sm"
+                                                 onclick="nextoolRegenerateHmac(this);">
+                                             <i class="ti ti-refresh me-1"></i><?php echo __('Regerar chave', 'nextool'); ?>
+                                          </button>
+                                       </div>
+                                    <?php else: ?>
+                                       <div class="form-text mt-2">
+                                          <?php echo __('Somente perfis com permissão de gerenciamento podem copiar ou regenerar a chave de segurança.', 'nextool'); ?>
+                                       </div>
+                                    <?php endif; ?>
                                  <?php else: ?>
                                     <span class="text-muted d-block"><?php echo __('Aguardando sincronização para gerar automaticamente.', 'nextool'); ?></span>
-                                    <div style="display:block" class="mt-2">
-                                       <button type="button"
-                                              class="btn btn-outline-primary btn-sm"
-                                              onclick="nextoolRegenerateHmac(this);">
-                                          <i class="ti ti-refresh me-1"></i><?php echo __('Gerar chave agora', 'nextool'); ?>
-                                       </button>
+                                    <div class="d-flex flex-wrap gap-2 mt-2">
+                                       <?php if ($canManageAdminTabs): ?>
+                                          <button type="button"
+                                                 class="btn btn-outline-primary btn-sm"
+                                                 onclick="nextoolRegenerateHmac(this);">
+                                             <i class="ti ti-refresh me-1"></i><?php echo __('Gerar chave agora', 'nextool'); ?>
+                                          </button>
+                                       <?php else: ?>
+                                          <span class="form-text mb-0">
+                                             <?php echo __('Somente perfis com permissão de gerenciamento podem gerar a chave de segurança.', 'nextool'); ?>
+                                          </span>
+                                       <?php endif; ?>
                                        <a href="<?= NEXTOOL_TERMS_URL ?>"
                                           target="_blank"
                                           class="btn btn-link px-0 text-decoration-underline">
@@ -253,5 +277,18 @@
          </div>
       </div>
    </form>
+
+   <div class="card shadow-sm nextool-tab-card mt-3">
+      <div class="card-body">
+         <h5 class="fw-semibold mb-2">
+            <i class="ti ti-history me-1"></i>
+            <?php echo __('Histórico de alterações', 'nextool'); ?>
+         </h5>
+         <p class="text-muted">
+            <?php echo __('Mostra quem alterou configurações da licença ou executou sincronizações manuais.', 'nextool'); ?>
+         </p>
+         <?php PluginNextoolConfigAudit::showSimpleList(); ?>
+      </div>
+   </div>
 <?php if (!$nextool_is_standalone): ?></div><?php endif; ?>
 <?php endif; ?>

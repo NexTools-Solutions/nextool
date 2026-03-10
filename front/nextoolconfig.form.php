@@ -1,12 +1,17 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Config Form (Layout)
- *
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Config Form (Layout)
+ * -------------------------------------------------------------------------
  * Página standalone de configuração do plugin com abas verticais: Módulos,
  * Contato, Licenciamento, Logs e abas dinâmicas por módulo.
- *
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -57,6 +62,34 @@ if (isset($_GET['forcetab']) && in_array($_GET['forcetab'], $validTabs, true)) {
 } else {
    $forcetab = $_SESSION['glpi_tabs'][$tabKey] ?? 'PluginNextoolMainConfig$1';
 }
+
+// Garante que nextoolValidateLicense e funções relacionadas existam na página principal.
+// Necessário porque o conteúdo das abas pode ser carregado via AJAX e scripts injetados
+// por innerHTML não executam; incluir aqui garante disponibilidade global.
+require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
+$licenseConfig = PluginNextoolLicenseConfig::getDefaultConfig();
+$policiesAcceptedAt = $licenseConfig['policies_accepted_at'] ?? null;
+$hasAcceptedPolicies = !empty($policiesAcceptedAt);
+
+// Define version vars for JS before scripts load (scripts are in the main page,
+// but the modal HTML comes via AJAX tab — so these must be set here, not inside the tab).
+$_nxCurrentVersion = '-';
+if (function_exists('plugin_version_nextool')) {
+   $info = plugin_version_nextool();
+   $_nxCurrentVersion = isset($info['version']) ? (string) $info['version'] : '-';
+}
+$_nxTargetVersion = '';
+if (PluginNextoolPermissionManager::canAccessAdminTabs()) {
+   require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+   $_nxCoreState = PluginNextoolCoreUpdater::getState();
+   // Use staged version if available, otherwise fall back to latest known version
+   $_nxTargetVersion = trim((string) ($_nxCoreState['staged_target_version'] ?? ''));
+   if ($_nxTargetVersion === '') {
+      $_nxTargetVersion = trim((string) ($_nxCoreState['latest_available_version'] ?? ''));
+   }
+}
+echo '<script>window._nextoolCurrentVersion=' . json_encode($_nxCurrentVersion) . ';';
+echo 'window._nextoolTargetVersion=' . json_encode($_nxTargetVersion) . ';</script>';
 
 $options = [
    'id'       => $id,

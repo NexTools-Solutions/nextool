@@ -134,4 +134,30 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_config_display` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
-INSERT IGNORE INTO `glpi_plugin_nextool_main_config_display` (`id`) VALUES (1);
+INSERT INTO `glpi_plugin_nextool_main_config_display` (`id`)
+SELECT 1
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM `glpi_plugin_nextool_main_config_display`
+  WHERE `id` = 1
+);
+
+-- Histórico operacional do self-updater do core do plugin base
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_core_updates` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `action` varchar(32) NOT NULL COMMENT 'check/preflight/prepare/apply/cancel_staging/cron_*',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0=falha, 1=sucesso',
+  `source` varchar(64) DEFAULT NULL COMMENT 'manual|cron',
+  `current_version` varchar(64) DEFAULT NULL COMMENT 'Versão local antes da operação',
+  `target_version` varchar(64) DEFAULT NULL COMMENT 'Versão alvo da operação',
+  `message` text DEFAULT NULL COMMENT 'Resumo textual da execução',
+  `details` longtext DEFAULT NULL COMMENT 'Detalhes estruturados (JSON)',
+  `duration_ms` int unsigned DEFAULT NULL COMMENT 'Duração da operação em milissegundos',
+  `finished_at` timestamp NULL DEFAULT NULL COMMENT 'Momento de conclusão da operação',
+  `user_id` int unsigned DEFAULT NULL COMMENT 'Usuário autenticado que iniciou a ação',
+  `date_creation` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Momento de criação do registro',
+  PRIMARY KEY (`id`),
+  KEY `action` (`action`),
+  KEY `status` (`status`),
+  KEY `date_creation` (`date_creation`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

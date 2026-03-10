@@ -1,12 +1,17 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Config View State
- *
- * Centraliza o cálculo de estado e licenciamento usado pela tela de configuração
- * (front/config.form.php), reduzindo acoplamento da view.
- *
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Config View State
+ * -------------------------------------------------------------------------
+ * Centraliza o cálculo de estado/licenciamento usado pela tela de
+ * configuração (front/config.form.php), reduzindo acoplamento da view.
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -22,16 +27,6 @@ class PluginNextoolConfigViewState {
     * @return array<string, mixed>
     */
    public static function fromLicenseConfig(array $licenseConfig): array {
-      $contractActive = null;
-      if (array_key_exists('contract_active', $licenseConfig)) {
-         $raw = $licenseConfig['contract_active'];
-         if ($raw === '' || $raw === null) {
-            $contractActive = null;
-         } else {
-            $contractActive = (bool) $raw;
-         }
-      }
-
       $licenseStatusCode = null;
       if (!empty($licenseConfig['license_status'])) {
          $licenseStatusCode = strtoupper((string) $licenseConfig['license_status']);
@@ -66,15 +61,16 @@ class PluginNextoolConfigViewState {
       $licenseTier = self::resolveLicenseTier($licenseConfig);
       $planPresentation = self::resolvePlanPresentation($licenseTier);
 
-      $isLicenseActive = ($licenseStatusCode === 'ACTIVE') && ($contractActive !== false);
-      $isFreeTier = (!$isLicenseActive) || $licenseStatusCode === 'FREE_TIER' || $licenseTier === 'FREE';
+      $isLicenseActive = ($licenseStatusCode === 'ACTIVE');
+      $isSuspended = ($licenseStatusCode === 'SUSPENDED');
+      // SUSPENDED com plano pago NÃO é free tier — módulos já baixados permanecem operáveis
+      $isFreeTier = ($licenseTier === 'FREE') || (!$isLicenseActive && !$isSuspended);
       $hasValidatedPlan = ($licenseTier !== 'UNKNOWN');
       $hasAssignedLicense = !empty($licensesSnapshot);
 
       $hasAcceptedPolicies = !empty($licenseConfig['policies_accepted_at'] ?? null);
 
       return [
-         'contractActive'           => $contractActive,
          'licenseStatusCode'        => $licenseStatusCode,
          'licenseWarnings'          => $licenseWarnings,
          'allowedModules'           => $allowedModules,
@@ -103,10 +99,7 @@ class PluginNextoolConfigViewState {
          : null;
 
       if (isset($licenseConfig['plan']) && is_string($licenseConfig['plan']) && $licenseConfig['plan'] !== '') {
-         $licenseTier = strtoupper($licenseConfig['plan']);
-         if ($licenseTier === 'STARTER') {
-            $licenseTier = 'DESENVOLVIMENTO';
-         }
+         $licenseTier = PluginNextoolLicenseValidator::normalizePlan($licenseConfig['plan']);
       } elseif ($lastResult === 1) {
          // Compatibilidade com versões antigas
          $licenseTier = 'BUSINESS';
@@ -125,35 +118,35 @@ class PluginNextoolConfigViewState {
          case 'FREE':
             return [
                'label'       => __('Não licenciado', 'nextool'),
-               'description' => 'Acesso apenas a módulos FREE. Vincule uma licença para desbloquear módulos adicionais.',
+               'description' => __('Acesso apenas a módulos FREE. Vincule uma licença para desbloquear módulos adicionais.', 'nextool'),
                'badgeClass'  => 'bg-teal',
             ];
 
          case 'DESENVOLVIMENTO':
             return [
                'label'       => __('Desenvolvimento', 'nextool'),
-               'description' => 'Plano de desenvolvimento com acesso a todos os módulos (incluindo DEV).',
+               'description' => __('Plano de desenvolvimento com acesso a todos os módulos (incluindo DEV).', 'nextool'),
                'badgeClass'  => 'bg-blue',
             ];
 
-         case 'PRO':
+         case 'LICENCIADO':
             return [
                'label'       => __('Licenciado', 'nextool'),
-               'description' => 'Plano licenciado com acesso aos módulos permitidos pelo contrato.',
+               'description' => __('Plano licenciado com acesso aos módulos permitidos pelo contrato.', 'nextool'),
                'badgeClass'  => 'bg-indigo',
             ];
 
          case 'ENTERPRISE':
             return [
                'label'       => __('Enterprise', 'nextool'),
-               'description' => 'Plano corporativo com acesso a todos os módulos exceto os de desenvolvimento (DEV).',
+               'description' => __('Plano corporativo com acesso a todos os módulos exceto os de desenvolvimento (DEV).', 'nextool'),
                'badgeClass'  => 'bg-purple',
             ];
 
          case 'BUSINESS':
             return [
                'label'       => __('Licenciado', 'nextool'),
-               'description' => 'Plano pago com acesso a módulos licenciados conforme seu contrato atual.',
+               'description' => __('Plano pago com acesso a módulos licenciados conforme seu contrato atual.', 'nextool'),
                'badgeClass'  => 'bg-primary',
             ];
 
@@ -161,7 +154,7 @@ class PluginNextoolConfigViewState {
          default:
             return [
                'label'       => __('Não validado', 'nextool'),
-               'description' => 'Valide sua licença para descobrir seu plano, registrar seu ambiente e desbloquear módulos.',
+               'description' => __('Valide sua licença para descobrir seu plano, registrar seu ambiente e desbloquear módulos.', 'nextool'),
                'badgeClass'  => 'bg-secondary',
             ];
       }

@@ -1,13 +1,18 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Plugin Configuration Form
- *
- * Formulário principal de configuração do plugin Nextools.
- * Incluído via setup.class.php::displayTabContentForItem().
- * Assume que o GLPI já carregou todos os includes necessários.
- *
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Plugin Configuration Form
+ * -------------------------------------------------------------------------
+ * Formulário principal de configuração do plugin NexTool Solutions.
+ * Este arquivo é incluído via setup.class.php::displayTabContentForItem()
+ * e assume que o GLPI já carregou todos os includes necessários.
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 // Não precisa incluir includes.php pois já está carregado
@@ -24,6 +29,15 @@ $canPurgeModules    = PluginNextoolPermissionManager::canPurgeModuleData();
 $canViewAdminTabs   = PluginNextoolPermissionManager::canAccessAdminTabs();
 $canManageAdminTabs = PluginNextoolPermissionManager::canManageAdminTabs();
 $canViewAnyModule   = PluginNextoolPermissionManager::canViewAnyModule();
+
+$coreUpdateAvailable = false;
+if ($canViewAdminTabs) {
+   require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+   $coreUpdateState = PluginNextoolCoreUpdater::getState();
+   $coreUpdateAvailable = !empty($coreUpdateState['update_available'])
+      || trim((string) ($coreUpdateState['staged_target_version'] ?? '')) !== ''
+      || trim((string) ($coreUpdateState['latest_available_version'] ?? '')) !== '';
+}
 
 // Obtém configuração atual
 $config    = PluginNextoolConfig::getConfig();
@@ -51,7 +65,6 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/configviewstate.class.php';
 PluginNextoolLogMaintenance::maybeRun();
 $licenseConfig = PluginNextoolLicenseConfig::getDefaultConfig();
 $licenseViewState = PluginNextoolConfigViewState::fromLicenseConfig($licenseConfig);
-$contractActive = $licenseViewState['contractActive'];
 $licenseStatusCode = $licenseViewState['licenseStatusCode'];
 $licenseWarnings = $licenseViewState['licenseWarnings'];
 $allowedModules = $licenseViewState['allowedModules'];
@@ -110,11 +123,18 @@ if ($requiresPolicyAcceptance) {
    $heroPlanBadgeClass = 'bg-secondary';
    $heroPlanDescription = __('As Políticas de Uso já foram aceitas. Clique em Sincronizar para atualizar o catálogo oficial de módulos.', 'nextool');
 } else {
-   $heroPlanLabel = $isLicenseActive ? $licensePlanLabel : __('Gratuito', 'nextool');
-   $heroPlanBadgeClass = $isLicenseActive ? $licensePlanBadgeClass : 'bg-teal';
-   $heroPlanDescription = $isLicenseActive
-      ? $licensePlanDescription
-      : __('Nenhuma licença ativa detectada. O ambiente permanece no plano gratuito até que uma licença válida seja vinculada.', 'nextool');
+   $isSuspendedView = ($licenseStatusCode === 'SUSPENDED');
+   if ($isLicenseActive || ($isSuspendedView && !$isFreeTier)) {
+      $heroPlanLabel = $licensePlanLabel;
+      $heroPlanBadgeClass = $isSuspendedView ? 'bg-warning text-dark' : $licensePlanBadgeClass;
+      $heroPlanDescription = $isSuspendedView
+         ? __('Licença suspensa: renove seu contrato para continuar com acesso a suporte e atualizações.', 'nextool')
+         : $licensePlanDescription;
+   } else {
+      $heroPlanLabel = __('Gratuito', 'nextool');
+      $heroPlanBadgeClass = 'bg-teal';
+      $heroPlanDescription = __('Nenhuma licença ativa detectada.', 'nextool');
+   }
 }
 
 $modulesState = [];
@@ -215,10 +235,17 @@ foreach ($allModuleKeys as $moduleKey) {
       $isAllowedByPlan = true;
    }
 
+   $isSuspended = ($licenseStatusCode === 'SUSPENDED');
+
    if ($isDevModule) {
-      $canUseModule = ($licenseTier === 'DESENVOLVIMENTO') && ($contractActive !== false) && !$isFreeTier && $catalogIsEnabled;
+      $canUseModule = ($licenseTier === 'DESENVOLVIMENTO') && $isLicenseActive && !$isFreeTier && $catalogIsEnabled;
    } elseif ($isPaid) {
-      $canUseModule = ($contractActive !== false) && !$isFreeTier && $isAllowedByPlan && $catalogIsEnabled;
+      if ($isSuspended && $moduleDownloaded) {
+         // SUSPENDED + arquivos locais = pode instalar/ativar (operação local)
+         $canUseModule = $isAllowedByPlan && $catalogIsEnabled;
+      } else {
+         $canUseModule = $isLicenseActive && !$isFreeTier && $isAllowedByPlan && $catalogIsEnabled;
+      }
    } else {
       $canUseModule = $catalogIsEnabled;
    }
@@ -313,6 +340,7 @@ foreach ($allModuleKeys as $moduleKey) {
          'can_manage_module'       => $moduleCanManage,
          'can_purge_module'        => $moduleCanPurge,
          'can_view_module'         => $moduleCanView,
+         'is_license_suspended'    => $isSuspended,
       ]),
    ];
 }
@@ -392,6 +420,14 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
    $nextoolHeroWithMarginTop = false;
    $nextoolHeroDisableSync = false;
    $nextoolHeroHideSync = $requiresPolicyAcceptance;
+   $nextoolHeroShowCoreUpdate = $coreUpdateAvailable;
+   $nextoolHeroForcetabMap = [
+      'modules' => 'PluginNextoolMainConfig$1',
+      'contato' => 'PluginNextoolMainConfig$2',
+      'licenca' => 'PluginNextoolMainConfig$3',
+      'logs'    => 'PluginNextoolMainConfig$4',
+   ];
+   $nextoolHeroForcetab = $nextoolHeroForcetabMap[$nextool_standalone_output_tab] ?? 'PluginNextoolMainConfig$1';
    include GLPI_ROOT . '/plugins/nextool/front/tabs/config.hero.inc.php';
    $nextool_hero_standalone = ob_get_clean();
 }
@@ -429,6 +465,9 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
          $nextoolHeroWithMarginTop = true;
          $nextoolHeroDisableSync = false;
          $nextoolHeroHideSync = $requiresPolicyAcceptance;
+         $nextoolHeroShowCoreUpdate = $coreUpdateAvailable;
+         // Em modo não-standalone, o JS resolve a aba ativa dinamicamente.
+         $nextoolHeroForcetab = '';
          include GLPI_ROOT . '/plugins/nextool/front/tabs/config.hero.inc.php';
       ?>
       <?php endif; ?>

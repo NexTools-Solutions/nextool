@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Nextools - Aba Logs
  *
@@ -21,34 +22,45 @@
             <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-orange s-1">
                <i class="fs-2x ti ti-report-analytics"></i>
             </div>
-            <span>Logs de Licenciamento</span>
+            <span><?php echo __('Logs de Licenciamento', 'nextool'); ?></span>
          </h4>
       </div>
       <div class="card-body">
          <p class="text-muted">
-            Histórico das últimas sincronizações de licença realizadas pelo NexTool.
-            Use este painel para acompanhar resultados e identificar eventuais falhas de conexão ou configuração.
+            <?php echo __('Histórico das últimas sincronizações de licença realizadas pelo NexTool. Use este painel para acompanhar resultados e identificar eventuais falhas de conexão ou configuração.', 'nextool'); ?>
          </p>
 
          <hr class="my-4">
 
-         <?php PluginNextoolValidationAttempt::showSimpleList(); ?>
+         <?php
+         $GLOBALS['nextool_validation_attempts_forcetab_url'] = Plugin::getWebDir('nextool')
+            . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$4';
 
-         <hr class="my-5">
+         $_GET['embedded'] = '1';
+         unset($_SESSION['glpisearch']['PluginNextoolValidationAttempt']);
+         $_GET['sort']  = 2;
+         $_GET['order'] = 'DESC';
 
-         <h5 class="fw-semibold mb-2"><?php echo __('Auditoria de configuração/licença', 'nextool'); ?></h5>
-         <p class="text-muted">
-            <?php echo __('Mostra quem alterou configurações da licença ou executou sincronizações manuais, incluindo os valores anteriores.', 'nextool'); ?>
-         </p>
-         <?php PluginNextoolConfigAudit::showSimpleList(); ?>
+         try {
+            Search::show('PluginNextoolValidationAttempt');
+         } finally {
+            unset($_GET['embedded'], $_GET['sort'], $_GET['order'],
+                  $GLOBALS['nextool_validation_attempts_forcetab_url']);
+         }
+         ?>
 
-         <hr class="my-5">
-
-         <h5 class="fw-semibold mb-2"><?php echo __('Auditoria de ações de módulos', 'nextool'); ?></h5>
-         <p class="text-muted">
-            <?php echo __('Lista as últimas instalações, ativações, desativações e remoções de módulos, com usuário e data da ação.', 'nextool'); ?>
-         </p>
-         <?php PluginNextoolModuleAudit::showSimpleList(); ?>
+         <!-- CSS: o GLPI Search engine impõe overflow:auto e height fixa no .search-container,
+              criando scroll interno quando há muitos registros. Override para expandir naturalmente. -->
+         <style>
+         .nextool-tab-card .search-container {
+            overflow: visible !important;
+            height: auto !important;
+         }
+         /* GLPI 10: #page .small { width: 1% } causa texto vertical nas colunas. Override: */
+         #page .nextool-tab-card .search-container .small {
+            width: auto;
+         }
+         </style>
       </div>
    </div>
 <?php if (!$nextool_is_standalone): ?></div><?php endif; ?>

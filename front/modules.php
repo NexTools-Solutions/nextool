@@ -1,13 +1,25 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Module Front Router
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Module Front Router
+ * -------------------------------------------------------------------------
+ * Roteador central para módulos do NexTool Solutions.
  *
- * Roteador central para módulos do Nextools. Roteia requisições para arquivos
- * front dos módulos e soluciona o roteamento do Symfony no GLPI 11 que intercepta
- * URLs diretas. Uso: modules.php?module=[module_key]&file=[arquivo].php
+ * Este arquivo roteia requisições para arquivos front-end dos módulos e
+ * soluciona o problema de roteamento do Symfony no GLPI 11, que intercepta
+ * URLs diretas para arquivos dentro de modules/[nome]/front/.
  *
+ * Uso:
+ * - PHP: /plugins/nextool/front/modules.php?module=[module_key]&file=[arquivo].php
+ * - CSS: /plugins/nextool/front/modules.php?module=[module_key]&file=[module_key].css.php
+ * - JS:  /plugins/nextool/front/modules.php?module=[module_key]&file=[module_key].js.php
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 // Define GLPI_ROOT PRIMEIRO (necessário para caminhos)
@@ -85,7 +97,7 @@ Session::checkLoginUser();
 // Verifica se é um arquivo PHP válido
 if ($extension !== 'php') {
    Html::header('Nextool - Erro', $_SERVER['PHP_SELF'], "config", "plugins");
-   echo "<div class='alert alert-danger'>Apenas arquivos PHP são permitidos.</div>";
+   echo "<div class='alert alert-danger'>" . __('Apenas arquivos PHP são permitidos.', 'nextool') . "</div>";
    Html::footer();
    exit;
 }

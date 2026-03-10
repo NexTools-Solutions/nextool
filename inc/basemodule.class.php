@@ -1,13 +1,19 @@
 <?php
 /**
- * Nextools - BaseModule
- *
- * Classe abstrata base para todos os módulos do Nextools.
- * Todos os módulos devem estender esta classe e implementar os métodos abstratos.
- * Define a interface padrão que todos os módulos seguem.
- *
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - BaseModule
+ * -------------------------------------------------------------------------
+ * Classe abstrata base para todos os módulos do NexTool Solutions.
+ * Todos os módulos devem estender esta classe e implementar seus métodos
+ * abstratos. Esta classe define a interface padrão que todos os módulos
+ * devem seguir.
+ * -------------------------------------------------------------------------
+ * @abstract
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -177,6 +183,48 @@ abstract class PluginNextoolBaseModule {
     */
    public function onInit() {
       // Implementação opcional nos módulos filhos
+   }
+
+   /**
+    * Registra o domínio gettext do módulo (nextool_{moduleKey}).
+    * Chamado automaticamente pelo ModuleManager antes de onInit().
+    * Procura .mo em {modulePath}/locales/{lang}.mo
+    *
+    * @return void
+    */
+   public function loadModuleLang(): void {
+      global $CFG_GLPI, $TRANSLATE;
+
+      if (empty($TRANSLATE)) {
+         return;
+      }
+
+      $localesDir = $this->getModulePath() . '/locales';
+      if (!is_dir($localesDir)) {
+         return;
+      }
+
+      $domain = 'nextool_' . $this->getModuleKey();
+      $lang   = $_SESSION['glpilanguage'] ?? $CFG_GLPI['language'] ?? 'en_GB';
+
+      // Resolver nome do arquivo .mo (mesmo padrão do Plugin::loadLang)
+      $mofile = null;
+      if (isset($CFG_GLPI['languages'][$lang])) {
+         $candidate = $localesDir . '/' . $CFG_GLPI['languages'][$lang][1];
+         if (file_exists($candidate)) {
+            $mofile = $candidate;
+         }
+      }
+      if ($mofile === null && file_exists($localesDir . '/' . $lang . '.mo')) {
+         $mofile = $localesDir . '/' . $lang . '.mo';
+      }
+      if ($mofile === null && file_exists($localesDir . '/en_GB.mo')) {
+         $mofile = $localesDir . '/en_GB.mo';
+      }
+
+      if ($mofile !== null) {
+         $TRANSLATE->addTranslationFile('gettext', $mofile, $domain, $lang);
+      }
    }
 
    /**

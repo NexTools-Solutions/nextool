@@ -1,11 +1,18 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Hooks
- *
- * Registro de hooks do plugin: instalação, desinstalação, MassiveActions, giveItem, menus.
- *
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Hooks
+ * -------------------------------------------------------------------------
+ * Instalação: sql/install.sql (tabelas e seeds), geração do client_identifier.
+ * Desinstalação: sql/uninstall.sql (tabelas operacionais), remoção de
+ * diretórios dos módulos baixados. MassiveActions, giveItem, redefine_menus.
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -75,7 +82,19 @@ function plugin_nextool_install() {
 }
 
 function plugin_nextool_upgrade($old_version) {
+   global $DB;
+
    $result = plugin_nextool_install();
+
+   // Migração 3.7.0: remover coluna legada contract_active de 3 tabelas
+   if (version_compare($old_version, '3.7.0', '<')) {
+      $migFile = GLPI_ROOT . '/plugins/nextool/sql/migration_remove_contract_active.sql';
+      if (file_exists($migFile)) {
+         $DB->runFile($migFile);
+         Toolbox::logInFile('plugin_nextool', "Upgrade {$old_version} → 3.7.0: migração contract_active executada.");
+      }
+   }
+
    PluginNextoolPermissionManager::syncModuleRights();
    return $result;
 }
@@ -124,6 +143,10 @@ function plugin_nextool_uninstall() {
    if (is_dir($tmpRemoteDir)) {
       nextool_delete_dir($tmpRemoteDir);
    }
+
+   // Remove configurações do self-updater em glpi_configs
+   $DB->delete('glpi_configs', ['context' => 'plugin:nextool_core_update']);
+   $DB->delete('glpi_configs', ['context' => 'plugin:nextool_distribution']);
 
    Toolbox::logInFile('plugin_nextool', 'Plugin desinstalado: módulos removidos, caches limpos e diretórios temporários apagados.');
 
@@ -241,6 +264,11 @@ function plugin_nextool_redefine_menus($menu) {
          'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$4',
          'icon'  => 'ti ti-report-analytics',
       ];
+      $nextoolsItem['content']['historico'] = [
+         'title' => __('Histórico', 'nextool'),
+         'page'  => $configBase . '&forcetab=Log$1',
+         'icon'  => 'ti ti-history',
+      ];
    }
 
    $modManager = null;
@@ -249,38 +277,37 @@ function plugin_nextool_redefine_menus($menu) {
          $modManager = PluginNextoolModuleManager::getInstance();
       }
    } catch (Throwable $e) {
-      Toolbox::logInFile('plugin_nextool', 'redefine_menus: ModuleManager init failed: ' . $e->getMessage());
+      // Silenciar — ModuleManager pode não estar disponível durante instalação/desinstalação do plugin
    }
 
    // Abas dinâmicas: cada módulo instalado com config (exceto standalone)
    // Cada aba de módulo só aparece se o perfil tem READ no módulo e o módulo está ativo
-   $moduleConfigTabs = [];
-   if ($modManager !== null) {
-      $moduleConfigTabs = PluginNextoolMainConfig::getModuleConfigTabs();
-      foreach ($moduleConfigTabs as $tabNum => $meta) {
-         $moduleKey = $meta['module_key'] ?? '';
-         if ($moduleKey !== '') {
-            $mod = $modManager->getModule($moduleKey);
-            if ($mod === null || !$mod->isEnabled()) {
-               continue;
-            }
-         }
-         if ($moduleKey !== '' && !PluginNextoolPermissionManager::canViewModule($moduleKey) && !$hasGlobalAdmin) {
+   $moduleConfigTabs = PluginNextoolMainConfig::getModuleConfigTabs();
+   foreach ($moduleConfigTabs as $tabNum => $meta) {
+      $moduleKey = $meta['module_key'] ?? '';
+
+      if ($modManager !== null && $moduleKey !== '') {
+         $mod = $modManager->getModule($moduleKey);
+         if ($mod && !$mod->isEnabled()) {
             continue;
          }
-         $key = 'module_' . $moduleKey;
-         $nextoolsItem['content'][$key] = [
-            'title' => $meta['name'],
-            'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$' . $tabNum,
-            'icon'  => $meta['icon'],
-         ];
       }
+
+      if ($moduleKey !== '' && !PluginNextoolPermissionManager::canViewModule($moduleKey) && !$hasGlobalAdmin) {
+         continue;
+      }
+      $key = 'module_' . $moduleKey;
+      $nextoolsItem['content'][$key] = [
+         'title' => $meta['name'],
+         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$' . $tabNum,
+         'icon'  => $meta['icon'],
+      ];
    }
 
    // Módulos standalone instalados: submenu aponta para getConfigPage()
    // Aparece no menu quando instalado E ativo.
-   try {
-      if ($modManager !== null) {
+   if ($modManager !== null) {
+      try {
          foreach ($modManager->getAllModules() as $mk => $mod) {
             if (!$mod->isInstalled() || !$mod->isEnabled()) {
                continue;
@@ -297,9 +324,9 @@ function plugin_nextool_redefine_menus($menu) {
                ];
             }
          }
+      } catch (Throwable $e) {
+         // Silenciar erros na construção do menu
       }
-   } catch (Throwable $e) {
-      Toolbox::logInFile('plugin_nextool', 'redefine_menus: standalone modules failed: ' . $e->getMessage());
    }
 
    // Ordem fixa: Módulos primeiro, depois Contato, Licenciamento, Logs, depois módulos
@@ -344,8 +371,10 @@ function plugin_nextool_redefine_menus($menu) {
 
    // ---- Menus adicionais via getRedefineMenuItems() (genérico) ----
    try {
-      $rdManager = PluginNextoolModuleManager::getInstance();
-      foreach ($rdManager->getActiveModules() as $rdKey => $rdModule) {
+      if ($modManager === null) {
+         $modManager = PluginNextoolModuleManager::getInstance();
+      }
+      foreach ($modManager->getActiveModules() as $rdKey => $rdModule) {
          if (!method_exists($rdModule, 'getRedefineMenuItems')) {
             continue;
          }

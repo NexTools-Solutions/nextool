@@ -1,11 +1,17 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Hook Dispatcher
- *
- * Dispatcher central para hooks de Ticket. Módulos registram em onInit(); setup registra os dispatch após loadActiveModules().
- *
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Hook Dispatcher
+ * -------------------------------------------------------------------------
+ * Dispatcher central para hooks de Ticket. Módulos registram em onInit();
+ * setup registra os dispatch após loadActiveModules().
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {

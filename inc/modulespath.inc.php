@@ -1,9 +1,11 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Path dos módulos (GLPI_PLUGIN_DOC_DIR)
- *
- * Define NEXTOOL_MODULES_DIR e NEXTOOL_DOC_DIR para que o plugin grave módulos
- * baixados em files/_plugins/nextool/ (sem pedir permissão em plugins/).
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Path dos módulos (GLPI_PLUGIN_DOC_DIR)
+ * -------------------------------------------------------------------------
+ * Define NEXTOOL_MODULES_DIR e NEXTOOL_DOC_DIR para que o plugin grave
+ * módulos baixados em files/_plugins/nextool/ (sem pedir permissão em plugins/).
  * Incluir este arquivo antes de usar os paths (setup.php, hook.php, module_ajax, etc.).
  *
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
@@ -18,10 +20,9 @@ $base = defined('GLPI_PLUGIN_DOC_DIR')
    ? GLPI_PLUGIN_DOC_DIR
    : null;
 
-// Em alguns ambientes (ex.: containers), GLPI_ROOT fica em /usr/share/glpi,
-// mas o diretório de arquivos fica em /var/lib/glpi/files. Quando includes.php
-// ainda não foi incluído, GLPI_PLUGIN_DOC_DIR pode não estar definido; então
-// precisamos de um fallback que encontre o _plugins real.
+// Fallback para ambientes/container onde GLPI_PLUGIN_DOC_DIR ainda não está definido
+// no momento em que este include roda. O objetivo é manter os módulos em
+// files/_plugins/nextool/modules (gravável pelo PHP), como plugins de marketplace.
 if ($base === null) {
    $candidates = [
       '/var/lib/glpi/files/_plugins',

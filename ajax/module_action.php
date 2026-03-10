@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Nextools - Module Action Endpoint (AJAX)
  *
@@ -39,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $action = isset($_POST['action']) ? trim((string) $_POST['action']) : '';
 $moduleKeyRaw = isset($_POST['module']) ? trim((string) $_POST['module']) : '';
+
 if ($action === '' || $moduleKeyRaw === '') {
    http_response_code(400);
    echo json_encode([
@@ -57,6 +59,25 @@ if (!preg_match('/^[a-z0-9_-]+$/i', $moduleKeyRaw)) {
    exit;
 }
 $moduleKey = strtolower($moduleKeyRaw);
+
+// UUID v4 para correlacionar todos os eventos desta ação no ContainerAPI
+require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+$GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
+
+$allowedModuleFilters = ['enabled', 'disabled', 'download', 'install', 'update', 'free', 'licensed'];
+$moduleFilterRaw = isset($_POST['module_filter']) ? trim((string) $_POST['module_filter']) : '';
+$moduleFilter = in_array($moduleFilterRaw, $allowedModuleFilters, true) ? $moduleFilterRaw : '';
+
+function nextoolBuildModuleRedirectUrl(string $returnTab, string $moduleFilter = ''): string {
+   $params = [
+      'id'       => 1,
+      'forcetab' => $returnTab,
+   ];
+   if ($moduleFilter !== '') {
+      $params['module_filter'] = $moduleFilter;
+   }
+   return Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?' . http_build_query($params);
+}
 
 if (in_array($action, ['install', 'uninstall', 'enable', 'disable', 'update', 'download'], true)) {
    if (!PluginNextoolPermissionManager::canManageModule($moduleKey)) {
@@ -134,7 +155,7 @@ if ($action === 'update') {
             echo json_encode([
                'success'      => false,
                'message'      => $msg,
-               'redirect_url' => Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=' . urlencode('PluginNextoolMainConfig$1'),
+               'redirect_url' => nextoolBuildModuleRedirectUrl('PluginNextoolMainConfig$1', $moduleFilter),
             ]);
             exit;
          }
@@ -170,9 +191,17 @@ switch ($action) {
 $msgType = $result['message_type'] ?? (!empty($result['success']) ? INFO : ERROR);
 Session::addMessageAfterRedirect($result['message'], false, $msgType);
 
-// Ao ativar (enable) com sucesso: abrir a aba lateral do módulo
-$returnTab = null;
-if ($action === 'enable' && !empty($result['success'])) {
+$validTabs = PluginNextoolMainConfig::getValidTabIds();
+$returnTab = 'PluginNextoolMainConfig$1';
+$requestedReturnTab = isset($_POST['forcetab']) ? (string) $_POST['forcetab'] : '';
+
+if ($requestedReturnTab !== '' && in_array($requestedReturnTab, $validTabs, true)) {
+   // Mantém a aba atual quando o front informa explicitamente o contexto.
+   $returnTab = $requestedReturnTab;
+} elseif (isset($result['forcetab']) && $result['forcetab'] !== '' && in_array((string) $result['forcetab'], $validTabs, true)) {
+   $returnTab = (string) $result['forcetab'];
+} elseif ($action === 'enable' && !empty($result['success'])) {
+   // Compatibilidade com chamadas antigas sem forcetab explícito.
    $moduleTabs = PluginNextoolMainConfig::getModuleConfigTabs();
    foreach ($moduleTabs as $tabNum => $meta) {
       if (($meta['module_key'] ?? '') === $moduleKey) {
@@ -182,20 +211,7 @@ if ($action === 'enable' && !empty($result['success'])) {
    }
 }
 
-if ($returnTab === null) {
-   $returnTab = 'PluginNextoolMainConfig$1';
-   if (isset($_POST['forcetab']) && $_POST['forcetab'] !== '') {
-      $returnTab = (string) $_POST['forcetab'];
-   } elseif (isset($result['forcetab']) && $result['forcetab'] !== '') {
-      $returnTab = (string) $result['forcetab'];
-   }
-   $validTabs = PluginNextoolMainConfig::getValidTabIds();
-   if (!in_array($returnTab, $validTabs, true)) {
-      $returnTab = 'PluginNextoolMainConfig$1';
-   }
-}
-
-$redirectUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=' . urlencode($returnTab);
+$redirectUrl = nextoolBuildModuleRedirectUrl($returnTab, $moduleFilter);
 
 echo json_encode([
    'success'      => !empty($result['success']),

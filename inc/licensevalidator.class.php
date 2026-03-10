@@ -1,13 +1,25 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - License Validator
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - License Validator
+ * -------------------------------------------------------------------------
+ * Validador de licença do NexTool Solutions (plugin operacional).
  *
- * Validador de licença do Nextools (plugin operacional). Lê configuração e endpoints,
- * decide quando usar cache ou chamar a API remota (ContainerAPI), atualiza o cache
- * local e registra tentativas em glpi_plugin_nextool_main_validation_attempts.
+ * Responsável por:
+ * - Ler configuração de licença/endpoints
+ * - Decidir quando usar cache ou chamar a API remota (ContainerAPI)
+ * - Atualizar o cache local (tabela glpi_plugin_nextool_main_license_config)
+ * - Registrar tentativas (glpi_plugin_nextool_main_validation_attempts)
  *
+ * A decisão de bloqueio/desativação de módulos é aplicada em outras
+ * camadas (ModuleManager / UI), com base no snapshot retornado.
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -19,6 +31,23 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/validationattempt.class.php';
 
 class PluginNextoolLicenseValidator {
+
+   /** Aliases de planos legados → nomes atuais (espelho do PlanNormalizer do ContainerAPI). */
+   private const PLAN_ALIASES = [
+      'STARTER' => 'DESENVOLVIMENTO',
+      'PRO'     => 'LICENCIADO',
+   ];
+
+   /**
+    * Normaliza nome de plano, convertendo aliases legados para os nomes atuais.
+    */
+   public static function normalizePlan(?string $plan): ?string {
+      if ($plan === null) {
+         return null;
+      }
+      $upper = strtoupper(trim($plan));
+      return self::PLAN_ALIASES[$upper] ?? $upper;
+   }
 
    /**
     * Valida a licença atual
@@ -40,6 +69,10 @@ class PluginNextoolLicenseValidator {
       global $DB;
 
       $force_refresh = !empty($options['force_refresh']);
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         "[DEBUG] [LicenseValidator] validateLicense() force_refresh=%s\n",
+         $force_refresh ? 'true' : 'false'
+      ));
       $context       = isset($options['context']) && is_array($options['context'])
          ? $options['context']
          : [];
@@ -72,10 +105,7 @@ class PluginNextoolLicenseValidator {
       $licenseConfig = PluginNextoolLicenseConfig::getDefaultConfig();
 
       $licenseKey = $licenseConfig['license_key'] ?? null;
-      $plan       = $licenseConfig['plan'] ?? null;
-      if ($plan !== null && strtoupper((string)$plan) === 'STARTER') {
-         $plan = 'DESENVOLVIMENTO';
-      }
+      $plan       = self::normalizePlan($licenseConfig['plan'] ?? null);
       $apiEndpoint = null;
       $apiSecret   = null;
       $useDistributionValidation = $distributionBaseUrl !== ''
@@ -136,10 +166,9 @@ class PluginNextoolLicenseValidator {
 
          $state = [
             'plan'             => $plan,
-            'contract_active'  => $licenseConfig['contract_active'] ?? null,
             'license_status'   => $hasLicense
                ? ($licenseConfig['license_status'] ?? null)
-               : 'FREE_TIER',
+               : null,
             'warnings'         => [],
             'licenses'         => [],
          ];
@@ -165,7 +194,6 @@ class PluginNextoolLicenseValidator {
             'response_time_ms'    => null,
             'consecutive_failures'=> 0,
             'plan'                => $plan,
-            'contract_active'     => $state['contract_active'],
             'license_status'      => $state['license_status'],
          ];
       }
@@ -226,9 +254,6 @@ class PluginNextoolLicenseValidator {
             'http_code'           => null,
             'response_time_ms'    => null,
             'consecutive_failures'=> (int)($licenseConfig['consecutive_failures'] ?? 0),
-            'contract_active'     => isset($licenseConfig['contract_active'])
-               ? (bool)$licenseConfig['contract_active']
-               : null,
             'license_status'      => $licenseConfig['license_status'] ?? null,
             'expires_at'          => $licenseConfig['expires_at'] ?? null,
             'warnings'            => $cachedWarnings,
@@ -237,11 +262,39 @@ class PluginNextoolLicenseValidator {
          ];
       }
 
+      // Cache negativo: resultado no_license/inválido recente (10 min)
+      // Evita spam de chamadas à API para ambientes sem licença ativa.
+      $negative_cache_ttl = 10 * 60; // 10 minutos
+      if (
+         !$force_refresh
+         && $origin !== 'config_status'
+         && $lastResult === 0
+         && !empty($lastDate)
+         && ($now - $lastDate) <= $negative_cache_ttl
+      ) {
+         return [
+            'valid'               => false,
+            'message'             => !empty($licenseConfig['last_validation_message'])
+               ? $licenseConfig['last_validation_message']
+               : __('Sem licença ativa (cache recente)', 'nextool'),
+            'allowed_modules'     => [],
+            'source'              => 'negative_cache',
+            'http_code'           => null,
+            'response_time_ms'    => null,
+            'consecutive_failures'=> (int)($licenseConfig['consecutive_failures'] ?? 0),
+            'license_status'      => $licenseConfig['license_status'] ?? 'no_license',
+            'expires_at'          => null,
+            'warnings'            => [],
+            'plan'                => $plan ?? 'FREE',
+            'licenses'            => [],
+         ];
+      }
+
       // Monta payload para API
       $domain = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '');
 
       $clientInfo = [
-         'plugin_version' => self::getPluginVersion(),
+         'plugin_version' => PluginNextoolConfig::getPluginVersion(),
          'glpi_version'   => defined('GLPI_VERSION') ? GLPI_VERSION : null,
          'php_version'    => PHP_VERSION,
       ];
@@ -309,7 +362,6 @@ class PluginNextoolLicenseValidator {
       $valid           = false;
       $message         = '';
       $allowedModules  = [];
-      $contractActive  = null;
       $licenseStatus   = null;
       $remoteExpiresAt = null;
       $warnings        = [];
@@ -332,13 +384,11 @@ class PluginNextoolLicenseValidator {
             'message'          => $message,
             'http_code'        => $httpCode,
             'response_time_ms' => $responseTimeMs,
-            'contract_active'  => null,
             'license_status'   => null,
             'allowed_modules'  => json_encode([]),
          ]);
          $plan = 'FREE';
-         $licenseStatus = 'FREE_TIER';
-         $contractActive = false;
+         $licenseStatus = null;
 
          if ($useDistributionValidation && $httpCode === 401) {
             $warnings[] = __('Assinatura HMAC rejeitada pelo ContainerAPI. Recrie o segredo HMAC na aba de licença e valide novamente.', 'nextool');
@@ -351,9 +401,6 @@ class PluginNextoolLicenseValidator {
          self::enforceFreeModeFallback('Falha ao comunicar com o ContainerAPI');
       } else {
          // Campos adicionais da nova fase 3 (podem ou não estar presentes conforme versão do administrativo)
-         if (array_key_exists('contract_active', $responseData)) {
-            $contractActive = (bool)$responseData['contract_active'];
-         }
          if (!empty($responseData['license_status'])) {
             $licenseStatus = strtoupper((string)$responseData['license_status']);
          }
@@ -373,10 +420,7 @@ class PluginNextoolLicenseValidator {
             // Plano retornado pelo administrativo (se houver)
             $planForMessage = null;
             if (isset($responseData['plan']) && is_string($responseData['plan']) && $responseData['plan'] !== '') {
-               $planForMessage = strtoupper(trim($responseData['plan']));
-               if ($planForMessage === 'STARTER') {
-                  $planForMessage = 'DESENVOLVIMENTO';
-               }
+               $planForMessage = self::normalizePlan($responseData['plan']);
                $plan = $planForMessage;
             }
 
@@ -410,10 +454,7 @@ class PluginNextoolLicenseValidator {
 
          // Atualiza plano se o administrativo informar explicitamente, mesmo em respostas inválidas
             if (isset($responseData['plan']) && is_string($responseData['plan']) && $responseData['plan'] !== '') {
-               $plan = strtoupper(trim($responseData['plan']));
-               if ($plan === 'STARTER') {
-                  $plan = 'DESENVOLVIMENTO';
-               }
+               $plan = self::normalizePlan($responseData['plan']);
                $logBase['plan'] = $plan;
             }
 
@@ -442,12 +483,13 @@ class PluginNextoolLicenseValidator {
          if (!empty($responseData['modules_catalog']) && is_array($responseData['modules_catalog'])) {
             $syncOrigin = isset($context['origin']) ? (string)$context['origin'] : '';
             if ($syncOrigin !== 'config_status') {
-               $planForSync = isset($responseData['plan']) ? strtoupper(trim((string)$responseData['plan'])) : '';
-               if ($planForSync === 'STARTER') {
-                  $planForSync = 'DESENVOLVIMENTO';
-               }
+               $planForSync = self::normalizePlan($responseData['plan'] ?? null) ?? '';
                self::applyModulesCatalogSync($responseData['modules_catalog'], $planForSync);
             }
+         }
+
+         if (isset($responseData['core_update']) && is_array($responseData['core_update'])) {
+            self::persistCoreUpdateHint($responseData['core_update']);
          }
       }
 
@@ -456,18 +498,8 @@ class PluginNextoolLicenseValidator {
          if (empty($plan)) {
             $plan = 'FREE';
          } else {
-            $plan = strtoupper($plan);
-            if ($plan === 'STARTER') {
-               $plan = 'DESENVOLVIMENTO';
-            }
+            $plan = self::normalizePlan($plan);
          }
-         if ($licenseStatus === null) {
-            $licenseStatus = 'FREE_TIER';
-         }
-         if ($contractActive === null) {
-            $contractActive = false;
-         }
-
          self::enforceFreeModeFallback('Licença inválida ou não autorizada');
       }
 
@@ -479,14 +511,12 @@ class PluginNextoolLicenseValidator {
             'http_code'        => $httpCode,
             'response_time_ms' => $responseTimeMs,
             'license_status'   => $licenseStatus,
-            'contract_active'  => $contractActive,
             'plan'             => $plan,
             'allowed_modules'  => json_encode($allowedModules),
          ]);
       }
 
       self::logLicenseAlert([
-         'contract_active' => $contractActive,
          'license_status'  => $licenseStatus,
          'plan'            => $plan,
          'warnings'        => $warnings,
@@ -503,7 +533,6 @@ class PluginNextoolLicenseValidator {
          $message,
          $allowedModules,
          [
-            'contract_active' => $contractActive,
             'license_status'  => $licenseStatus,
             'expires_at'      => $remoteExpiresAt,
             'warnings'        => $warnings,
@@ -521,7 +550,6 @@ class PluginNextoolLicenseValidator {
          'http_code'           => $httpCode,
          'response_time_ms'    => $responseTimeMs,
          'consecutive_failures'=> (int)($configAfter['consecutive_failures'] ?? 0),
-         'contract_active'     => $contractActive,
          'license_status'      => $licenseStatus,
          'expires_at'          => $remoteExpiresAt,
          'plan'                => $plan,
@@ -538,7 +566,7 @@ class PluginNextoolLicenseValidator {
     *   são desabilitados (is_available=0, is_enabled=0).
     *
     * @param array $catalog Catálogo retornado pelo ContainerAPI
-    * @param string $plan Plano do ambiente (DESENVOLVIMENTO, ENTERPRISE, PRO, FREE, etc.)
+    * @param string $plan Plano do ambiente (FREE, LICENCIADO, DESENVOLVIMENTO, ENTERPRISE)
     * @return void
     */
    protected static function applyModulesCatalogSync(array $catalog, string $plan = '') {
@@ -740,6 +768,9 @@ class PluginNextoolLicenseValidator {
          'X-Timestamp: ' . $timestamp,
          'X-Signature: ' . $signature,
       ];
+      if (isset($GLOBALS['nextool_request_group_id'])) {
+         $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
+      }
 
       if (function_exists('curl_init')) {
          $ch = curl_init($apiEndpoint);
@@ -1066,11 +1097,6 @@ class PluginNextoolLicenseValidator {
          'cached_modules'         => json_encode(array_values($allowedModules)),
       ];
 
-      if (array_key_exists('contract_active', $state)) {
-         $value = $state['contract_active'];
-         $input['contract_active'] = $value === null ? null : ((int)!empty($value));
-      }
-
       if (array_key_exists('license_status', $state) && $state['license_status'] !== null) {
          $input['license_status'] = strtoupper((string)$state['license_status']);
       }
@@ -1115,20 +1141,6 @@ class PluginNextoolLicenseValidator {
       }
    }
 
-   /**
-    * Obtém versão atual do plugin Nextool
-    *
-    * @return string|null
-    */
-   protected static function getPluginVersion() {
-      if (function_exists('plugin_version_nextool')) {
-         $info = plugin_version_nextool();
-         if (is_array($info) && !empty($info['version'])) {
-            return $info['version'];
-         }
-      }
-      return null;
-   }
 
    /**
     * Registra alertas críticos sobre a licença em arquivo de log
@@ -1138,16 +1150,10 @@ class PluginNextoolLicenseValidator {
     */
    protected static function logLicenseAlert(array $state, $origin) {
       $status        = $state['license_status'] ?? null;
-      $contractActive= array_key_exists('contract_active', $state) ? $state['contract_active'] : null;
       $plan          = $state['plan'] ?? null;
       $warnings      = isset($state['warnings']) && is_array($state['warnings']) ? $state['warnings'] : [];
 
-      if ($contractActive === false) {
-         Toolbox::logInFile(
-            'plugin_nextool',
-            sprintf('ALERTA: contrato da licença está inativo (origin=%s, plan=%s)', $origin, $plan ?? 'UNKNOWN')
-         );
-      } elseif (!empty($warnings) && in_array('license_expired', $warnings, true)) {
+      if (!empty($warnings) && in_array('license_expired', $warnings, true)) {
          Toolbox::logInFile(
             'plugin_nextool',
             sprintf('Aviso: licença expirada, contrato ativo (origin=%s, status=%s)', $origin, $status ?? 'UNKNOWN')
@@ -1167,5 +1173,22 @@ class PluginNextoolLicenseValidator {
          'plugin_nextool',
          sprintf('LicenseValidator: %s. Ambiente operará em modo FREE.', $reason)
       );
+   }
+
+   /**
+    * Persiste hint de atualização do core recebida do ContainerAPI.
+    * Apenas atualiza update_available e latest_available_version;
+    * NÃO sobrescreve staged_target_version/staged_source/staged_at (controlados pelo CoreUpdater).
+    */
+   private static function persistCoreUpdateHint(array $hint): void {
+      try {
+         $available = !empty($hint['available']);
+         Config::setConfigurationValues('plugin:nextool_core_update', [
+            'update_available'         => $available ? '1' : '0',
+            'latest_available_version' => $available ? (string)($hint['latest_version'] ?? '') : '',
+         ]);
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir core_update hint - ' . $e->getMessage());
+      }
    }
 }

@@ -1,11 +1,17 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Profile
- *
- * Aba em Perfis do GLPI para configurar direitos do Nextools por perfil.
- *
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Profile
+ * -------------------------------------------------------------------------
+ * Adiciona aba na tela de Perfis do GLPI para configurar direitos do Nextool
+ * por perfil (READ/UPDATE/DELETE/PURGE).
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -82,7 +88,7 @@ class PluginNextoolProfile extends Profile {
          ];
          $rights[] = [
             'itemtype' => self::class,
-            'label'    => __('Abas administrativas (Licença, Contato, Logs)', 'nextool'),
+            'label'    => __('Abas administrativas (Licença, Contato, Logs, Atualização)', 'nextool'),
             'field'    => PluginNextoolPermissionManager::RIGHT_ADMIN_TABS,
          ];
       }

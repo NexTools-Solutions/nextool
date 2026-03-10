@@ -1,12 +1,17 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Main Config
- *
- * Item type nativo com abas verticais: Módulos, Contato, Licenciamento, Logs
- * e abas dinâmicas por módulo instalado com página de configuração.
- *
+ * -------------------------------------------------------------------------
+ * NexTool Solutions - Main Config
+ * -------------------------------------------------------------------------
+ * Item type nativo com abas verticais: Módulos, Contato, Licenciamento,
+ * Logs e abas dinâmicas por módulo instalado com página de configuração.
+ * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
- * @license GPLv3+
+ * @copyright 2025 Richard Loureiro
+ * @license   GPLv3+ https://www.gnu.org/licenses/gpl-3.0.html
+ * @link      https://linkedin.com/in/richard-ti
+ * -------------------------------------------------------------------------
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -30,7 +35,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
    }
 
    public static function getTypeName($nb = 0) {
-      return __('Nextools', 'nextool');
+      return __('NexTool Solutions', 'nextool');
    }
 
    /**
@@ -48,14 +53,14 @@ class PluginNextoolMainConfig extends CommonDBTM {
 
       $tab[] = [
          'id'   => 'common',
-         'name' => __('Nextools', 'nextool'),
+         'name' => __('NexTool Solutions', 'nextool'),
       ];
 
       $tab[] = [
          'id'            => '1',
          'table'         => $this->getTable(),
          'field'         => 'id',
-         'name'          => __('ID'),
+         'name'          => __('ID', 'nextool'),
          'searchtype'    => ['equals', 'notequals', 'lessthan', 'morethan'],
          'datatype'      => 'number',
          'massiveaction' => false,
@@ -64,9 +69,14 @@ class PluginNextoolMainConfig extends CommonDBTM {
       return $tab;
    }
 
+   public static function getFormURL($full = true) {
+      return Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php';
+   }
+
    public function defineTabs($options = []) {
       $ong = [];
       $this->addStandardTab(self::class, $ong, $options);
+      $this->addStandardTab('Log', $ong, $options);
       return $ong;
    }
 
@@ -121,8 +131,6 @@ class PluginNextoolMainConfig extends CommonDBTM {
             continue;
          }
 
-         // getConfigPage() já retorna URL completa (via getFrontPath)
-         $configUrl = $configPage;
          $name = $row['name'] ?? $module->getName() ?? $moduleKey;
          $icon = $module->getIcon();
 
@@ -130,7 +138,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
             'module_key' => $moduleKey,
             'name'       => $name,
             'icon'       => $icon,
-            'config_url' => $configUrl,
+            'config_url' => $configPage,
          ];
          $tabNum++;
       }
@@ -238,7 +246,12 @@ class PluginNextoolMainConfig extends CommonDBTM {
          if ($requestedSection !== '') {
             $nextool_redirect_after_save .= '&section=' . urlencode($requestedSection);
          }
-         include $configPath;
+         $realConfigPath = realpath($configPath);
+         if ($realConfigPath === false || strpos($realConfigPath, realpath(NEXTOOL_MODULES_BASE)) !== 0) {
+            echo '<div class="alert alert-danger m-3">' . __('Caminho de configuração inválido.', 'nextool') . '</div>';
+            return true;
+         }
+         include $realConfigPath;
          unset($_GET['embedded'], $_GET['in_config_form'], $nextool_redirect_after_save);
          if (isset($GLOBALS['nextool_config_form_test_url'])) {
             unset($GLOBALS['nextool_config_form_test_url']);

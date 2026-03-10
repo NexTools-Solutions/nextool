@@ -1,8 +1,9 @@
 <?php
+declare(strict_types=1);
 /**
- * Nextools - Setup Class
+ * NexTool Solutions - Setup Class
  *
- * Classe de setup responsável por adicionar a aba do Nextools em
+ * Classe de setup responsável por adicionar a aba do NexTool Solutions em
  * "Configurar → Geral" e integrar o formulário principal de configuração.
  *
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
@@ -23,7 +24,7 @@ class PluginNextoolSetup extends CommonGLPI {
     */
    function getTabNameForItem(CommonGLPI $item, $withtemplate = 0) {
       if ($item instanceof Config) {
-         return "<span class='d-inline-flex align-items-center gap-2'><i class='ti ti-tool'></i><span>" . __('Nextools', 'nextool') . "</span></span>";
+         return "<span class='d-inline-flex align-items-center gap-2'><i class='ti ti-tool'></i><span>" . __('NexTool Solutions', 'nextool') . "</span></span>";
       }
       return '';
    }
