@@ -40,10 +40,12 @@ declare(strict_types=1);
          $_GET['sort']  = 2;
          $_GET['order'] = 'DESC';
 
-         Search::show('PluginNextoolValidationAttempt');
-
-         unset($_GET['embedded'], $_GET['sort'], $_GET['order'],
-               $GLOBALS['nextool_validation_attempts_forcetab_url']);
+         try {
+            Search::show('PluginNextoolValidationAttempt');
+         } finally {
+            unset($_GET['embedded'], $_GET['sort'], $_GET['order'],
+                  $GLOBALS['nextool_validation_attempts_forcetab_url']);
+         }
          ?>
 
          <!-- CSS: o GLPI Search engine impõe overflow:auto e height fixa no .search-container,

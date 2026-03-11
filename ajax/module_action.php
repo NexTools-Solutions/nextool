@@ -41,13 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $action = isset($_POST['action']) ? trim((string) $_POST['action']) : '';
 $moduleKeyRaw = isset($_POST['module']) ? trim((string) $_POST['module']) : '';
 
-Toolbox::logInFile('plugin_nextool', sprintf(
-   "[DEBUG] [ModuleAction] Requisição: action=%s module=%s user_id=%s\n",
-   $action,
-   $moduleKeyRaw,
-   class_exists('Session') ? (string)Session::getLoginUserID() : 'n/a'
-));
-
 if ($action === '' || $moduleKeyRaw === '') {
    http_response_code(400);
    echo json_encode([

@@ -41,11 +41,11 @@ declare(strict_types=1);
                         <i class="ti ti-info-circle fs-4 me-3"></i>
                         <div>
                            <p class="mb-2">
-                              Para visualizar e instalar os módulos oficiais da NexTool Solutions, é necessário aceitar as
-                              <a href="<?= NEXTOOL_TERMS_URL ?>" target="_blank" class="text-decoration-underline fw-semibold">Políticas de Uso</a>.
+                              <?php echo __('Para visualizar e instalar os módulos oficiais da NexTool Solutions, é necessário aceitar as', 'nextool'); ?>
+                              <a href="<?= NEXTOOL_TERMS_URL ?>" target="_blank" class="text-decoration-underline fw-semibold"><?php echo __('Políticas de Uso', 'nextool'); ?></a>.
                            </p>
                            <p class="mb-0 text-muted small">
-                              Esse processo confirma o ambiente na plataforma NexTool, registra o aceite e atualiza sua lista de módulos disponíveis.
+                              <?php echo __('Esse processo confirma o ambiente na plataforma NexTool, registra o aceite e atualiza sua lista de módulos disponíveis.', 'nextool'); ?>
                            </p>
                         </div>
                      </div>
@@ -59,7 +59,7 @@ declare(strict_types=1);
                               <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$1' : 'PluginNextoolSetup$1']); ?>
                               <button type="submit" class="btn btn-primary w-100">
                                  <i class="ti ti-checkbox me-1"></i>
-                                 Aceitar políticas e liberar módulos
+                                 <?php echo __('Aceitar políticas e liberar módulos', 'nextool'); ?>
                               </button>
                            </form>
                         <?php else: ?>
@@ -175,16 +175,16 @@ declare(strict_types=1);
                               <div class="text-end">
                                  <p class="mb-1">
                                     <?php if (isset($module['billing_tier']) && strtoupper((string) $module['billing_tier']) === 'DEV'): ?>
-                                      <span class="badge badge-dev me-1">Em desenvolvimento</span>
+                                      <span class="badge badge-dev me-1"><?php echo __('Em desenvolvimento', 'nextool'); ?></span>
                                     <?php elseif ($module['is_paid']): ?>
-                                      <span class="badge badge-licensing me-1">Módulo Licenciado</span>
+                                      <span class="badge badge-licensing me-1"><?php echo __('Módulo Licenciado', 'nextool'); ?></span>
                                     <?php else: ?>
-                                       <span class="badge bg-teal me-1 text-white">Módulo Gratuito</span>
+                                       <span class="badge bg-teal me-1 text-white"><?php echo __('Módulo Gratuito', 'nextool'); ?></span>
                                     <?php endif; ?>
                                     <?php if (!$module['catalog_is_enabled']): ?>
-                                       <span class="badge text-white bg-secondary">Indisponível</span>
+                                       <span class="badge text-white bg-secondary"><?php echo __('Indisponível', 'nextool'); ?></span>
                                     <?php elseif (!empty($module['update_available'])): ?>
-                                       <span class="badge bg-warning text-dark">Atualização disponível</span>
+                                       <span class="badge bg-warning text-dark"><?php echo __('Atualização disponível', 'nextool'); ?></span>
                                     <?php endif; ?>
                                  </p>
                               </div>

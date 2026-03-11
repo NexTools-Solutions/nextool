@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '3.7.1');
+define('PLUGIN_NEXTOOL_VERSION', '3.7.3');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -45,7 +45,7 @@ function plugin_version_nextool() {
    return [
       'name'        => 'NexTool Solutions',
       'version'     => PLUGIN_NEXTOOL_VERSION,
-      'author'      => 'Richard Loureiro - <a href="https://linkedin.com/in/richard-ti">linkedin.com/in/richard-ti</a>',
+      'author'      => 'Richard Loureiro - <a href="https://linkedin.com/in/richard-ti/" target="_blank" rel="noopener">linkedin.com/in/richard-ti</a>',
       'license'     => 'GPLv3+',
       'homepage'    => 'https://nextoolsolutions.ai',
       'requirements' => [
@@ -76,17 +76,28 @@ function plugin_version_nextool() {
  * o próprio roteador faça a validação (sessão ou stateless conforme o módulo).
  */
 function plugin_nextool_boot() {
-   // Necessário para webhooks (POST) não caírem no CheckCsrfListener do Symfony.
-   \Glpi\Http\SessionManager::registerPluginStatelessPath(
-      'nextool',
-      '#^/ajax/module_ajax\\.php$#'
-   );
-
-   \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
-      'nextool',
-      '#^/ajax/module_ajax\\.php#',
-      \Glpi\Http\Firewall::STRATEGY_NO_CHECK
-   );
+   // Necessário para webhooks (POST) e endpoints stateless não caírem no CheckCsrfListener do Symfony.
+   // Proteção defensiva: se os métodos não existirem (GLPI 11 antigo), o plugin não quebra o GLPI.
+   try {
+      if (class_exists('\Glpi\Http\SessionManager')
+          && method_exists('\Glpi\Http\SessionManager', 'registerPluginStatelessPath')) {
+         \Glpi\Http\SessionManager::registerPluginStatelessPath(
+            'nextool',
+            '#^/ajax/module_ajax\\.php$#'
+         );
+      }
+      if (class_exists('\Glpi\Http\Firewall')
+          && method_exists('\Glpi\Http\Firewall', 'addPluginStrategyForLegacyScripts')) {
+         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
+            'nextool',
+            '#^/ajax/module_ajax\\.php#',
+            \Glpi\Http\Firewall::STRATEGY_NO_CHECK
+         );
+      }
+   } catch (\Throwable $e) {
+      // NUNCA crashar o GLPI — log silencioso
+      error_log('[NexTool] boot error: ' . $e->getMessage());
+   }
 }
 
 /**
@@ -132,6 +143,7 @@ function plugin_init_nextool() {
 
    $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
 
+   try {
    Plugin::loadLang('nextool');
 
    $permissionfile = GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
@@ -312,6 +324,10 @@ function plugin_init_nextool() {
             Toolbox::logInFile('plugin_nextool', "Erro ao carregar módulos: " . $e->getMessage());
          }
       }
+   }
+   } catch (\Throwable $e) {
+      error_log('[NexTool] init error: ' . $e->getMessage());
+      // Plugin não carrega seus recursos, mas GLPI continua operando
    }
 }
 

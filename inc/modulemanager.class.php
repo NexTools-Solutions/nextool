@@ -196,7 +196,8 @@ class PluginNextoolModuleManager {
             
             // Verifica dependências
             if ($this->checkDependencies($module)) {
-               // Inicializa módulo
+               // Registra domínio de tradução e inicializa módulo
+               $module->loadModuleLang();
                $module->onInit();
                $this->loadedModules[$moduleKey] = $module;
             }
@@ -257,12 +258,12 @@ class PluginNextoolModuleManager {
       ];
       
       if (!$module) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo não encontrado', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não encontrado', 'nextool'), $baseContext);
       }
 
       // Verifica se já está instalado
       if ($module->isInstalled()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo já está instalado', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo já está instalado', 'nextool'), $baseContext);
       }
 
       if (method_exists($module, 'requiresRemoteDownload') && $module->requiresRemoteDownload()) {
@@ -284,12 +285,12 @@ class PluginNextoolModuleManager {
       // Verifica dependências
       if (!$this->checkDependencies($module)) {
          $deps = implode(', ', $module->getDependencies());
-         return $this->buildModuleActionResult($moduleKey, $action, false, "Dependências não atendidas: {$deps}", $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, sprintf(__('Dependências não atendidas: %s', 'nextool'), $deps), $baseContext);
       }
 
       // Executa instalação do módulo
       if (!$module->install()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Falha ao executar instalação do módulo', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao executar instalação do módulo', 'nextool'), $baseContext);
       }
 
       // Registra módulo no banco (marca como instalado) ou atualiza registro existente
@@ -350,12 +351,12 @@ class PluginNextoolModuleManager {
             $moduleKey,
             $action,
             true,
-            'Módulo instalado com sucesso',
+            __('Módulo instalado com sucesso', 'nextool'),
             $baseContext
          );
       }
 
-      return $this->buildModuleActionResult($moduleKey, $action, false, 'Falha ao registrar módulo no banco', $baseContext);
+      return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao registrar módulo no banco', 'nextool'), $baseContext);
    }
 
    /**
@@ -377,12 +378,12 @@ class PluginNextoolModuleManager {
       ];
       
       if (!$module) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo não encontrado', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não encontrado', 'nextool'), $baseContext);
       }
 
       // Verifica se está instalado
       if (!$module->isInstalled()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo não está instalado', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não está instalado', 'nextool'), $baseContext);
       }
 
       // Desativa primeiro se estiver ativo
@@ -392,7 +393,7 @@ class PluginNextoolModuleManager {
 
       // Executa desinstalação do módulo (apenas desregistra; NÃO executa uninstall.sql nem DROP TABLE)
       if (!$module->uninstall()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Falha ao executar desinstalação do módulo', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao executar desinstalação do módulo', 'nextool'), $baseContext);
       }
 
       // Marca como não instalado; dados e tabelas do módulo permanecem no banco
@@ -411,10 +412,10 @@ class PluginNextoolModuleManager {
          $this->clearCache();
          $this->refreshModules();
          
-         return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo desinstalado com sucesso', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, true, __('Módulo desinstalado com sucesso', 'nextool'), $baseContext);
       }
 
-      return $this->buildModuleActionResult($moduleKey, $action, false, 'Falha ao remover módulo do banco', $baseContext);
+      return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao remover módulo do banco', 'nextool'), $baseContext);
    }
 
    /**
@@ -434,17 +435,17 @@ class PluginNextoolModuleManager {
       ];
       
       if (!$module) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo não encontrado', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não encontrado', 'nextool'), $baseContext);
       }
 
       // Verifica se está instalado
       if (!$module->isInstalled()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo precisa ser instalado primeiro', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo precisa ser instalado primeiro', 'nextool'), $baseContext);
       }
 
       // Verifica se já está ativo
       if ($module->isEnabled()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo já está ativo', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo já está ativo', 'nextool'), $baseContext);
       }
 
       // Verifica dependências
@@ -452,7 +453,7 @@ class PluginNextoolModuleManager {
          $deps = implode(', ', $module->getDependencies());
          return [
             'success' => false,
-            'message' => "Dependências não atendidas: {$deps}"
+            'message' => sprintf(__('Dependências não atendidas: %s', 'nextool'), $deps)
          ];
       }
 
@@ -489,12 +490,12 @@ class PluginNextoolModuleManager {
             $moduleKey,
             $action,
             true,
-            'Módulo ativado com sucesso',
+            __('Módulo ativado com sucesso', 'nextool'),
             $baseContext
          );
       }
 
-      return $this->buildModuleActionResult($moduleKey, $action, false, 'Falha ao ativar módulo', $baseContext);
+      return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao ativar módulo', 'nextool'), $baseContext);
    }
 
    /**
@@ -514,12 +515,12 @@ class PluginNextoolModuleManager {
       ];
       
       if (!$module) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo não encontrado', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não encontrado', 'nextool'), $baseContext);
       }
 
       // Verifica se está ativo
       if (!$module->isEnabled()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo já está inativo', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo já está inativo', 'nextool'), $baseContext);
       }
 
       // Verifica licença para módulos pagos
@@ -554,10 +555,10 @@ class PluginNextoolModuleManager {
 
          $module->onDisable();
          
-         return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo desativado com sucesso', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, true, __('Módulo desativado com sucesso', 'nextool'), $baseContext);
       }
 
-      return $this->buildModuleActionResult($moduleKey, $action, false, 'Falha ao desativar módulo', $baseContext);
+      return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao desativar módulo', 'nextool'), $baseContext);
    }
 
    /**
@@ -745,7 +746,7 @@ class PluginNextoolModuleManager {
          ];
       }
 
-      $details = sprintf('Módulo %s v%s baixado do ContainerAPI.', $moduleKey, $result['version'] ?? 'unknown');
+      $details = sprintf(__('Módulo %s v%s baixado do ContainerAPI.', 'nextool'), $moduleKey, $result['version'] ?? 'unknown');
       Toolbox::logInFile('plugin_nextool', $details);
       $this->discoverModules(true);
       $this->syncAvailableVersion($moduleKey, $result['version'] ?? null);
@@ -768,12 +769,12 @@ class PluginNextoolModuleManager {
 
       $row = $this->getModuleRow($moduleKey);
       if ($row === null || !(bool)($row['is_installed'] ?? 0)) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo precisa estar instalado para atualizar.', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo precisa estar instalado para atualizar.', 'nextool'), $baseContext);
       }
 
       $module = $this->getModule($moduleKey);
       if ($module === null) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Módulo não encontrado no diretório local.', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não encontrado no diretório local.', 'nextool'), $baseContext);
       }
 
       // Em modo FREE ou SUSPENDED, não permitir atualização de módulos pagos.
@@ -824,7 +825,7 @@ class PluginNextoolModuleManager {
             $this->extractLicenseAuditFields($licenseCheck['validation'] ?? null),
             [
                'result'  => 0,
-               'message' => $licenseCheck['message'] ?? 'Falha de licença',
+               'message' => $licenseCheck['message'] ?? __('Falha de licença', 'nextool'),
             ]
          ));
          return $licenseCheck;
@@ -845,7 +846,7 @@ class PluginNextoolModuleManager {
          );
          $this->clearCache();
          $this->refreshModules();
-         return $this->buildModuleActionResult($moduleKey, $action, true, 'Versão local já é a mais recente. Sincronização concluída.', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, true, __('Versão local já é a mais recente. Sincronização concluída.', 'nextool'), $baseContext);
       }
 
       $download = $this->downloadModuleFromDistribution($moduleKey);
@@ -856,7 +857,7 @@ class PluginNextoolModuleManager {
       $this->discoverModules(true);
       $module = $this->getModule($moduleKey);
       if ($module === null) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Não foi possível carregar o módulo após o download.', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Não foi possível carregar o módulo após o download.', 'nextool'), $baseContext);
       }
 
       $downloadedVersion = $download['version'] ?? null;
@@ -880,12 +881,12 @@ class PluginNextoolModuleManager {
          );
          $this->clearCache();
          $this->refreshModules();
-         return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo já está na versão mais recente. Versão sincronizada.', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, true, __('Módulo já está na versão mais recente. Versão sincronizada.', 'nextool'), $baseContext);
       }
 
       $upgradeOk = $module->upgrade($currentVersion, $targetVersion);
       if (!$upgradeOk) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, 'Falha ao aplicar rotinas de upgrade do módulo.', $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao aplicar rotinas de upgrade do módulo.', 'nextool'), $baseContext);
       }
 
       $DB->update(
@@ -901,7 +902,7 @@ class PluginNextoolModuleManager {
       $this->clearCache();
       $this->refreshModules();
 
-      return $this->buildModuleActionResult($moduleKey, $action, true, 'Módulo atualizado com sucesso.', array_merge($baseContext, [
+      return $this->buildModuleActionResult($moduleKey, $action, true, __('Módulo atualizado com sucesso.', 'nextool'), array_merge($baseContext, [
          'from_version' => $currentVersion,
          'to_version'   => $targetVersion,
       ]));
@@ -1168,7 +1169,7 @@ class PluginNextoolModuleManager {
       if ($isDevModule && $plan !== 'DESENVOLVIMENTO') {
          return [
             'success' => false,
-            'message' => 'Módulos de desenvolvimento (DEV) estão disponíveis apenas para o plano Desenvolvimento.',
+            'message' => __('Módulos de desenvolvimento (DEV) estão disponíveis apenas para o plano Desenvolvimento.', 'nextool'),
             'validation' => $validation,
          ];
       }
@@ -1195,11 +1196,11 @@ class PluginNextoolModuleManager {
       if (empty($validation['valid'])) {
          $msg = isset($validation['message']) && $validation['message'] !== ''
             ? $validation['message']
-            : 'Licença inválida ou não autorizada';
+            : __('Licença inválida ou não autorizada', 'nextool');
 
          return [
             'success' => false,
-            'message' => 'Licença inválida: ' . $msg,
+            'message' => sprintf(__('Licença inválida: %s', 'nextool'), $msg),
             'validation' => $validation,
          ];
       }
@@ -1219,7 +1220,7 @@ class PluginNextoolModuleManager {
       ) {
          return [
             'success' => false,
-            'message' => 'Módulo não permitido nesta licença',
+            'message' => __('Módulo não permitido nesta licença', 'nextool'),
             'validation' => $validation,
          ];
       }

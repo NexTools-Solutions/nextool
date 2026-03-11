@@ -99,7 +99,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
 
       $iterator = $DB->request([
          'FROM'  => $table,
-         'WHERE' => ['is_installed' => 1],
+         'WHERE' => ['is_installed' => 1, 'is_enabled' => 1],
          'ORDER' => 'name',
       ]);
 
@@ -131,8 +131,6 @@ class PluginNextoolMainConfig extends CommonDBTM {
             continue;
          }
 
-         // getConfigPage() já retorna URL completa (via getFrontPath)
-         $configUrl = $configPage;
          $name = $row['name'] ?? $module->getName() ?? $moduleKey;
          $icon = $module->getIcon();
 
@@ -140,7 +138,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
             'module_key' => $moduleKey,
             'name'       => $name,
             'icon'       => $icon,
-            'config_url' => $configUrl,
+            'config_url' => $configPage,
          ];
          $tabNum++;
       }

@@ -177,7 +177,12 @@ function plugin_nextool_MassiveActions($type) {
  * @return bool True se tratou o campo, false para deixar o core processar
  */
 function plugin_nextool_MassiveActionsFieldsDisplay($options = []) {
-   return PluginNextoolHookProvidersDispatcher::massiveActionsFieldsDisplay((array) $options);
+   try {
+      return PluginNextoolHookProvidersDispatcher::massiveActionsFieldsDisplay((array) $options);
+   } catch (\Throwable $e) {
+      error_log('[NexTool] MassiveActionsFieldsDisplay error: ' . $e->getMessage());
+      return false;
+   }
 }
 
 /**
@@ -191,7 +196,12 @@ function plugin_nextool_MassiveActionsFieldsDisplay($options = []) {
  * @return string|false Valor formatado ou false para usar o padrão
  */
 function plugin_nextool_giveItem($itemtype, $ID, $data, $num) {
-   return PluginNextoolHookProvidersDispatcher::giveItem($itemtype, $ID, $data, $num);
+   try {
+      return PluginNextoolHookProvidersDispatcher::giveItem($itemtype, $ID, $data, $num);
+   } catch (\Throwable $e) {
+      error_log('[NexTool] giveItem error: ' . $e->getMessage());
+      return false;
+   }
 }
 
 /**
@@ -213,6 +223,20 @@ function plugin_nextool_redefine_menus($menu) {
    if (Session::getCurrentInterface() === 'helpdesk') {
       return $menu;
    }
+
+   try {
+      return _plugin_nextool_build_menus($menu);
+   } catch (\Throwable $e) {
+      error_log('[NexTool] redefine_menus error: ' . $e->getMessage());
+      return $menu; // GLPI continua com menu padrão
+   }
+}
+
+/**
+ * Construção interna dos menus NexTool — isolada para que redefine_menus
+ * possa capturar qualquer exceção sem derrubar o GLPI.
+ */
+function _plugin_nextool_build_menus($menu) {
 
    // Verificar permissões globais do NexTool
    $canViewModulesGlobal = PluginNextoolPermissionManager::canViewModules();
@@ -276,7 +300,9 @@ function plugin_nextool_redefine_menus($menu) {
       if (class_exists('PluginNextoolModuleManager')) {
          $modManager = PluginNextoolModuleManager::getInstance();
       }
-   } catch (Throwable $e) {}
+   } catch (Throwable $e) {
+      // Silenciar — ModuleManager pode não estar disponível durante instalação/desinstalação do plugin
+   }
 
    // Abas dinâmicas: cada módulo instalado com config (exceto standalone)
    // Cada aba de módulo só aparece se o perfil tem READ no módulo e o módulo está ativo
@@ -369,8 +395,10 @@ function plugin_nextool_redefine_menus($menu) {
 
    // ---- Menus adicionais via getRedefineMenuItems() (genérico) ----
    try {
-      $rdManager = PluginNextoolModuleManager::getInstance();
-      foreach ($rdManager->getActiveModules() as $rdKey => $rdModule) {
+      if ($modManager === null) {
+         $modManager = PluginNextoolModuleManager::getInstance();
+      }
+      foreach ($modManager->getActiveModules() as $rdKey => $rdModule) {
          if (!method_exists($rdModule, 'getRedefineMenuItems')) {
             continue;
          }

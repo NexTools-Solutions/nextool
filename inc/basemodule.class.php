@@ -187,6 +187,48 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Registra o domínio gettext do módulo (nextool_{moduleKey}).
+    * Chamado automaticamente pelo ModuleManager antes de onInit().
+    * Procura .mo em {modulePath}/locales/{lang}.mo
+    *
+    * @return void
+    */
+   public function loadModuleLang(): void {
+      global $CFG_GLPI, $TRANSLATE;
+
+      if (empty($TRANSLATE)) {
+         return;
+      }
+
+      $localesDir = $this->getModulePath() . '/locales';
+      if (!is_dir($localesDir)) {
+         return;
+      }
+
+      $domain = 'nextool_' . $this->getModuleKey();
+      $lang   = $_SESSION['glpilanguage'] ?? $CFG_GLPI['language'] ?? 'en_GB';
+
+      // Resolver nome do arquivo .mo (mesmo padrão do Plugin::loadLang)
+      $mofile = null;
+      if (isset($CFG_GLPI['languages'][$lang])) {
+         $candidate = $localesDir . '/' . $CFG_GLPI['languages'][$lang][1];
+         if (file_exists($candidate)) {
+            $mofile = $candidate;
+         }
+      }
+      if ($mofile === null && file_exists($localesDir . '/' . $lang . '.mo')) {
+         $mofile = $localesDir . '/' . $lang . '.mo';
+      }
+      if ($mofile === null && file_exists($localesDir . '/en_GB.mo')) {
+         $mofile = $localesDir . '/en_GB.mo';
+      }
+
+      if ($mofile !== null) {
+         $TRANSLATE->addTranslationFile('gettext', $mofile, $domain, $lang);
+      }
+   }
+
+   /**
     * Providers de hooks globais do GLPI (Search/MassiveActions/etc.).
     *
     * Por padrão, módulos não expõem providers.
