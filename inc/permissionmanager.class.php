@@ -42,7 +42,7 @@ class PluginNextoolPermissionManager {
     * à configuração global recebam o direito completo durante o upgrade/install.
     */
    private static function hasGlobalAdminAccess(): bool {
-      return Session::haveRight('config', UPDATE);
+      return (bool) Session::haveRight('config', UPDATE);
    }
 
    public static function installRights(): void {

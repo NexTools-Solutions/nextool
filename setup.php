@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '3.7.2');
+define('PLUGIN_NEXTOOL_VERSION', '3.7.3');
 
 /** GLPI mínimo e máximo suportados */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -73,12 +73,16 @@ function plugin_version_nextool() {
  * o próprio roteador faça a validação (sessão ou stateless conforme o módulo).
  */
 function plugin_nextool_boot() {
-   if (method_exists('\Glpi\Http\Firewall', 'addPluginStrategyForLegacyScripts')) {
-      \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
-         'nextool',
-         '#^/ajax/module_ajax\\.php#',
-         \Glpi\Http\Firewall::STRATEGY_NO_CHECK
-      );
+   try {
+      if (method_exists('\Glpi\Http\Firewall', 'addPluginStrategyForLegacyScripts')) {
+         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
+            'nextool',
+            '#^/ajax/module_ajax\\.php#',
+            \Glpi\Http\Firewall::STRATEGY_NO_CHECK
+         );
+      }
+   } catch (\Throwable $e) {
+      error_log('[NexTool] boot error: ' . $e->getMessage());
    }
 }
 
@@ -124,6 +128,8 @@ function plugin_init_nextool() {
    }
 
    $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
+
+   try {
    Plugin::loadLang('nextool');
 
    $permissionfile = GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
@@ -304,6 +310,9 @@ function plugin_init_nextool() {
             Toolbox::logInFile('plugin_nextool', "Erro ao carregar módulos: " . $e->getMessage());
          }
       }
+   }
+   } catch (\Throwable $e) {
+      error_log('[NexTool] init error: ' . $e->getMessage());
    }
 }
 

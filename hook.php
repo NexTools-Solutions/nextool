@@ -177,7 +177,12 @@ function plugin_nextool_MassiveActions($type) {
  * @return bool True se tratou o campo, false para deixar o core processar
  */
 function plugin_nextool_MassiveActionsFieldsDisplay($options = []) {
-   return PluginNextoolHookProvidersDispatcher::massiveActionsFieldsDisplay((array) $options);
+   try {
+      return PluginNextoolHookProvidersDispatcher::massiveActionsFieldsDisplay((array) $options);
+   } catch (\Throwable $e) {
+      error_log('[NexTool] MassiveActionsFieldsDisplay error: ' . $e->getMessage());
+      return false;
+   }
 }
 
 /**
@@ -191,7 +196,12 @@ function plugin_nextool_MassiveActionsFieldsDisplay($options = []) {
  * @return string|false Valor formatado ou false para usar o padrão
  */
 function plugin_nextool_giveItem($itemtype, $ID, $data, $num) {
-   return PluginNextoolHookProvidersDispatcher::giveItem($itemtype, $ID, $data, $num);
+   try {
+      return PluginNextoolHookProvidersDispatcher::giveItem($itemtype, $ID, $data, $num);
+   } catch (\Throwable $e) {
+      error_log('[NexTool] giveItem error: ' . $e->getMessage());
+      return false;
+   }
 }
 
 /**
@@ -209,11 +219,26 @@ function plugin_nextool_redefine_menus($menu) {
       return $menu;
    }
 
-   // Não exibir menus NexTool para perfis de interface simplificada (self-service/helpdesk)
    if (Session::getCurrentInterface() === 'helpdesk') {
       return $menu;
    }
 
+   try {
+      return _plugin_nextool_build_menus($menu);
+   } catch (\Throwable $e) {
+      error_log('[NexTool] redefine_menus error: ' . $e->getMessage());
+      return $menu;
+   }
+}
+
+/**
+ * Construção efetiva dos menus NexTool — extraído de plugin_nextool_redefine_menus
+ * para isolar o corpo em try/catch sem duplicar o guard helpdesk.
+ *
+ * @param array $menu Menu atual do GLPI (não-vazio, interface !== helpdesk)
+ * @return array Menu modificado
+ */
+function _plugin_nextool_build_menus($menu) {
    // Verificar permissões globais do NexTool
    $canViewModulesGlobal = PluginNextoolPermissionManager::canViewModules();
    $canAccessAdmin       = PluginNextoolPermissionManager::canAccessAdminTabs();
