@@ -88,6 +88,24 @@ class PluginNextoolModuleCardHelper {
             return implode('', $html);
          }
 
+         if (empty($state['has_zip_extension'])) {
+            $html[] = self::renderBadge(
+               __('Pré-requisito: extensão php-zip não instalada', 'nextool'),
+               'badge bg-danger text-white me-1'
+            );
+            $html[] = self::renderActionForm(
+               $state,
+               'download',
+               __('Download', 'nextool'),
+               'btn btn-sm btn-success module-action',
+               'ti ti-cloud-download',
+               true,
+               __('A extensão php-zip é necessária para baixar módulos. Solicite ao administrador do servidor a instalação.', 'nextool')
+            );
+            self::appendDataButtons($state, $html);
+            return implode('', $html);
+         }
+
          $html[] = self::renderActionForm(
             $state,
             'download',
@@ -133,7 +151,12 @@ class PluginNextoolModuleCardHelper {
          }
 
          if (!empty($state['update_available'])) {
-            if ($isSuspended && $state['is_paid']) {
+            if (empty($state['has_zip_extension'])) {
+               $html[] = self::renderBadge(
+                  __('Atualização indisponível: extensão php-zip não instalada', 'nextool'),
+                  'badge bg-danger text-white me-1'
+               );
+            } elseif ($isSuspended && $state['is_paid']) {
                $html[] = self::renderBadge(__('Atualização bloqueada: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
             } else {
                $pluginVersion = $state['plugin_version'] ?? '';

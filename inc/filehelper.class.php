@@ -155,4 +155,24 @@ class PluginNextoolFileHelper {
          'http_code' => $httpCode,
       ];
    }
+
+   /**
+    * Detecta o formato de um arquivo compactado pelos magic bytes.
+    *
+    * @param string $filePath Caminho do arquivo
+    * @return string 'tar.gz' | 'zip' | 'unknown'
+    */
+   public static function detectArchiveFormat(string $filePath): string {
+      $magic = @file_get_contents($filePath, false, null, 0, 2);
+      if ($magic === false || strlen($magic) < 2) {
+         return 'unknown';
+      }
+      if ($magic === "\x1f\x8b") {
+         return 'tar.gz';
+      }
+      if ($magic === "PK") {
+         return 'zip';
+      }
+      return 'unknown';
+   }
 }
