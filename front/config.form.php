@@ -163,6 +163,8 @@ if (function_exists('plugin_version_nextool')) {
    $currentPluginVersion = isset($info['version']) ? (string) $info['version'] : null;
 }
 
+$hasZipExtension = class_exists('ZipArchive');
+
 foreach ($allModuleKeys as $moduleKey) {
    $meta = $catalogMeta[$moduleKey] ?? [];
 
@@ -340,6 +342,7 @@ foreach ($allModuleKeys as $moduleKey) {
          'can_purge_module'        => $moduleCanPurge,
          'can_view_module'         => $moduleCanView,
          'is_license_suspended'    => $isSuspended,
+         'has_zip_extension'       => $hasZipExtension,
       ]),
    ];
 }

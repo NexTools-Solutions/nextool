@@ -64,6 +64,12 @@ if (empty($moduleKey) || empty($filename)) {
 // Sanitiza parâmetros (segurança)
 $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename($filename); // Remove caminhos (segurança)
+// Remove querystring residual do filename (ex: "file.js.php?v=hash" → "file.js.php")
+// Necessário porque Html::script() do GLPI (path legado) concatena ?v= sem verificar
+// se a URL já contém querystring, resultando em dois "?" na URL final.
+if (($qpos = strpos($filename, '?')) !== false) {
+   $filename = substr($filename, 0, $qpos);
+}
 
 // Assets do plugin exigem sessão autenticada.
 require_once GLPI_ROOT . '/inc/includes.php';

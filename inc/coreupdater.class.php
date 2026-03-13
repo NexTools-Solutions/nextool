@@ -486,17 +486,37 @@ class PluginNextoolCoreUpdater {
          }
 
          $this->resetStagingDirectory();
-         $packagePath = $this->getStagedPackagePath();
+
+         // Download para nome genérico (sem extensão de formato)
+         $downloadPath = $this->getStagingRoot() . '/nextool-core.download';
          Toolbox::logInFile('plugin_nextool', sprintf(
             "[DEBUG] [CoreUpdater] prepare() baixando pacote para %s\n",
-            $packagePath
+            $downloadPath
          ));
-         $this->client->downloadPackage((string)$manifest['download_url'], $packagePath);
+         $this->client->downloadPackage((string)$manifest['download_url'], $downloadPath);
          Toolbox::logInFile('plugin_nextool', "[DEBUG] [CoreUpdater] prepare() validando hash e assinatura.\n");
-         $this->assertHashMatches($packagePath, (string)$manifest['hash_sha256']);
+         $this->assertHashMatches($downloadPath, (string)$manifest['hash_sha256']);
          $this->assertManifestSignatureValid($manifest);
 
-         Toolbox::logInFile('plugin_nextool', "[DEBUG] [CoreUpdater] prepare() extraindo pacote para staging isolado.\n");
+         // Detectar formato e renomear com extensão correta (PharData exige)
+         $format = PluginNextoolFileHelper::detectArchiveFormat($downloadPath);
+         if ($format === 'tar.gz') {
+            $packagePath = $this->getStagingRoot() . '/nextool-core.tar.gz';
+         } elseif ($format === 'zip') {
+            $packagePath = $this->getStagingRoot() . '/nextool-core.zip';
+         } else {
+            @unlink($downloadPath);
+            throw new RuntimeException(__('Formato de artefato de core não reconhecido.', 'nextool'));
+         }
+         if (!rename($downloadPath, $packagePath)) {
+            @unlink($downloadPath);
+            throw new RuntimeException(__('Falha ao preparar artefato de core para extração.', 'nextool'));
+         }
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[DEBUG] [CoreUpdater] prepare() formato detectado: %s, extraindo pacote para staging isolado.\n",
+            $format
+         ));
+
          $pluginRoot = $this->extractPackage($packagePath);
          $this->writeStagedManifest($manifest, $source);
          $this->generateIntegrityManifest();
@@ -1141,57 +1161,82 @@ class PluginNextoolCoreUpdater {
          throw new RuntimeException(__('Não foi possível preparar diretório de extração do core.', 'nextool'));
       }
 
-      $zip = new ZipArchive();
-      if ($zip->open($packagePath) !== true) {
-         throw new RuntimeException(__('Não foi possível abrir pacote de core para extração.', 'nextool'));
-      }
-
-      for ($i = 0; $i < $zip->numFiles; $i++) {
-         $entryName = (string)$zip->getNameIndex($i);
-         $normalized = str_replace('\\', '/', $entryName);
-
-         if ($normalized === '' || str_contains($normalized, "\0")) {
-            continue;
+      if (str_ends_with($packagePath, '.tar.gz')) {
+         // PharData — formato preferencial (built-in, sem dependência externa)
+         try {
+            $phar = new PharData($packagePath);
+            $phar->extractTo($extractRoot, null, true);
+         } catch (Throwable $e) {
+            throw new RuntimeException(sprintf(
+               __('Falha ao extrair pacote de core: %s', 'nextool'),
+               $e->getMessage()
+            ));
          }
-         if (str_starts_with($normalized, '/') || preg_match('#(^|/)\.\.(/|$)#', $normalized) === 1) {
-            $zip->close();
-            throw new RuntimeException(__('Pacote de core inválido (entrada insegura no ZIP).', 'nextool'));
+      } elseif (str_ends_with($packagePath, '.zip')) {
+         // ZipArchive — fallback (requer ext-zip)
+         if (!class_exists('ZipArchive')) {
+            throw new RuntimeException(
+               __('A extensão php-zip não está instalada neste servidor. Solicite ao administrador que instale a extensão (ex: apt install php-zip ou yum install php-zip) e reinicie o PHP.', 'nextool')
+            );
          }
 
-         $targetPath = $extractRoot . '/' . $normalized;
-         if (str_ends_with($normalized, '/')) {
-            if (!is_dir($targetPath) && !@mkdir($targetPath, 0755, true)) {
-               $zip->close();
-               throw new RuntimeException(__('Falha ao criar diretório durante extração do core.', 'nextool'));
+         $zip = new ZipArchive();
+         if ($zip->open($packagePath) !== true) {
+            throw new RuntimeException(__('Não foi possível abrir pacote de core para extração.', 'nextool'));
+         }
+
+         for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entryName = (string)$zip->getNameIndex($i);
+            $normalized = str_replace('\\', '/', $entryName);
+
+            if ($normalized === '' || str_contains($normalized, "\0")) {
+               continue;
             }
-            continue;
-         }
+            if (str_starts_with($normalized, '/') || preg_match('#(^|/)\.\.(/|$)#', $normalized) === 1) {
+               $zip->close();
+               throw new RuntimeException(__('Pacote de core inválido (entrada insegura no ZIP).', 'nextool'));
+            }
 
-         $targetDir = dirname($targetPath);
-         if (!is_dir($targetDir) && !@mkdir($targetDir, 0755, true)) {
-            $zip->close();
-            throw new RuntimeException(__('Falha ao preparar diretório de arquivo extraído do core.', 'nextool'));
-         }
+            $targetPath = $extractRoot . '/' . $normalized;
+            if (str_ends_with($normalized, '/')) {
+               if (!is_dir($targetPath) && !@mkdir($targetPath, 0755, true)) {
+                  $zip->close();
+                  throw new RuntimeException(__('Falha ao criar diretório durante extração do core.', 'nextool'));
+               }
+               continue;
+            }
 
-         $stream = $zip->getStream($entryName);
-         if ($stream === false) {
-            $zip->close();
-            throw new RuntimeException(__('Falha ao ler entrada do ZIP do core.', 'nextool'));
-         }
+            $targetDir = dirname($targetPath);
+            if (!is_dir($targetDir) && !@mkdir($targetDir, 0755, true)) {
+               $zip->close();
+               throw new RuntimeException(__('Falha ao preparar diretório de arquivo extraído do core.', 'nextool'));
+            }
 
-         $out = @fopen($targetPath, 'wb');
-         if ($out === false) {
+            $stream = $zip->getStream($entryName);
+            if ($stream === false) {
+               $zip->close();
+               throw new RuntimeException(__('Falha ao ler entrada do ZIP do core.', 'nextool'));
+            }
+
+            $out = @fopen($targetPath, 'wb');
+            if ($out === false) {
+               fclose($stream);
+               $zip->close();
+               throw new RuntimeException(__('Falha ao escrever arquivo extraído do core.', 'nextool'));
+            }
+
+            stream_copy_to_stream($stream, $out);
             fclose($stream);
-            $zip->close();
-            throw new RuntimeException(__('Falha ao escrever arquivo extraído do core.', 'nextool'));
+            fclose($out);
          }
 
-         stream_copy_to_stream($stream, $out);
-         fclose($stream);
-         fclose($out);
+         $zip->close();
+      } else {
+         throw new RuntimeException(sprintf(
+            __('Formato de artefato de core não suportado: %s', 'nextool'),
+            pathinfo($packagePath, PATHINFO_EXTENSION)
+         ));
       }
-
-      $zip->close();
 
       $candidate = $extractRoot . '/nextool';
       if (is_dir($candidate) && is_file($candidate . '/setup.php')) {
@@ -1963,7 +2008,14 @@ class PluginNextoolCoreUpdater {
    }
 
    private function getStagedPackagePath(): string {
-      return $this->getStagingRoot() . '/nextool-core.zip';
+      $root = $this->getStagingRoot();
+      // Preferir .tar.gz (novo formato)
+      $tarPath = $root . '/nextool-core.tar.gz';
+      if (is_file($tarPath)) {
+         return $tarPath;
+      }
+      // Fallback .zip (formato legado)
+      return $root . '/nextool-core.zip';
    }
 
    private function getStagedExtractPath(): string {

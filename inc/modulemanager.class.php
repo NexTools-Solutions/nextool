@@ -738,7 +738,7 @@ class PluginNextoolModuleManager {
       try {
          $client = new PluginNextoolDistributionClient($baseUrl, $clientIdentifier, $clientSecret);
          $result = $client->downloadModule($moduleKey);
-      } catch (Exception $e) {
+      } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', sprintf('Falha ao baixar módulo %s: %s', $moduleKey, $e->getMessage()));
          return [
             'success' => false,

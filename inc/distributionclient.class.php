@@ -192,11 +192,28 @@ class PluginNextoolDistributionClient {
          throw new RuntimeException(__('Manifesto inválido retornado pelo ContainerAPI.', 'nextool'));
       }
 
-      $zipPath = $this->downloadPackage($downloadUrl, $moduleKey, $version);
-      $this->verifyHash($zipPath, $hashExpected);
+      $downloadPath = $this->downloadPackage($downloadUrl, $moduleKey, $version);
+      $this->verifyHash($downloadPath, $hashExpected);
+
+      // Detectar formato do artefato e renomear com extensão correta (PharData exige)
+      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      $format = PluginNextoolFileHelper::detectArchiveFormat($downloadPath);
+      if ($format === 'tar.gz') {
+         $packagePath = $downloadPath . '.tar.gz';
+      } elseif ($format === 'zip') {
+         $packagePath = $downloadPath . '.zip';
+      } else {
+         @unlink($downloadPath);
+         throw new RuntimeException(__('Formato de artefato não reconhecido.', 'nextool'));
+      }
+      if (!rename($downloadPath, $packagePath)) {
+         @unlink($downloadPath);
+         throw new RuntimeException(__('Falha ao preparar artefato para extração.', 'nextool'));
+      }
+
       require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
       $destination = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
-      $this->extractPackage($zipPath, $destination, $moduleKey);
+      $this->extractPackage($packagePath, $destination, $moduleKey);
 
       return [
          'module'  => $moduleKey,
@@ -248,8 +265,8 @@ class PluginNextoolDistributionClient {
          mkdir($tmpDir, 0755, true);
       }
 
-      $zipPath = $tmpDir . '/' . $moduleKey . '-' . $version . '-' . uniqid() . '.zip';
-      $fp = fopen($zipPath, 'w+');
+      $downloadPath = $tmpDir . '/' . $moduleKey . '-' . $version . '-' . uniqid() . '.download';
+      $fp = fopen($downloadPath, 'w+');
       if ($fp === false) {
          throw new RuntimeException(__('Não foi possível criar arquivo temporário para download.', 'nextool'));
       }
@@ -275,11 +292,11 @@ class PluginNextoolDistributionClient {
       fclose($fp);
 
       if (!$result || $httpCode >= 300) {
-         @unlink($zipPath);
+         @unlink($downloadPath);
          throw new RuntimeException(sprintf(__('Falha ao baixar módulo (HTTP %s): %s', 'nextool'), $httpCode, $error));
       }
 
-      return $zipPath;
+      return $downloadPath;
    }
 
    private function verifyHash(string $filePath, string $expected): void {
@@ -295,25 +312,54 @@ class PluginNextoolDistributionClient {
    }
 
    private function extractPackage(string $filePath, string $destination, string $moduleKey): void {
-      $zip = new ZipArchive();
-      if ($zip->open($filePath) !== true) {
-         throw new RuntimeException(__('Não foi possível abrir o pacote do módulo.', 'nextool'));
-      }
-
       $tmpExtract = GLPI_TMP_DIR . '/nextool_remote/extracted_' . uniqid();
       if (!is_dir($tmpExtract)) {
          mkdir($tmpExtract, 0755, true);
       }
 
-      if (!$zip->extractTo($tmpExtract)) {
+      if (str_ends_with($filePath, '.tar.gz')) {
+         // Formato preferencial — PharData (built-in, sem dependência externa)
+         try {
+            $phar = new PharData($filePath);
+            $phar->extractTo($tmpExtract, null, true);
+         } catch (Throwable $e) {
+            @unlink($filePath);
+            throw new RuntimeException(sprintf(
+               __('Falha ao extrair pacote do módulo %s: %s', 'nextool'),
+               $moduleKey,
+               $e->getMessage()
+            ));
+         }
+      } elseif (str_ends_with($filePath, '.zip')) {
+         // Fallback — ZipArchive (requer ext-zip)
+         if (!class_exists('ZipArchive')) {
+            @unlink($filePath);
+            throw new RuntimeException(
+               __('A extensão php-zip não está instalada neste servidor. Solicite ao administrador que instale a extensão (ex: apt install php-zip ou yum install php-zip) e reinicie o PHP.', 'nextool')
+            );
+         }
+         $zip = new ZipArchive();
+         if ($zip->open($filePath) !== true) {
+            @unlink($filePath);
+            throw new RuntimeException(__('Não foi possível abrir o pacote do módulo.', 'nextool'));
+         }
+         if (!$zip->extractTo($tmpExtract)) {
+            $zip->close();
+            @unlink($filePath);
+            throw new RuntimeException(__('Falha ao extrair pacote do módulo.', 'nextool'));
+         }
          $zip->close();
-         throw new RuntimeException(__('Falha ao extrair pacote do módulo.', 'nextool'));
+      } else {
+         @unlink($filePath);
+         throw new RuntimeException(sprintf(
+            __('Formato de artefato não suportado: %s', 'nextool'),
+            pathinfo($filePath, PATHINFO_EXTENSION)
+         ));
       }
-      $zip->close();
 
       $candidate = $tmpExtract . '/' . $moduleKey;
       if (!is_dir($candidate)) {
-         // Caso o zip não contenha pasta raiz, usa diretório temporário mesmo
+         // Caso o artefato não contenha pasta raiz, usa diretório temporário
          $candidate = $tmpExtract;
       }
 
