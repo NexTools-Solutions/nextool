@@ -1092,6 +1092,20 @@ class PluginNextoolCoreUpdater {
          }
       }
 
+      // Bundled public key — fallback when no key is configured via DB or env.
+      // This is the official NexTool signing key, safe to distribute with the plugin.
+      if (count($keys) === 0) {
+         $bundledKeys = [
+            'nextool-core-ed25519-1' => 'PNK7FSuZccd9GQBvSTAkPJOpg98ENIiBoNH3M/0V/70=',
+         ];
+         foreach ($bundledKeys as $keyId => $rawKey) {
+            $decoded = $this->decodePublicKey($rawKey);
+            if ($decoded !== null) {
+               $keys[$keyId] = $decoded;
+            }
+         }
+      }
+
       if (count($keys) === 0) {
          throw new RuntimeException(__('Nenhuma chave pública confiável configurada para validar assinatura do core.', 'nextool'));
       }
