@@ -39,6 +39,22 @@ function plugin_nextool_install() {
       @mkdir(NEXTOOL_MODULES_BASE, 0755, true);
    }
 
+   // Avisar se o diretorio de modulos nao pôde ser criado (permissoes do filesystem)
+   if (!is_dir(NEXTOOL_MODULES_BASE) || !is_writable(NEXTOOL_MODULES_BASE)) {
+      $owner = function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'php') : 'apache';
+      Session::addMessageAfterRedirect(
+         sprintf(
+            __('NexTool: o diretorio de modulos (%s) nao esta gravavel. Execute: chown -R %s:%s %s', 'nextool'),
+            NEXTOOL_MODULES_BASE,
+            $owner,
+            $owner,
+            dirname(NEXTOOL_DOC_DIR)
+         ),
+         false,
+         WARNING
+      );
+   }
+
    $sqlfile = GLPI_ROOT . '/plugins/nextool/sql/install.sql';
    if (file_exists($sqlfile)) {
       $DB->runFile($sqlfile);
@@ -272,29 +288,7 @@ function _plugin_nextool_build_menus($menu) {
       ];
    }
 
-   // Subitens administrativos: requer permissão de abas admin OU bypass global
-   if ($canAccessAdmin || $hasGlobalAdmin) {
-      $nextoolsItem['content']['contato'] = [
-         'title' => __('Contato', 'nextool'),
-         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$2',
-         'icon'  => 'ti ti-headset',
-      ];
-      $nextoolsItem['content']['licenciamento'] = [
-         'title' => __('Licenciamento', 'nextool'),
-         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$3',
-         'icon'  => 'ti ti-key',
-      ];
-      $nextoolsItem['content']['logs'] = [
-         'title' => __('Logs', 'nextool'),
-         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$4',
-         'icon'  => 'ti ti-report-analytics',
-      ];
-      $nextoolsItem['content']['historico'] = [
-         'title' => __('Histórico', 'nextool'),
-         'page'  => $configBase . '&forcetab=Log$1',
-         'icon'  => 'ti ti-history',
-      ];
-   }
+   // Subitens admin removidos do menu principal -- acessiveis apenas via abas internas
 
    $modManager = null;
    try {
@@ -355,7 +349,7 @@ function _plugin_nextool_build_menus($menu) {
    }
 
    // Ordem fixa: Módulos primeiro, depois Contato, Licenciamento, Logs, depois módulos
-   $order = ['modulos', 'contato', 'licenciamento', 'logs'];
+   $order = ['modulos'];
    $content = $nextoolsItem['content'];
    $nextoolsItem['content'] = [];
    foreach ($order as $k) {

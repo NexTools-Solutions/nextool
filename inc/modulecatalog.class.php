@@ -29,7 +29,7 @@ class PluginNextoolModuleCatalog {
    private const DEFAULT_DOWNLOADABLE = true;
    private const DEFAULT_AUTHOR = [
       'name' => 'NexTool Solutions',
-      'url'  => 'https://nextoolsolutions.ai',
+      'url'  => 'https://nextoolsolutions.com',
    ];
 
    /**
@@ -79,6 +79,13 @@ class PluginNextoolModuleCatalog {
             'is_enabled'   => (bool)($row['is_enabled'] ?? 0),
             'is_available' => (bool)($row['is_available'] ?? 0),
             'min_version_nextools' => $minVerNextool,
+            'website_url' => isset($row['website_url']) && $row['website_url'] !== '' ? $row['website_url'] : null,
+            'icon'         => isset($row['icon']) && $row['icon'] !== '' ? $row['icon'] : self::DEFAULT_ICON,
+            'price_cents'  => isset($row['price_cents']) ? (int)$row['price_cents'] : null,
+            'category'     => $row['category'] ?? null,
+            'features'     => !empty($row['features_json']) ? json_decode($row['features_json'], true) : [],
+            'screenshot_url' => isset($row['screenshot_url']) && $row['screenshot_url'] !== '' ? $row['screenshot_url'] : null,
+            'download_count' => (int)($row['download_count'] ?? 0),
          ];
       }
 

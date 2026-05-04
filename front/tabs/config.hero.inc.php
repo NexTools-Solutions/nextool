@@ -27,7 +27,7 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
 <div class="card shadow-sm border-0<?php echo $nextoolHeroWithMarginTop ? ' mt-3' : ''; ?>" style="background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 40%, #14b8a6 100%);">
    <div class="card-body text-white">
       <div class="row g-3 align-items-start">
-         <div class="col-12 col-lg-8">
+         <div class="col-12 col-md-8">
             <h4 class="mb-1">
                <i class="ti ti-crown"></i>
                <span><?php echo __('Plano atual:', 'nextool'); ?></span>
@@ -52,7 +52,6 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                <span class="small text-info fw-semibold" style="display:inline">
                   <i class="ti ti-plug-connected"></i>
                   <?php echo __('Precisa de um módulo específico ou integração personalizada?', 'nextool'); ?>
-                  <a href="<?= NEXTOOL_BOOKING_URL ?>" target="_blank" class="text-white text-decoration-underline"><?php echo __('Agende uma reunião.', 'nextool'); ?></a>
                </span>
                <br>
                <span class="small text-licensing-hero fw-semibold" style="display:inline">
@@ -67,9 +66,9 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                </div>
             <?php endif; ?>
          </div>
-         <div class="col-12 col-lg-4">
+         <div class="col-12 col-md-4">
             <div class="nextool-hero-actions">
-            <div class="d-flex flex-wrap justify-content-lg-end gap-2 mb-2">
+            <div class="d-flex flex-wrap justify-content-md-end gap-2 mb-2">
             <?php if ($nextoolHeroShowCoreUpdate): ?>
                <button type="button" class="btn btn-light fw-semibold"
                   data-bs-toggle="modal" data-bs-target="#nextool-core-update-modal">

@@ -929,15 +929,15 @@ class PluginNextoolModuleManager {
    }
 
    private function getBillingTier(string $moduleKey): string {
-      // Módulo já descoberto em memória: usa o getter da instância
-      if (isset($this->modules[$moduleKey]) && $this->modules[$moduleKey] instanceof PluginNextoolBaseModule) {
-         return strtoupper(trim($this->modules[$moduleKey]->getBillingTier()));
-      }
-
-      // Fallback: consulta a tabela de catálogo
+      // Prioridade 1: banco (sincronizado do ContainerAPI) — fonte de verdade
       $row = $this->getModuleRow($moduleKey);
       if ($row !== null && isset($row['billing_tier']) && $row['billing_tier'] !== '') {
          return strtoupper(trim((string)$row['billing_tier']));
+      }
+
+      // Prioridade 2: instancia em memoria (fallback de bootstrap para modulos nao sincronizados)
+      if (isset($this->modules[$moduleKey]) && $this->modules[$moduleKey] instanceof PluginNextoolBaseModule) {
+         return strtoupper(trim($this->modules[$moduleKey]->getBillingTier()));
       }
 
       return 'FREE';

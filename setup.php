@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '3.8.0');
+define('PLUGIN_NEXTOOL_VERSION', '4.0.0');
 
 /** GLPI mínimo e máximo suportados */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -31,7 +31,7 @@ define('PLUGIN_NEXTOOL_MAX_GLPI_VERSION', '10.9.9');
 /** URLs e metadados do projeto (centralizados para evitar hardcoding) */
 define('NEXTOOL_AUTHOR_NAME', 'Richard Loureiro');
 define('NEXTOOL_AUTHOR_URL', 'https://linkedin.com/in/richard-ti/');
-define('NEXTOOL_SITE_URL', 'https://nextoolsolutions.ai');
+define('NEXTOOL_SITE_URL', 'https://nextoolsolutions.com');
 define('NEXTOOL_WHATSAPP_URL', 'https://api.whatsapp.com/send?phone=5532984692962&text=Ol%C3%A1%2C%20gostaria%20de%20falar%20sobre%20os%20produtos%20da%20Nextools.');
 define('NEXTOOL_BOOKING_URL', 'https://outlook.office.com/bookwithme/user/e52b9e3c38254d21b172fd4f08c18d8e%40jmbasolucoes.com.br?anonymous&ismsaljsauthenabled');
 define('NEXTOOL_RELEASES_URL', 'https://github.com/RPGMais/nextool/releases');
@@ -47,7 +47,7 @@ function plugin_version_nextool() {
       'version'     => PLUGIN_NEXTOOL_VERSION,
       'author'      => 'Richard Loureiro - <a href="https://linkedin.com/in/richard-ti/" target="_blank" rel="noopener">LinkedIn</a>',
       'license'     => 'GPLv3+',
-      'homepage'    => 'https://nextoolsolutions.ai',
+      'homepage'    => 'https://nextoolsolutions.com',
       'requirements' => [
          'glpi' => [
             'min' => PLUGIN_NEXTOOL_MIN_GLPI_VERSION,
@@ -280,6 +280,10 @@ function plugin_init_nextool() {
                $PLUGIN_HOOKS['item_update']['nextool']['TicketValidation'] = [
                   'PluginNextoolHookDispatcher',
                   'dispatchItemUpdateTicketValidation'
+               ];
+               $PLUGIN_HOOKS['item_add']['nextool']['TicketTask'] = [
+                  'PluginNextoolHookDispatcher',
+                  'dispatchItemAddTicketTask'
                ];
             }
 

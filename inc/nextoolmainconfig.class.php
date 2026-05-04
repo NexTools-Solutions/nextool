@@ -28,7 +28,8 @@ class PluginNextoolMainConfig extends CommonDBTM {
    const CONFIG_ID = 1;
 
    /** Tabs fixos (1-4): Módulos, Contato, Licenciamento, Logs */
-   const FIXED_TAB_COUNT = 4;
+   /** Tabs fixos (1-5): Módulos, Contato, Licenciamento, Alertas, Logs */
+   const FIXED_TAB_COUNT = 5;
 
    public static function getTable($classname = null) {
       return 'glpi_plugin_nextool_main_config_display';
@@ -76,7 +77,6 @@ class PluginNextoolMainConfig extends CommonDBTM {
    public function defineTabs($options = []) {
       $ong = [];
       $this->addStandardTab(self::class, $ong, $options);
-      $this->addStandardTab('Log', $ong, $options);
       return $ong;
    }
 
@@ -174,7 +174,8 @@ class PluginNextoolMainConfig extends CommonDBTM {
          1 => self::createTabEntry(__('Módulos', 'nextool'), 0, $item::getType(), 'ti ti-puzzle'),
          2 => self::createTabEntry(__('Contato', 'nextool'), 0, $item::getType(), 'ti ti-headset'),
          3 => self::createTabEntry(__('Licenciamento', 'nextool'), 0, $item::getType(), 'ti ti-key'),
-         4 => self::createTabEntry(__('Logs', 'nextool'), 0, $item::getType(), 'ti ti-report-analytics'),
+         4 => self::createTabEntry(__('Alertas', 'nextool'), 0, $item::getType(), 'ti ti-bell'),
+         5 => self::createTabEntry(__('Logs', 'nextool'), 0, $item::getType(), 'ti ti-report-analytics'),
       ];
 
       $moduleTabs = self::getModuleConfigTabs();
@@ -195,7 +196,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
          return false;
       }
 
-      $tabMap = [1 => 'modules', 2 => 'contato', 3 => 'licenca', 4 => 'logs'];
+      $tabMap = [1 => 'modules', 2 => 'contato', 3 => 'licenca', 4 => 'alertas', 5 => 'logs'];
       $moduleTabs = self::getModuleConfigTabs();
 
       if (isset($tabMap[$tabnum])) {

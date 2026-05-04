@@ -491,6 +491,25 @@ class PluginNextoolLicenseValidator {
          if (isset($responseData['core_update']) && is_array($responseData['core_update'])) {
             self::persistCoreUpdateHint($responseData['core_update']);
          }
+
+         // Persistir payment_methods disponíveis (para modal dinâmico)
+         if (!empty($responseData['payment_methods']) && is_array($responseData['payment_methods'])) {
+            self::persistPaymentMethods($responseData['payment_methods']);
+         }
+
+         // Persistir alertas recebidos
+         if (!empty($responseData['alerts']) && is_array($responseData['alerts'])) {
+            self::persistAlerts($responseData['alerts']);
+         }
+
+         // Persistir e aplicar modules_entitlement (anti-pirataria)
+         if (!empty($responseData['modules_entitlement']) && is_array($responseData['modules_entitlement'])) {
+            self::persistModulesEntitlement($responseData['modules_entitlement']);
+            // Aplicar entitlement APENAS se comunicação 100% OK e origin != config_status
+            if ($origin !== 'config_status') {
+               self::applyModulesEntitlement($responseData['modules_entitlement']);
+            }
+         }
       }
 
       if (!$valid) {
@@ -630,6 +649,50 @@ class PluginNextoolLicenseValidator {
          $migrationMinVer->executeMigration();
       }
 
+      if (!$DB->fieldExists($table, 'website_url')) {
+         $migUrl = new Migration(103);
+         $migUrl->addField(
+            $table,
+            'website_url',
+            'varchar(512)',
+            [
+               'value'   => null,
+               'comment' => 'URL da pagina do modulo no site',
+               'after'   => 'min_version_nextools',
+            ]
+         );
+         $migUrl->executeMigration();
+      }
+
+      if (!$DB->fieldExists($table, 'icon')) {
+         $migIcon = new Migration(104);
+         $migIcon->addField(
+            $table,
+            'icon',
+            'varchar(100)',
+            [
+               'value'   => 'ti ti-puzzle',
+               'comment' => 'Classe CSS do icone (Tabler Icons)',
+               'after'   => 'description',
+            ]
+         );
+         $migIcon->executeMigration();
+      }
+
+      foreach ([
+         105 => ['price_cents',     'int unsigned',  'website_url',       'Preco anual em centavos'],
+         106 => ['category',        'varchar(50)',   'price_cents',       'Categoria do modulo'],
+         107 => ['features_json',   'text',          'category',          'JSON array com features'],
+         108 => ['screenshot_url',  'varchar(512)',  'features_json',     'URL do screenshot'],
+         109 => ['download_count',  'int unsigned',  'screenshot_url',    'Total de downloads'],
+      ] as $ver => [$field, $type, $after, $comment]) {
+         if (!$DB->fieldExists($table, $field)) {
+            $m = new Migration($ver);
+            $m->addField($table, $field, $type, ['value' => null, 'comment' => $comment, 'after' => $after]);
+            $m->executeMigration();
+         }
+      }
+
       if ($schemaUpdated) {
          $migration->executeMigration();
       }
@@ -654,6 +717,22 @@ class PluginNextoolLicenseValidator {
          if ($minVersionNextools === '') {
             $minVersionNextools = null;
          }
+         $websiteUrl = isset($entry['website_url']) ? trim((string)$entry['website_url']) : '';
+         if ($websiteUrl === '') {
+            $websiteUrl = null;
+         }
+         $icon = isset($entry['icon']) ? trim((string)$entry['icon']) : '';
+         if ($icon === '') {
+            $icon = null;
+         }
+         $priceCents = isset($entry['price_cents']) && $entry['price_cents'] !== null ? (int)$entry['price_cents'] : null;
+         $category = isset($entry['category']) ? trim((string)$entry['category']) : null;
+         if ($category === '') { $category = null; }
+         $featuresJson = isset($entry['features_json']) ? trim((string)$entry['features_json']) : null;
+         if ($featuresJson === '') { $featuresJson = null; }
+         $screenshotUrl = isset($entry['screenshot_url']) ? trim((string)$entry['screenshot_url']) : null;
+         if ($screenshotUrl === '') { $screenshotUrl = null; }
+         $downloadCount = isset($entry['download_count']) ? (int)$entry['download_count'] : 0;
 
          if ($billingTier === '') {
             $billingTier = 'FREE';
@@ -680,6 +759,13 @@ class PluginNextoolLicenseValidator {
                'is_available'          => $isAvailable,
                'available_version'     => $version !== '' ? $version : null,
                'min_version_nextools'  => $minVersionNextools,
+               'website_url'           => $websiteUrl,
+               'icon'                  => $icon,
+               'price_cents'           => $priceCents,
+               'category'              => $category,
+               'features_json'         => $featuresJson,
+               'screenshot_url'        => $screenshotUrl,
+               'download_count'        => $downloadCount,
                'date_mod'              => date('Y-m-d H:i:s'),
             ];
             if (empty($row['version']) && $version !== '') {
@@ -701,6 +787,13 @@ class PluginNextoolLicenseValidator {
                   'version'                => null,
                   'available_version'      => $version !== '' ? $version : null,
                   'min_version_nextools'   => $minVersionNextools,
+                  'website_url'            => $websiteUrl,
+                  'icon'                   => $icon ?? 'ti ti-puzzle',
+                  'price_cents'            => $priceCents,
+                  'category'               => $category,
+                  'features_json'          => $featuresJson,
+                  'screenshot_url'         => $screenshotUrl,
+                  'download_count'         => $downloadCount,
                   'is_installed'           => 0,
                   'billing_tier'           => $billingTier,
                   'is_enabled'             => 0,
@@ -802,11 +895,18 @@ class PluginNextoolLicenseValidator {
          $decoded = json_decode($response, true);
          if (!is_array($decoded)) {
             $snippet = trim(preg_replace('/\s+/', ' ', substr($response, 0, 500)));
-            $jsonError = json_last_error_msg();
+            $contentHint = '';
+            if ($snippet === '') {
+               $contentHint = 'body vazio';
+            } elseif (preg_match('/<(html|br|b|div|!DOCTYPE)/i', $snippet)) {
+               $contentHint = 'HTML detectado (provável erro PHP ou página de proxy/WAF)';
+            } else {
+               $contentHint = 'conteúdo não-JSON (json_last_error: ' . json_last_error_msg() . ')';
+            }
             Toolbox::logInFile('plugin_nextool', sprintf(
-               'LicenseValidator: resposta JSON inválida do ContainerAPI (HTTP %d). JSON Error: %s. Response (primeiros 500 chars): %s',
-               $httpCode ?: 'unknown',
-               $jsonError,
+               'LicenseValidator: %s (HTTP %d). Body: %s',
+               $contentHint,
+               $httpCode ?: 0,
                $snippet
             ));
             return null;
@@ -1189,6 +1289,179 @@ class PluginNextoolLicenseValidator {
          ]);
       } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir core_update hint - ' . $e->getMessage());
+      }
+   }
+
+   /**
+    * Persiste payment_methods disponíveis na config GLPI.
+    */
+   private static function persistPaymentMethods(array $methods): void {
+      try {
+         Config::setConfigurationValues('plugin:nextool_billing', [
+            'payment_methods' => json_encode(array_values($methods)),
+         ]);
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir payment_methods - ' . $e->getMessage());
+      }
+   }
+
+   /**
+    * Recupera payment_methods disponíveis da config GLPI.
+    *
+    * @return string[] Ex: ['card', 'boleto']
+    */
+   public static function getPaymentMethods(): array {
+      $raw = Config::getConfigurationValue('plugin:nextool_billing', 'payment_methods') ?? '';
+      if ($raw === '') {
+         return ['card'];
+      }
+      $decoded = json_decode($raw, true);
+      $methods = is_array($decoded) && !empty($decoded) ? $decoded : ['card'];
+      // Pix temporariamente desabilitado -- conta Stripe ainda nao tem elegibilidade
+      $methods = array_values(array_filter($methods, fn($m) => strtolower($m) !== 'pix'));
+      return !empty($methods) ? $methods : ['card'];
+   }
+
+   /**
+    * Persiste modules_entitlement na config GLPI para uso no config.form.php.
+    */
+   private static function persistModulesEntitlement(array $entitlement): void {
+      try {
+         Config::setConfigurationValues('plugin:nextool_entitlement', [
+            'modules_entitlement' => json_encode($entitlement, JSON_UNESCAPED_SLASHES),
+         ]);
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir modules_entitlement - ' . $e->getMessage());
+      }
+   }
+
+   /**
+    * Recupera modules_entitlement da config GLPI.
+    *
+    * @return array<string, array{status: string, ever_licensed: bool}>
+    */
+   public static function getModulesEntitlement(): array {
+      $raw = Config::getConfigurationValue('plugin:nextool_entitlement', 'modules_entitlement') ?? '';
+      if ($raw === '') {
+         return [];
+      }
+      $decoded = json_decode($raw, true);
+      return is_array($decoded) ? $decoded : [];
+   }
+
+   /**
+    * Aplica proteção anti-pirataria baseada em modules_entitlement.
+    *
+    * Regras (aplicadas SOMENTE quando comunicação 100% OK):
+    * - ever_licensed=true + expired: não faz nada (módulo pode ser instalado/ativado localmente)
+    * - ever_licensed=false + never: desativa, desinstala e remove arquivos do módulo PAID
+    * - Módulos FREE: NUNCA afetados
+    *
+    * @param array $entitlement Mapa module_key => {status, ever_licensed}
+    */
+   protected static function applyModulesEntitlement(array $entitlement): void {
+      try {
+         $manager = PluginNextoolModuleManager::getInstance();
+      } catch (Throwable $e) {
+         return;
+      }
+
+      foreach ($entitlement as $moduleKey => $info) {
+         $status = $info['status'] ?? '';
+         $everLicensed = !empty($info['ever_licensed']);
+
+         // Nunca tocar em módulos com ever_licensed=true ou status != 'never'
+         if ($everLicensed || $status !== 'never') {
+            continue;
+         }
+
+         // Verificar se é realmente PAID (defesa em profundidade)
+         $billingTier = $manager->getBillingTier($moduleKey);
+         if (strtoupper($billingTier) === 'FREE' || strtoupper($billingTier) === 'DEV') {
+            continue;
+         }
+
+         // Verificar se módulo existe localmente
+         $modulePath = $manager->getModulePath($moduleKey);
+         if ($modulePath === null || !is_dir($modulePath)) {
+            continue; // Não está baixado, nada a fazer
+         }
+
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            '[ENTITLEMENT] Módulo PAID "%s" sem histórico de licença (ever_licensed=false). Desativando e removendo arquivos.',
+            $moduleKey
+         ));
+
+         // Desativar se ativo
+         if ($manager->isEnabled($moduleKey)) {
+            $manager->disableModule($moduleKey);
+         }
+
+         // Desinstalar se instalado
+         if ($manager->isInstalled($moduleKey)) {
+            $manager->uninstallModule($moduleKey);
+         }
+
+         // Remover arquivos
+         self::removeModuleFiles($modulePath);
+      }
+   }
+
+   /**
+    * Remove recursivamente o diretório de um módulo.
+    */
+   private static function removeModuleFiles(string $path): void {
+      if (!is_dir($path)) {
+         return;
+      }
+
+      $items = new \RecursiveIteratorIterator(
+         new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
+         \RecursiveIteratorIterator::CHILD_FIRST
+      );
+
+      foreach ($items as $item) {
+         if ($item->isDir()) {
+            @rmdir($item->getRealPath());
+         } else {
+            @unlink($item->getRealPath());
+         }
+      }
+
+      @rmdir($path);
+   }
+
+   private static function persistAlerts(array $alerts): void {
+      global $DB;
+      $table = 'glpi_plugin_nextool_main_alerts';
+      if (!$DB->tableExists($table)) {
+         $DB->doQuery("CREATE TABLE IF NOT EXISTS `{$table}` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `remote_alert_id` INT UNSIGNED NOT NULL,
+            `title` VARCHAR(255) NOT NULL,
+            `body` TEXT NOT NULL,
+            `alert_type` VARCHAR(20) NOT NULL DEFAULT 'info',
+            `is_read` TINYINT NOT NULL DEFAULT 0,
+            `date_received` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `date_read` TIMESTAMP NULL DEFAULT NULL,
+            UNIQUE KEY `uq_remote_alert` (`remote_alert_id`)
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+      }
+      foreach ($alerts as $alert) {
+         $remoteId = (int)($alert['id'] ?? 0);
+         if ($remoteId <= 0) { continue; }
+         $existing = $DB->request(['FROM' => $table, 'WHERE' => ['remote_alert_id' => $remoteId], 'LIMIT' => 1]);
+         if (count($existing) > 0) { continue; }
+         try {
+            $DB->insert($table, [
+               'remote_alert_id' => $remoteId,
+               'title'           => trim((string)($alert['title'] ?? '')),
+               'body'            => trim((string)($alert['body'] ?? '')),
+               'alert_type'      => trim((string)($alert['alert_type'] ?? 'info')),
+            ]);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir alerta #' . $remoteId . ' - ' . $e->getMessage());
+         }
       }
    }
 }
