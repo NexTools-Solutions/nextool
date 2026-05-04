@@ -30,6 +30,9 @@ class PluginNextoolHookDispatcher {
    /** @var array[] itemUpdate[itemType] = [ [class, method], ... ] */
    private static $itemUpdate = [];
 
+   /** @var array[] postShowItem[itemType] = [ [class, method], ... ] */
+   private static $postShowItem = [];
+
    /**
     * Registra callback para pre_item_add.
     *
@@ -169,5 +172,61 @@ class PluginNextoolHookDispatcher {
          }
       }
       return $item;
+   }
+
+   /**
+    * Dispatcher para item_add['nextool']['TicketTask'].
+    */
+   public static function dispatchItemAddTicketTask(CommonDBTM $item) {
+      foreach (self::$itemAdd['TicketTask'] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_add TicketTask: %s - %s',
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
+   // ========================================
+   // POST SHOW ITEM (timeline separator, etc.)
+   // ========================================
+
+   /**
+    * Registra callback para post_show_item.
+    *
+    * @param string $itemType Ex.: 'Ticket', 'Change', 'Problem'
+    * @param array  $callback [className, methodName]
+    */
+   public static function registerPostShowItem(string $itemType, array $callback): void {
+      if (!isset(self::$postShowItem[$itemType])) {
+         self::$postShowItem[$itemType] = [];
+      }
+      self::$postShowItem[$itemType][] = $callback;
+   }
+
+   /**
+    * Dispatcher generico para post_show_item.
+    * Chamado pelo hook post_show_item registrado no setup.php.
+    *
+    * @param string $itemType Ex.: 'Ticket'
+    * @param array  $params   Parametros do hook GLPI
+    */
+   public static function dispatchPostShowItem(string $itemType, array $params): void {
+      foreach (self::$postShowItem[$itemType] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $params);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] post_show_item %s: %s',
+               $itemType,
+               $e->getMessage()
+            ));
+         }
+      }
    }
 }

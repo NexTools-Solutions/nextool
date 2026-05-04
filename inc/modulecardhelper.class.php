@@ -4,7 +4,7 @@ declare(strict_types=1);
  * -------------------------------------------------------------------------
  * NexTool Solutions - Module Card Helper
  * -------------------------------------------------------------------------
- * Helper responsável por renderizar os botões/ações dos cards de módulos
+ * Helper responsavel por renderizar os botoes/acoes dos cards de modulos
  * na UI do NexTool Solutions (Download, Instalar, Atualizar, Licenciar,
  * Apagar dados, Acessar dados, etc.).
  * -------------------------------------------------------------------------
@@ -22,7 +22,6 @@ if (!defined('GLPI_ROOT')) {
 class PluginNextoolModuleCardHelper {
 
    public static function renderActions(array $state): string {
-      $html = [];
 
       $canManage      = !empty($state['can_manage_module'] ?? $state['can_manage_modules']);
       $canPurge       = !empty($state['can_purge_module'] ?? $state['can_purge_modules']);
@@ -35,248 +34,207 @@ class PluginNextoolModuleCardHelper {
 
       $catalogDisabled = empty($state['catalog_is_enabled']);
 
-      // Se não pode gerenciar, exibe apenas badge informativo + botões de dados/config
       if (!$canManage) {
-         $html[] = self::renderBadge(__('Permissão de visualização: não é possível gerenciar este módulo.', 'nextool'), 'badge bg-info text-white me-1');
-         self::appendDataButtons($state, $html);
-         
-         // Adiciona botão de configurações se disponível
+         $out = self::renderBadge(__('Permissão de visualização: não é possível gerenciar este módulo.', 'nextool'), 'badge bg-info text-white me-1');
+         $secondary = [];
+         self::appendDataItems($state, $secondary);
          if ($state['show_config_button']) {
-            $html[] = self::renderLink(
-               __('Configurações', 'nextool'),
-               'btn btn-sm btn-primary',
-               'ti ti-settings',
-               $state['config_url']
-            );
+            $secondary[] = self::renderDropdownItem(__('Configurações', 'nextool'), 'ti ti-settings', $state['config_url']);
          }
-         
-         return implode('', $html);
+         return $out . self::wrapDropdown($secondary);
       }
 
-      // Antes da validação do plano, exibe apenas aviso
       if (!$state['has_validated_plan']) {
-         $html[] = self::renderBadge(__('Plano não validado. Solicite a um administrador para realizar este passo.', 'nextool'));
-         self::appendDataButtons($state, $html);
-         return implode('', $html);
+         $out = self::renderBadge(__('Plano não validado. Solicite a um administrador para realizar este passo.', 'nextool'));
+         $secondary = [];
+         self::appendDataItems($state, $secondary);
+         return $out . self::wrapDropdown($secondary);
       }
 
       $isSuspended = !empty($state['is_license_suspended']);
+      $primary = '';
+      $secondary = [];
+
+      // ── Determinar CTA primario ──────────────────────────────
 
       if ($state['requires_remote_download']) {
+
          if ($isSuspended && $state['is_paid']) {
-            $html[] = self::renderBadge(__('Download bloqueado: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
-            self::appendDataButtons($state, $html);
-            return implode('', $html);
-         }
-
-         if ($state['has_validated_plan'] && $state['is_paid'] && !$state['can_use_module']) {
-            // Licença válida mas módulo pago não permitido: incentivar licenciamento em vez de download
-            $html[] = self::renderLink(
-               __('Licenciar', 'nextool'),
-               'btn btn-sm btn-outline-licensing',
-               'ti ti-certificate',
-               $state['upgrade_url'],
-               true
-            );
-            self::appendDataButtons($state, $html);
-            return implode('', $html);
-         }
-
-         if ($catalogDisabled) {
-            $html[] = self::renderBadge(__('Download indisponível (catálogo desativado)', 'nextool'));
-            self::appendDataButtons($state, $html);
-            return implode('', $html);
-         }
-
-         if (empty($state['has_zip_extension'])) {
-            $html[] = self::renderBadge(
-               __('Pré-requisito: extensão php-zip não instalada', 'nextool'),
-               'badge bg-danger text-white me-1'
-            );
-            $html[] = self::renderActionForm(
-               $state,
-               'download',
-               __('Download', 'nextool'),
-               'btn btn-sm btn-success module-action',
-               'ti ti-cloud-download',
-               true,
-               __('A extensão php-zip é necessária para baixar módulos. Solicite ao administrador do servidor a instalação.', 'nextool')
-            );
-            self::appendDataButtons($state, $html);
-            return implode('', $html);
-         }
-
-         $html[] = self::renderActionForm(
-            $state,
-            'download',
-            __('Download', 'nextool'),
-            'btn btn-sm btn-success module-action',
-            'ti ti-cloud-download',
-            !$state['distribution_configured'] || !$state['can_use_module'],
-            !$state['distribution_configured']
-               ? __('Configure o ContainerAPI para liberar o download.', 'nextool')
-               : null
-         );
-         self::appendDataButtons($state, $html);
-         return implode('', $html);
-      }
-
-      if (!$state['is_installed']) {
-         if (!$state['can_use_module']) {
-            $html[] = self::renderLink(
-               __('Licenciar', 'nextool'),
-               'btn btn-sm btn-outline-licensing',
-               'ti ti-certificate',
-               $state['upgrade_url'],
-               true
-            );
-            self::appendDataButtons($state, $html);
-            return implode('', $html);
-         }
-
-         if ($catalogDisabled) {
-            $html[] = self::renderBadge(__('Módulo desativado no catálogo', 'nextool'));
+            $primary = self::renderBadge(__('Download bloqueado: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
          } else {
-            $html[] = self::renderActionForm(
-               $state,
-               'install',
-               __('Instalar', 'nextool'),
-               'btn btn-sm btn-success module-action',
-               'ti ti-download'
-            );
-         }
-      } else {
-         if ($catalogDisabled) {
-            $html[] = self::renderBadge(__('Catálogo: módulo desativado', 'nextool'), 'badge bg-secondary me-1');
+            $canDownload = !empty($state['can_download_module'] ?? $state['can_use_module']);
+            if ($state['is_paid'] && !$canDownload) {
+               $primary = self::renderLicensingButton($state);
+            } elseif ($catalogDisabled) {
+               $primary = self::renderBadge(__('Download indisponível (catálogo desativado)', 'nextool'));
+            } elseif (empty($state['has_zip_extension'])) {
+               $primary = self::renderBadge(__('Pré-requisito: extensão php-zip não instalada', 'nextool'), 'badge bg-danger text-white me-1');
+            } else {
+               $primary = self::renderActionForm(
+                  $state, 'download', __('Download', 'nextool'),
+                  'btn btn-sm btn-success module-action', 'ti ti-cloud-download',
+                  !$state['distribution_configured'] || !$canDownload,
+                  !$state['distribution_configured'] ? __('Configure o ContainerAPI para liberar o download.', 'nextool') : null
+               );
+            }
          }
 
-         if (!empty($state['update_available'])) {
+      } elseif (!$state['is_installed']) {
+
+         if (!$state['can_use_module'] && $state['is_paid']) {
+            $primary = self::renderLicensingButton($state);
+         } elseif ($catalogDisabled) {
+            $primary = self::renderBadge(__('Módulo desativado no catálogo', 'nextool'));
+         } else {
+            $primary = self::renderActionForm(
+               $state, 'install', __('Instalar', 'nextool'),
+               'btn btn-sm btn-success module-action', 'ti ti-download'
+            );
+         }
+
+      } else {
+         // Modulo instalado -- determinar CTA principal por prioridade
+
+         $canDownloadCurrent = !empty($state['can_download_module']);
+
+         // Prioridade 1: Licenciar (PAID sem licenca)
+         if ($state['is_paid'] && !$canDownloadCurrent && !$isSuspended) {
+            $primary = self::renderLicensingButton($state);
+         }
+         // Prioridade 2: Update disponivel
+         elseif (!empty($state['update_available']) && !$catalogDisabled) {
             if (empty($state['has_zip_extension'])) {
-               $html[] = self::renderBadge(
-                  __('Atualização indisponível: extensão php-zip não instalada', 'nextool'),
-                  'badge bg-danger text-white me-1'
-               );
+               $primary = self::renderBadge(__('Atualização indisponível: extensão php-zip não instalada', 'nextool'), 'badge bg-danger text-white me-1');
             } elseif ($isSuspended && $state['is_paid']) {
-               $html[] = self::renderBadge(__('Atualização bloqueada: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
+               $primary = self::renderBadge(__('Atualização bloqueada: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
             } else {
                $pluginVersion = $state['plugin_version'] ?? '';
                $minVerNextool = isset($state['min_version_nextools']) && $state['min_version_nextools'] !== '' && $state['min_version_nextools'] !== null
                   ? trim((string) $state['min_version_nextools']) : null;
-               $updateBlockedByNextoolVersion = false;
-               if ($minVerNextool !== null) {
-                  $updateBlockedByNextoolVersion = $pluginVersion === '' || version_compare($pluginVersion, $minVerNextool, '<');
-               }
-               if ($updateBlockedByNextoolVersion) {
-                  $msg = $minVerNextool !== null
-                     ? sprintf(
-                        __('Para atualizar é necessário estar utilizando o Nextool versão %s ou superior.', 'nextool'),
-                        $minVerNextool
-                     )
-                     : __('Atualize o Nextool para a versão mais recente para continuar.', 'nextool');
-                  $html[] = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . ' </span>';
-                  $html[] = self::renderLink(
-                     __('Atualizar Nextool', 'nextool'),
-                     'btn btn-sm btn-outline-warning',
-                     'ti ti-external-link',
-                     'https://nextoolsolutions.ai/produtos/plugin-nextools-glpi',
-                     true
-                  );
+               $blocked = $minVerNextool !== null && ($pluginVersion === '' || version_compare($pluginVersion, $minVerNextool, '<'));
+               if ($blocked) {
+                  $msg = sprintf(__('Nextool %s necessário para atualizar', 'nextool'), $minVerNextool);
+                  $primary = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . '</span>';
                } else {
-                  $html[] = self::renderActionForm(
-                     $state,
-                     'update',
-                     __('Atualizar', 'nextool'),
-                     'btn btn-sm btn-outline-primary module-action',
-                     'ti ti-arrow-up',
-                     !$state['can_use_module'] || $catalogDisabled
+                  $canDl = !empty($state['can_download_module'] ?? $state['can_use_module']);
+                  $primary = self::renderActionForm(
+                     $state, 'update', __('Atualização Disponível', 'nextool'),
+                     'btn btn-sm btn-outline-info module-action', 'ti ti-arrow-up',
+                     !$canDl || $catalogDisabled
                   );
                }
             }
          }
-
-         if ($state['is_enabled']) {
-            $html[] = self::renderActionForm(
-               $state,
-               'disable',
-               __('Desativar', 'nextool'),
-               'btn btn-sm btn-warning module-action',
-               'ti ti-player-pause'
-            );
-         } else {
-            $html[] = self::renderActionForm(
-               $state,
-               'enable',
-               __('Ativar', 'nextool'),
-               'btn btn-sm btn-success module-action',
-               'ti ti-player-play',
+         // Prioridade 3: Desativado -> Ativar
+         elseif (!$state['is_enabled']) {
+            $primary = self::renderActionForm(
+               $state, 'enable', __('Ativar', 'nextool'),
+               'btn btn-sm btn-success module-action', 'ti ti-player-play',
                !$state['can_use_module'] || $catalogDisabled
             );
-
-            $html[] = self::renderActionForm(
-               $state,
-               'uninstall',
-               __('Desinstalar', 'nextool'),
-               'btn btn-sm btn-danger module-action',
-               'ti ti-trash',
-               false,
-               __('Tem certeza? O módulo será desativado, mas tabelas e dados permanecerão no banco. Para apagar os dados, use "Apagar dados" após desinstalar.', 'nextool')
+         }
+         // Prioridade 4: Ativo com config -> Configuracoes
+         elseif ($state['show_config_button']) {
+            $primary = self::renderLink(
+               __('Configurações', 'nextool'), 'btn btn-sm btn-primary', 'ti ti-settings', $state['config_url']
             );
+         }
+
+         // ── Acoes secundarias (dropdown) ──────────────────────
+
+         if ($catalogDisabled) {
+            $secondary[] = '<li><span class="dropdown-item text-muted"><i class="ti ti-alert-circle me-2"></i>' . __('Catálogo desativado', 'nextool') . '</span></li>';
+         }
+
+         if ($state['is_enabled']) {
+            $secondary[] = self::renderDropdownAction($state, 'disable', __('Desativar', 'nextool'), 'ti ti-player-pause');
+         } else {
+            if ($primary !== '' && strpos($primary, 'data-action=\'enable\'') === false) {
+               $secondary[] = self::renderDropdownAction($state, 'enable', __('Ativar', 'nextool'), 'ti ti-player-play',
+                  !$state['can_use_module'] || $catalogDisabled);
+            }
+            $secondary[] = self::renderDropdownAction($state, 'uninstall', __('Desinstalar', 'nextool'), 'ti ti-trash text-danger', false,
+               __('Tem certeza? O módulo será desativado, mas tabelas e dados permanecerão no banco.', 'nextool'));
+         }
+
+         if ($state['show_config_button'] && strpos($primary, 'ti-settings') === false) {
+            $secondary[] = self::renderDropdownItem(__('Configurações', 'nextool'), 'ti ti-settings', $state['config_url']);
          }
       }
 
-      self::appendDataButtons($state, $html);
+      // Dados (purge/view) vao no dropdown
+      self::appendDataItems($state, $secondary);
 
-      if ($state['show_config_button']) {
-         $html[] = self::renderLink(
-            __('Configurações', 'nextool'),
-            'btn btn-sm btn-primary',
-            'ti ti-settings',
-            $state['config_url']
-         );
-      }
-
-      return implode('', $html);
+      return $primary . self::wrapDropdown($secondary);
    }
 
-   private static function appendDataButtons(array $state, array &$html): void {
+   private static function appendDataItems(array $state, array &$items): void {
       if (!$state['is_installed']) {
          $hasDataToPurge = !empty($state['has_module_data']);
          $hasDbDataToView = !empty($state['has_module_db_data'] ?? $state['has_module_data']);
 
          if ($hasDataToPurge && !empty($state['can_purge_module'] ?? $state['can_purge_modules'])) {
-            $html[] = self::renderActionForm(
-               $state,
-               'purge_data',
-               __('Apagar dados', 'nextool'),
-               'btn btn-sm btn-outline-danger module-action',
-               'ti ti-database-off',
-               false,
-               __('Esta ação remove permanentemente todas as tabelas e registros do módulo no banco de dados.', 'nextool'),
-               'typed'
-            );
+            $items[] = self::renderDropdownAction($state, 'purge_data', __('Apagar dados', 'nextool'), 'ti ti-database-off text-danger', false,
+               __('Esta ação remove permanentemente todas as tabelas e registros do módulo no banco de dados.', 'nextool'), 'typed');
          }
 
          if ($hasDbDataToView && !empty($state['can_view_module'] ?? $state['can_view_modules'])) {
-            $html[] = self::renderLink(
-               __('Acessar dados', 'nextool'),
-               'btn btn-sm btn-outline-secondary',
-               'ti ti-database-search',
-               $state['data_url'],
-               true
-            );
+            $items[] = self::renderDropdownItem(__('Acessar dados', 'nextool'), 'ti ti-database-search', $state['data_url'], true);
          }
       }
+   }
+
+   private static function wrapDropdown(array $items): string {
+      if (empty($items)) {
+         return '';
+      }
+      return '<div class="dropdown d-inline-block">'
+         . '<button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">'
+         . '<i class="ti ti-dots"></i></button>'
+         . '<ul class="dropdown-menu dropdown-menu-end">'
+         . implode('', $items)
+         . '</ul></div>';
+   }
+
+   private static function renderDropdownAction(
+      array $state, string $action, string $label, string $icon,
+      bool $disabled = false, ?string $confirmMessage = null, string $confirmType = 'simple'
+   ): string {
+      $moduleKey = Html::entities_deep($state['module_key']);
+      $disabledClass = $disabled ? ' disabled' : '';
+      $confirmAttr = '';
+      if (!empty($confirmMessage)) {
+         $confirmAttr = ' data-confirm="' . htmlspecialchars($confirmMessage, ENT_QUOTES, 'UTF-8') . '"';
+         if ($confirmType !== 'simple') {
+            $confirmAttr .= ' data-confirm-type="' . htmlspecialchars($confirmType, ENT_QUOTES, 'UTF-8') . '"';
+         }
+      }
+      return '<li><a class="dropdown-item nextool-module-action' . $disabledClass . '" href="#"'
+         . ' data-module="' . $moduleKey . '" data-action="' . Html::entities_deep($action) . '"'
+         . $confirmAttr . '>'
+         . '<i class="' . $icon . ' me-2"></i>' . Html::entities_deep($label) . '</a></li>';
+   }
+
+   private static function renderDropdownItem(string $label, string $icon, string $url, bool $newTab = false): string {
+      $target = $newTab ? ' target="_blank" rel="noopener"' : '';
+      return '<li><a class="dropdown-item" href="' . Html::entities_deep($url) . '"' . $target . '>'
+         . '<i class="' . $icon . ' me-2"></i>' . Html::entities_deep($label) . '</a></li>';
+   }
+
+   private static function renderLicensingButton(array $state): string {
+      $moduleKey = Html::entities_deep($state['module_key']);
+      $moduleName = Html::entities_deep($state['name'] ?? $state['module_key']);
+      $label = Html::entities_deep(__('Licenciar', 'nextool'));
+      return "<button type='button' class='btn btn-sm btn-outline-licensing me-1 nextool-module-action'"
+         . " data-module='{$moduleKey}' data-action='licensing' data-module-name='{$moduleName}'>"
+         . "<i class='ti ti-certificate me-1'></i>{$label}</button>";
    }
 
    private static function renderLink(string $label, string $classes, string $icon, string $url, bool $newTab = false): string {
       $target = $newTab ? " target='_blank' rel='noopener'" : '';
       return sprintf(
          "<a href='%s' class='%s me-1'%s><i class='%s me-1'></i>%s</a>",
-         Html::entities_deep($url),
-         $classes,
-         $target,
-         $icon,
-         $label
+         Html::entities_deep($url), $classes, $target, $icon, $label
       );
    }
 
@@ -285,14 +243,8 @@ class PluginNextoolModuleCardHelper {
    }
 
    private static function renderActionForm(
-      array $state,
-      string $action,
-      string $label,
-      string $buttonClass,
-      string $iconClass,
-      bool $disabled = false,
-      ?string $confirmMessage = null,
-      string $confirmType = 'simple'
+      array $state, string $action, string $label, string $buttonClass, string $iconClass,
+      bool $disabled = false, ?string $confirmMessage = null, string $confirmType = 'simple'
    ): string {
       $disabledAttr = $disabled ? ' disabled' : '';
       $confirmAttr = '';
@@ -302,14 +254,10 @@ class PluginNextoolModuleCardHelper {
             $confirmAttr .= ' data-confirm-type="' . htmlspecialchars($confirmType, ENT_QUOTES, 'UTF-8') . '"';
          }
       }
-
       $moduleKey = Html::entities_deep($state['module_key']);
       $actionEsc = Html::entities_deep($action);
       $labelEsc  = Html::entities_deep($label);
       $classes   = Html::entities_deep(trim($buttonClass . ' me-1 nextool-module-action'));
-
       return "<button type='button' class='{$classes}' data-module='{$moduleKey}' data-action='{$actionEsc}'{$confirmAttr}{$disabledAttr}><i class='{$iconClass} me-1'></i>{$labelEsc}</button>";
    }
 }
-
-

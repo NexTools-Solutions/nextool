@@ -116,12 +116,29 @@ if ($isStateless) {
 require_once GLPI_ROOT . '/inc/includes.php';
 
 // Quando /ajax/module_ajax.php é registrado como stateless no SessionManager
-// (necessário para permitir webhooks POST sem CSRF), o Kernel NÃO inicia sessão
-// e desabilita cookies por padrão. Para endpoints autenticados (não stateless),
-// precisamos reabilitar cookies e iniciar a sessão aqui.
-if (session_status() !== PHP_SESSION_ACTIVE) {
+// (necessário para permitir webhooks POST sem CSRF), o Kernel do GLPI 11:
+//   1) Desabilita cookies (session.use_cookies=0)
+//   2) NÃO chama session_start() (apenas Session::initVars para defaults)
+// Resultado: session_status() = PHP_SESSION_NONE e session_id() = '' (vazio).
+//
+// Para endpoints autenticados (não-stateless), precisamos restaurar a sessão
+// real do usuário: ler o session ID do cookie, setar via session_id() e chamar
+// session_start() para carregar os dados da sessão do filesystem.
+$sessName = session_name();
+$sessId   = $_COOKIE[$sessName] ?? null;
+
+if (!empty($sessId) && is_string($sessId) && session_id() !== $sessId) {
+   // Fechar sessão vazia se o Kernel a iniciou (não deve acontecer para
+   // stateless, mas proteção defensiva)
+   if (session_status() === PHP_SESSION_ACTIVE) {
+      session_abort();
+   }
    @ini_set('session.use_cookies', '1');
-   Session::start();
+   session_id($sessId);
+   session_start();
+} elseif (session_status() !== PHP_SESSION_ACTIVE) {
+   @ini_set('session.use_cookies', '1');
+   session_start();
 }
 
 Session::checkLoginUser();

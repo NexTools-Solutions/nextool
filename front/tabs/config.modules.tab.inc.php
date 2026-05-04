@@ -79,16 +79,47 @@ declare(strict_types=1);
             <?php else: ?>
                <?php
                   // Contadores dos chips — calculados server-side
-                  $fc = ['enabled' => 0, 'disabled' => 0, 'download' => 0, 'install' => 0, 'update' => 0, 'free' => 0, 'licensed' => 0];
+                  $fc = ['enabled' => 0, 'disabled' => 0, 'download' => 0, 'install' => 0, 'update' => 0, 'free' => 0, 'licensed' => 0, 'dev' => 0];
+                  $categoryCounters = [];
                   foreach ($modulesState as $m) {
+                     $tier = strtoupper($m['billing_tier'] ?? '');
                      if (!empty($m['is_enabled']))                                   $fc['enabled']++;
                      if (!empty($m['is_installed']) && empty($m['is_enabled']))       $fc['disabled']++;
-                     if (empty($m['module_downloaded']))                              $fc['download']++;
+                     if (empty($m['module_downloaded']) && !empty($m['can_download'])) $fc['download']++;
                      if (!empty($m['module_downloaded']) && empty($m['is_installed'])) $fc['install']++;
                      if (!empty($m['update_available']))                              $fc['update']++;
-                     if (strtoupper($m['billing_tier'] ?? '') === 'FREE')             $fc['free']++;
-                     if (strtoupper($m['billing_tier'] ?? '') !== 'FREE')             $fc['licensed']++;
+                     if ($tier === 'FREE')                                            $fc['free']++;
+                     if ($tier === 'DEV')                                             $fc['dev']++;
+                     if ($tier !== 'FREE' && $tier !== 'DEV')                         $fc['licensed']++;
+                     $cat = $m['category'] ?? '';
+                     if ($cat !== '') {
+                        $categoryCounters[$cat] = ($categoryCounters[$cat] ?? 0) + 1;
+                     }
                   }
+                  $isDevEnvironment = isset($licenseTier) && $licenseTier === 'DESENVOLVIMENTO';
+
+                  // Filtros de estado ordenados por contagem (desc), ocultar zeros
+                  $stateChips = [
+                     ['key' => 'enabled',  'label' => __('Ativado', 'nextool'),     'icon' => 'ti ti-player-play',    'btn' => 'btn-outline-success', 'badge' => 'bg-success',   'count' => $fc['enabled']],
+                     ['key' => 'disabled', 'label' => __('Desativado', 'nextool'),   'icon' => 'ti ti-player-pause',   'btn' => 'btn-outline-warning', 'badge' => 'bg-warning text-dark', 'count' => $fc['disabled']],
+                     ['key' => 'download', 'label' => __('Download', 'nextool'),     'icon' => 'ti ti-cloud-download', 'btn' => 'btn-outline-secondary', 'badge' => 'bg-secondary', 'count' => $fc['download']],
+                     ['key' => 'install',  'label' => __('Instalar', 'nextool'),     'icon' => 'ti ti-download',       'btn' => 'btn-outline-primary', 'badge' => 'bg-primary',   'count' => $fc['install']],
+                     ['key' => 'update',   'label' => __('Atualização', 'nextool'),  'icon' => 'ti ti-arrow-up',       'btn' => 'btn-outline-info',    'badge' => 'bg-info',      'count' => $fc['update']],
+                  ];
+                  usort($stateChips, function($a, $b) { return $b['count'] - $a['count']; });
+
+                  // Filtros de tipo ordenados por contagem (desc), ocultar zeros
+                  $tierChips = [
+                     ['key' => 'free',     'label' => __('Gratuito', 'nextool'),     'icon' => 'ti ti-free-rights',    'btn' => 'btn-outline-teal',      'badge' => 'bg-teal text-white',      'count' => $fc['free']],
+                     ['key' => 'licensed', 'label' => __('Licenciado', 'nextool'),   'icon' => 'ti ti-certificate',    'btn' => 'btn-outline-licensing',  'badge' => 'bg-licensing text-white', 'count' => $fc['licensed']],
+                  ];
+                  if ($isDevEnvironment) {
+                     $tierChips[] = ['key' => 'dev', 'label' => __('Em desenvolvimento', 'nextool'), 'icon' => 'ti ti-code', 'btn' => 'btn-outline-dev', 'badge' => 'bg-dev text-white', 'count' => $fc['dev']];
+                  }
+                  usort($tierChips, function($a, $b) { return $b['count'] - $a['count']; });
+
+                  // Categorias ordenadas por contagem (desc)
+                  arsort($categoryCounters);
                ?>
                <div class="mb-3" id="nextool-module-filter-bar">
                   <div class="input-group mb-2">
@@ -102,34 +133,67 @@ declare(strict_types=1);
                             autocomplete="off">
                   </div>
                   <div class="d-flex gap-2 flex-wrap" id="nextool-module-chips">
-                     <button type="button" class="btn btn-sm btn-outline-success nextool-filter-chip rounded-pill" data-filter="enabled">
-                        <i class="ti ti-player-play me-1"></i><?php echo __('Ativado', 'nextool'); ?> <span class="badge bg-success ms-1"><?php echo $fc['enabled']; ?></span>
+                     <?php foreach ($stateChips as $chip): if ($chip['count'] <= 0) continue; ?>
+                     <button type="button" class="btn btn-sm <?php echo $chip['btn']; ?> nextool-filter-chip rounded-pill" data-filter="<?php echo $chip['key']; ?>">
+                        <i class="<?php echo $chip['icon']; ?> me-1"></i><?php echo $chip['label']; ?> <span class="badge <?php echo $chip['badge']; ?> ms-1"><?php echo $chip['count']; ?></span>
                      </button>
-                     <button type="button" class="btn btn-sm btn-outline-warning nextool-filter-chip rounded-pill" data-filter="disabled">
-                        <i class="ti ti-player-pause me-1"></i><?php echo __('Desativado', 'nextool'); ?> <span class="badge bg-warning text-dark ms-1"><?php echo $fc['disabled']; ?></span>
+                     <?php endforeach; ?>
+
+                     <span class="border-start mx-1 d-none d-md-block" style="height:24px"></span>
+
+                     <?php foreach ($tierChips as $chip): if ($chip['count'] <= 0) continue; ?>
+                     <button type="button" class="btn btn-sm <?php echo $chip['btn']; ?> nextool-filter-chip rounded-pill" data-filter="<?php echo $chip['key']; ?>">
+                        <i class="<?php echo $chip['icon']; ?> me-1"></i><?php echo $chip['label']; ?> <span class="badge <?php echo $chip['badge']; ?> ms-1"><?php echo $chip['count']; ?></span>
                      </button>
-                     <button type="button" class="btn btn-sm btn-outline-secondary nextool-filter-chip rounded-pill" data-filter="download">
-                        <i class="ti ti-cloud-download me-1"></i><?php echo __('Download', 'nextool'); ?> <span class="badge bg-secondary ms-1"><?php echo $fc['download']; ?></span>
+                     <?php endforeach; ?>
+
+                     <?php if (!empty($categoryCounters)): ?>
+                     <span class="border-start mx-1 d-none d-md-block" style="height:24px"></span>
+                     <?php foreach ($categoryCounters as $catName => $catCount): if ($catCount <= 0) continue; ?>
+                     <button type="button" class="btn btn-sm nextool-filter-chip nextool-chip-category rounded-pill" data-filter="category" data-category="<?php echo Html::entities_deep($catName); ?>">
+                        <?php echo Html::entities_deep($catName); ?> <span class="badge nextool-chip-category-badge ms-1"><?php echo $catCount; ?></span>
                      </button>
-                     <button type="button" class="btn btn-sm btn-outline-primary nextool-filter-chip rounded-pill" data-filter="install">
-                        <i class="ti ti-download me-1"></i><?php echo __('Instalar', 'nextool'); ?> <span class="badge bg-primary ms-1"><?php echo $fc['install']; ?></span>
-                     </button>
-                     <button type="button" class="btn btn-sm btn-outline-info nextool-filter-chip rounded-pill" data-filter="update">
-                        <i class="ti ti-arrow-up me-1"></i><?php echo __('Atualização', 'nextool'); ?> <span class="badge bg-info ms-1"><?php echo $fc['update']; ?></span>
-                     </button>
-                     <button type="button" class="btn btn-sm btn-outline-teal nextool-filter-chip rounded-pill" data-filter="free">
-                        <i class="ti ti-free-rights me-1"></i><?php echo __('Gratuito', 'nextool'); ?> <span class="badge bg-teal text-white ms-1"><?php echo $fc['free']; ?></span>
-                     </button>
-                     <button type="button" class="btn btn-sm btn-outline-licensing nextool-filter-chip rounded-pill" data-filter="licensed">
-                        <i class="ti ti-certificate me-1"></i><?php echo __('Licenciado', 'nextool'); ?> <span class="badge bg-licensing text-white ms-1"><?php echo $fc['licensed']; ?></span>
-                     </button>
+                     <?php endforeach; ?>
+                     <?php endif; ?>
                   </div>
                </div>
                <div class="row g-3">
                   <?php foreach ($modulesState as $module):
-                     $borderClass = $module['is_enabled']
-                        ? 'border-success'
-                        : ($module['is_installed'] ? 'border-warning' : 'border-secondary');
+                     $tier = strtoupper($module['billing_tier'] ?? 'FREE');
+                     if ($tier === 'DEV') {
+                        $borderClass = 'nextool-border-dev';
+                        $tierColor = 'nextool-color-dev';
+                     } elseif ($module['is_paid']) {
+                        $borderClass = 'nextool-border-paid';
+                        $tierColor = 'nextool-color-paid';
+                     } else {
+                        $borderClass = 'nextool-border-free';
+                        $tierColor = 'nextool-color-free';
+                     }
+                  ?>
+                  <?php
+                     // Badge e preco
+                     if ($tier === 'DEV') {
+                        $ribbonLabel = __('DEV', 'nextool');
+                        $ribbonClass = 'nextool-ribbon-dev';
+                     } elseif ($module['is_paid']) {
+                        $ribbonLabel = __('LICENCIADO', 'nextool');
+                        $ribbonClass = 'nextool-ribbon-paid';
+                     } else {
+                        $ribbonLabel = __('GRÁTIS', 'nextool');
+                        $ribbonClass = 'nextool-ribbon-free';
+                     }
+
+                     $priceDisplay = '';
+                     if ($module['is_paid'] && !empty($module['price_cents'])) {
+                        $monthly = $module['price_cents'] / 12 / 100;
+                        $priceDisplay = 'R$ ' . number_format($monthly, 2, ',', '.') . '/mês';
+                     }
+
+                     $dlCount = (int)($module['download_count'] ?? 0);
+                     $features = $module['features'] ?? [];
+                     $screenshotUrl = $module['screenshot_url'] ?? '';
+                     $moduleCategory = $module['category'] ?? '';
                   ?>
                   <div class="col-md-6 nextool-module-card"
                        data-module-name="<?php echo strtolower(Html::entities_deep($module['name'])); ?>"
@@ -137,63 +201,81 @@ declare(strict_types=1);
                        data-module-enabled="<?php echo $module['is_enabled'] ? '1' : '0'; ?>"
                        data-module-installed="<?php echo $module['is_installed'] ? '1' : '0'; ?>"
                        data-module-downloaded="<?php echo $module['module_downloaded'] ? '1' : '0'; ?>"
+                       data-module-can-download="<?php echo !empty($module['can_download']) ? '1' : '0'; ?>"
                        data-module-install-ready="<?php echo (!$module['is_installed'] && $module['module_downloaded']) ? '1' : '0'; ?>"
                        data-module-update="<?php echo $module['update_available'] ? '1' : '0'; ?>"
-                       data-module-tier="<?php echo strtoupper($module['billing_tier']); ?>">
-                     <div class="card border <?php echo $borderClass; ?> h-100">
+                       data-module-tier="<?php echo $tier; ?>"
+                       data-module-category="<?php echo Html::entities_deep($moduleCategory); ?>"
+                       data-module-downloads="<?php echo $dlCount; ?>"
+                       <?php if ($screenshotUrl !== ''): ?>data-screenshot-url="<?php echo Html::entities_deep($screenshotUrl); ?>"<?php endif; ?>>
+                     <div class="card border <?php echo $borderClass; ?> h-100 position-relative">
+                        <span class="nextool-badge-ribbon <?php echo $ribbonClass; ?>"><?php echo $ribbonLabel; ?></span>
                         <div class="card-body d-flex flex-column">
-                           <div class="d-flex align-items-start justify-content-between mb-2">
-                              <div class="d-flex align-items-center gap-2">
-                                 <i class="<?php echo $module['icon']; ?> fs-2x text-muted"></i>
-                                 <div>
-                                    <h5 class="card-title mb-0"><?php echo Html::entities_deep($module['name']); ?></h5>
-                                    <?php
-                                       $installedVersion = $module['installed_version'] ?? null;
-                                       $availableVersion = $module['available_version'] ?? null;
-                                       $versionLabel = $installedVersion
-                                          ? 'v' . $installedVersion
-                                          : ($availableVersion ? 'v' . $availableVersion : '—');
-                                       if (!empty($module['update_available']) && $availableVersion) {
-                                          $versionLabel .= ' → v' . $availableVersion;
+                           <div class="d-flex align-items-start gap-2 mb-2">
+                              <i class="<?php echo $module['icon']; ?> fs-2x <?php echo $tierColor; ?> mt-1"></i>
+                              <div class="flex-grow-1" style="min-width: 0;">
+                                 <div class="d-flex align-items-baseline justify-content-between">
+                                    <h5 class="card-title mb-0 <?php echo $tierColor; ?>"><?php
+                                       if (!empty($module['website_url'])) {
+                                          echo '<a href="' . Html::entities_deep($module['website_url']) . '" target="_blank" rel="noopener" class="text-decoration-none ' . $tierColor . '">'
+                                             . Html::entities_deep($module['name'])
+                                             . ' <i class="ti ti-external-link" style="font-size: 0.7em; opacity: 0.5;"></i></a>';
+                                       } else {
+                                          echo Html::entities_deep($module['name']);
                                        }
-                                    ?>
-                                    <small class="text-muted">
-                                       <?php echo Html::entities_deep($versionLabel); ?> •
-                                    <?php if (is_array($module['author']) && !empty($module['author']['url'])): ?>
-                                          <a href="<?php echo Html::entities_deep($module['author']['url']); ?>"
-                                             target="_blank"
-                                             rel="noopener"
-                                             class="text-decoration-underline">
-                                             <?php echo Html::entities_deep($module['author']['name'] ?? ''); ?>
-                                          </a>
-                                       <?php else: ?>
-                                          <?php echo Html::entities_deep(is_array($module['author']) ? ($module['author']['name'] ?? '') : $module['author']); ?>
-                                       <?php endif; ?>
-                                    </small>
+                                    ?></h5>
                                  </div>
-                              </div>
-                              <div class="text-end">
-                                 <p class="mb-1">
-                                    <?php if (isset($module['billing_tier']) && strtoupper((string) $module['billing_tier']) === 'DEV'): ?>
-                                      <span class="badge badge-dev me-1"><?php echo __('Em desenvolvimento', 'nextool'); ?></span>
-                                    <?php elseif ($module['is_paid']): ?>
-                                      <span class="badge badge-licensing me-1"><?php echo __('Módulo Licenciado', 'nextool'); ?></span>
+                                 <?php
+                                    $installedVersion = $module['installed_version'] ?? null;
+                                    $availableVersion = $module['available_version'] ?? null;
+                                    $versionLabel = $installedVersion
+                                       ? 'v' . $installedVersion
+                                       : ($availableVersion ? 'v' . $availableVersion : '');
+                                 ?>
+                                 <small class="text-muted">
+                                    <?php if ($versionLabel !== ''): ?><?php echo Html::entities_deep($versionLabel); ?> · <?php endif; ?>
+                                    <?php if (is_array($module['author']) && !empty($module['author']['url'])): ?>
+                                       <a href="<?php echo Html::entities_deep($module['author']['url']); ?>" target="_blank" rel="noopener" class="text-decoration-underline"><?php echo Html::entities_deep($module['author']['name'] ?? ''); ?></a>
                                     <?php else: ?>
-                                       <span class="badge bg-teal me-1 text-white"><?php echo __('Módulo Gratuito', 'nextool'); ?></span>
+                                       <?php echo Html::entities_deep(is_array($module['author']) ? ($module['author']['name'] ?? '') : $module['author']); ?>
                                     <?php endif; ?>
-                                    <?php if (!$module['catalog_is_enabled']): ?>
-                                       <span class="badge text-white bg-secondary"><?php echo __('Indisponível', 'nextool'); ?></span>
-                                    <?php elseif (!empty($module['update_available'])): ?>
-                                       <span class="badge bg-warning text-dark"><?php echo __('Atualização disponível', 'nextool'); ?></span>
+                                    <?php if ($dlCount > 0): ?>
+                                       · <i class="ti ti-download" style="font-size: 0.85em;"></i> <?php echo number_format($dlCount, 0, '', '.'); ?> <?php echo __('instalações', 'nextool'); ?>
+                                    <?php else: ?>
+                                       · <span class="text-info"><?php echo __('Novo', 'nextool'); ?></span>
                                     <?php endif; ?>
-                                 </p>
+                                 </small>
                               </div>
                            </div>
 
-                           <p class="card-text text-muted small mb-3"><?php echo Html::entities_deep($module['description']); ?></p>
+                           <?php if (!empty($features)): ?>
+                           <ul class="nextool-features list-unstyled small mb-2">
+                              <?php foreach (array_slice($features, 0, 3) as $feat): ?>
+                              <li><i class="ti ti-check text-success me-1"></i><?php echo Html::entities_deep($feat); ?></li>
+                              <?php endforeach; ?>
+                           </ul>
+                           <?php else: ?>
+                           <p class="card-text text-muted small mb-2"><?php echo Html::entities_deep($module['description']); ?></p>
+                           <?php endif; ?>
 
-                           <div class="d-flex gap-2 flex-wrap mt-auto pt-2">
-                              <?php echo $module['actions_html']; ?>
+                           <?php if (!$module['catalog_is_enabled']): ?>
+                           <div class="mb-2">
+                              <span class="badge text-white bg-secondary"><?php echo __('Indisponível', 'nextool'); ?></span>
+                           </div>
+                           <?php endif; ?>
+
+                           <div class="mt-auto pt-2">
+                              <?php if ($module['is_paid'] && empty($module['can_download']) && empty($module['is_license_suspended'])): ?>
+                              <div class="alert alert-warning small p-2 mb-2 d-flex align-items-center justify-content-between">
+                                 <span><i class="ti ti-lock me-1"></i><?php echo __('Licença necessária para utilizar todos os recursos', 'nextool'); ?></span>
+                                 <?php if ($priceDisplay !== ''): ?>
+                                 <span class="fw-bold text-nowrap ms-2"><?php echo $priceDisplay; ?></span>
+                                 <?php endif; ?>
+                              </div>
+                              <?php endif; ?>
+                              <div class="d-flex justify-content-between align-items-center">
+                                 <?php echo $module['actions_html']; ?>
+                              </div>
                            </div>
                         </div>
                      </div>
