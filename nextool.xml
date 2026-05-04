@@ -109,14 +109,14 @@ Cada módulo puede ser instalado, activado y configurado de forma independiente.
     </authors>
     <versions>
         <version>
-            <num>3.8.0</num>
+            <num>4.0.1</num>
             <compatibility>~11.0.0</compatibility>
-            <download_url>https://github.com/RPGMais/nextool/releases/download/v3.8.0/nextool-3.8.0.tar.gz</download_url>
+            <download_url>https://github.com/RPGMais/nextool/releases/tag/v4.0.1</download_url>
         </version>
         <version>
-            <num>3.8.0</num>
+            <num>4.0.1</num>
             <compatibility>~10.0.0</compatibility>
-            <download_url>https://github.com/RPGMais/nextool/releases/download/v3.8.0-glpi10/nextool-3.8.0.tar.gz</download_url>
+            <download_url>https://github.com/RPGMais/nextool/releases/tag/v4.0.1-glpi10</download_url>
         </version>
     </versions>
     <langs>
