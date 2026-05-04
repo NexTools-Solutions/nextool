@@ -443,7 +443,7 @@ function nextoolInitModuleActions() {
 
    document.addEventListener('click', function (event) {
       var btn = event.target && typeof event.target.closest === 'function'
-         ? event.target.closest('button.nextool-module-action')
+         ? event.target.closest('.nextool-module-action')
          : null;
       if (!btn) return;
 
