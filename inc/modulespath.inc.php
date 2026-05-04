@@ -16,6 +16,18 @@ if (!defined('GLPI_ROOT') || defined('NEXTOOL_MODULES_DIR')) {
    return;
 }
 
+// Se GLPI_PLUGIN_DOC_DIR não está definido, tenta carregar downstream.php
+// para obter os paths corretos. Isso é essencial em instalações com diretórios
+// não-padrão (ex.: GLPI_VAR_DIR customizado via local_define.php).
+// downstream.php é idempotente com require_once; @ suprime warnings de
+// define() duplicado caso o Symfony kernel já tenha definido as constantes.
+if (!defined('GLPI_PLUGIN_DOC_DIR')) {
+   $downstreamFile = GLPI_ROOT . '/inc/downstream.php';
+   if (file_exists($downstreamFile)) {
+      @include_once $downstreamFile;
+   }
+}
+
 $base = defined('GLPI_PLUGIN_DOC_DIR')
    ? GLPI_PLUGIN_DOC_DIR
    : null;
@@ -24,10 +36,16 @@ $base = defined('GLPI_PLUGIN_DOC_DIR')
 // no momento em que este include roda. O objetivo é manter os módulos em
 // files/_plugins/nextool/modules (gravável pelo PHP), como plugins de marketplace.
 if ($base === null) {
-   $candidates = [
-      '/var/lib/glpi/files/_plugins',
-      GLPI_ROOT . '/files/_plugins',
-   ];
+   $candidates = [];
+
+   // GLPI_VAR_DIR pode ter sido definido pelo downstream.php ou pelo Symfony kernel
+   // e aponta para o diretório correto de dados (mesmo em instalações customizadas)
+   if (defined('GLPI_VAR_DIR')) {
+      $candidates[] = GLPI_VAR_DIR . '/_plugins';
+   }
+
+   $candidates[] = '/var/lib/glpi/files/_plugins';
+   $candidates[] = GLPI_ROOT . '/files/_plugins';
 
    // Preferir o candidato que realmente contém o diretório do NexTool,
    // evitando escolher um _plugins "vazio" existente em alguns builds.

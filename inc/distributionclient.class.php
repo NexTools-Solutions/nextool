@@ -57,9 +57,15 @@ class PluginNextoolDistributionClient {
       curl_setopt($ch, CURLOPT_TIMEOUT, 30);
       curl_setopt($ch, CURLOPT_POST, true);
       curl_setopt($ch, CURLOPT_POSTFIELDS, $payload ?: '');
-      curl_setopt($ch, CURLOPT_HTTPHEADER, [
+      $bootstrapHeaders = [
          'Content-Type: application/json',
-      ]);
+      ];
+      if (!isset($GLOBALS['nextool_request_group_id'])) {
+         require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+         $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
+      }
+      $bootstrapHeaders[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
+      curl_setopt($ch, CURLOPT_HTTPHEADER, $bootstrapHeaders);
 
       $response = curl_exec($ch);
       $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -136,10 +142,20 @@ class PluginNextoolDistributionClient {
 
       // Resposta 2xx mas JSON inválido
       if (!is_array($data)) {
+         $snippet = trim(preg_replace('/\s+/', ' ', substr((string) $response, 0, 500)));
+         $contentHint = '';
+         if ($snippet === '') {
+            $contentHint = 'body vazio';
+         } elseif (preg_match('/<(html|br|b|div|!DOCTYPE)/i', $snippet)) {
+            $contentHint = 'HTML detectado (provável erro PHP ou página de proxy/WAF)';
+         } else {
+            $contentHint = 'conteúdo não-JSON (json_last_error: ' . json_last_error_msg() . ')';
+         }
          Toolbox::logInFile('plugin_nextool', sprintf(
-            'Bootstrap HMAC falhou — resposta não é JSON válido (HTTP %d): %s',
+            'Bootstrap HMAC falhou — %s (HTTP %d). Body: %s',
+            $contentHint,
             $httpCode,
-            substr((string) $response, 0, 500)
+            $snippet
          ));
          return [
             'secret'      => null,
@@ -245,9 +261,10 @@ class PluginNextoolDistributionClient {
          'X-Timestamp: ' . $timestamp,
          'X-Signature: ' . $signature,
       ];
-      if (isset($GLOBALS['nextool_request_group_id'])) {
-         $requestHeaders[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
+      if (!isset($GLOBALS['nextool_request_group_id'])) {
+         $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
       }
+      $requestHeaders[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
 
       $response = $this->performRequest($this->baseUrl . '/api/distribution/install-request', [
          'method' => 'POST',
@@ -279,9 +296,10 @@ class PluginNextoolDistributionClient {
       if ($this->clientIdentifier !== '') {
          $headers[] = 'X-Client-Identifier: ' . $this->clientIdentifier;
       }
-      if (isset($GLOBALS['nextool_request_group_id'])) {
-         $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
+      if (!isset($GLOBALS['nextool_request_group_id'])) {
+         $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
       }
+      $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
       if (!empty($headers)) {
          curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
       }
@@ -400,7 +418,7 @@ class PluginNextoolDistributionClient {
                   $minVer
                )
                : __('É necessário atualizar o plugin Nextool para a versão mais recente para baixar ou atualizar módulos.', 'nextool');
-            $message .= ' ' . __('Atualize em:', 'nextool') . ' https://nextoolsolutions.ai/produtos/plugin-nextools-glpi';
+            $message .= ' ' . __('Atualize em:', 'nextool') . ' https://nextoolsolutions.com/produtos/plugin-nextools-glpi';
          } else {
             $message = sprintf(__('Falha ao solicitar manifesto de distribuição: %s', 'nextool'), $message);
          }
@@ -541,6 +559,11 @@ class PluginNextoolDistributionClient {
    }
 
    private function invalidateOpcache(string $destination, string $moduleKey): void {
+      if (function_exists('opcache_reset')) {
+         @opcache_reset();
+         return;
+      }
+
       if (!function_exists('opcache_invalidate')) {
          return;
       }
@@ -641,6 +664,117 @@ class PluginNextoolDistributionClient {
       );
 
       return true;
+   }
+
+   /**
+    * Cria uma Stripe Checkout Session via ContainerAPI.
+    *
+    * @param string $moduleKey Chave do modulo a comprar
+    * @return array|null { checkout_url, session_id } ou null em caso de erro
+    */
+   /**
+    * Cria uma Stripe Checkout Session via ContainerAPI.
+    *
+    * @param string $moduleKey Chave do modulo a comprar
+    * @param string $paymentMethod 'card' (subscription) ou 'pix' (one-time)
+    * @return array|null { checkout_url, session_id } ou array com 'error'
+    */
+   public static function createCheckoutSession(string $moduleKey, string $paymentMethod = 'card'): ?array {
+      require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+
+      $distributionSettings = PluginNextoolConfig::getDistributionSettings();
+      $baseUrl = isset($distributionSettings['base_url']) ? trim((string) $distributionSettings['base_url']) : '';
+      $clientIdentifier = isset($distributionSettings['client_identifier'])
+         ? trim((string) $distributionSettings['client_identifier']) : '';
+      $clientSecret = isset($distributionSettings['client_secret'])
+         ? trim((string) $distributionSettings['client_secret']) : '';
+
+      // Fallback para config global
+      if ($clientIdentifier === '') {
+         $globalConfig = PluginNextoolConfig::getConfig();
+         $clientIdentifier = trim((string) ($globalConfig['client_identifier'] ?? ''));
+      }
+
+      if ($baseUrl === '' || $clientIdentifier === '' || $clientSecret === '') {
+         Toolbox::logInFile('plugin_nextool', 'createCheckoutSession: distribuição não configurada');
+         return ['error' => __('Distribuição não configurada. Configure o ContainerAPI primeiro.', 'nextool')];
+      }
+
+      $domain = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '');
+      $glpiVersion = defined('GLPI_VERSION') ? GLPI_VERSION : '11';
+
+      $payload = json_encode([
+         'module_key'      => $moduleKey,
+         'payment_method'  => $paymentMethod,
+         'domain'          => $domain,
+         'client_info'     => [
+            'plugin_version' => PluginNextoolConfig::getPluginVersion(),
+            'glpi_version'   => $glpiVersion,
+         ],
+      ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+      if ($payload === false) {
+         return ['error' => 'JSON encode failed'];
+      }
+
+      $timestamp = (string) time();
+      $signature = hash_hmac('sha256', $payload . '|' . $timestamp, $clientSecret);
+
+      $headers = [
+         'Content-Type: application/json',
+         'X-Client-Identifier: ' . $clientIdentifier,
+         'X-Timestamp: ' . $timestamp,
+         'X-Signature: ' . $signature,
+      ];
+
+      if (!isset($GLOBALS['nextool_request_group_id'])) {
+         $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
+      }
+      $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
+
+      $ch = curl_init(rtrim($baseUrl, '/') . '/api/billing/checkout-session');
+      curl_setopt_array($ch, [
+         CURLOPT_RETURNTRANSFER => true,
+         CURLOPT_POST           => true,
+         CURLOPT_POSTFIELDS     => $payload,
+         CURLOPT_HTTPHEADER     => $headers,
+         CURLOPT_TIMEOUT        => 15,
+      ]);
+
+      $response = curl_exec($ch);
+      $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      $error = curl_error($ch);
+      curl_close($ch);
+
+      if ($response === false) {
+         Toolbox::logInFile('plugin_nextool', 'createCheckoutSession: curl falhou - ' . $error);
+         return ['error' => __('Falha na comunicação com o servidor.', 'nextool')];
+      }
+
+      $data = json_decode($response, true);
+      if (!is_array($data)) {
+         $snippet = trim(preg_replace('/\s+/', ' ', substr($response, 0, 500)));
+         $contentHint = '';
+         if ($snippet === '') {
+            $contentHint = 'body vazio';
+         } elseif (preg_match('/<(html|br|b|div|!DOCTYPE)/i', $snippet)) {
+            $contentHint = 'HTML detectado (provável erro PHP ou página de proxy/WAF)';
+         } else {
+            $contentHint = 'conteúdo não-JSON (json_last_error: ' . json_last_error_msg() . ')';
+         }
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'createCheckoutSession: %s (HTTP %d). Body: %s', $contentHint, $httpCode, $snippet
+         ));
+         return ['error' => __('Resposta inválida do servidor.', 'nextool')];
+      }
+
+      if ($httpCode >= 300 || isset($data['error'])) {
+         $msg = $data['message'] ?? $data['error'] ?? 'HTTP ' . $httpCode;
+         Toolbox::logInFile('plugin_nextool', 'createCheckoutSession: erro - ' . $msg);
+         return ['error' => $msg];
+      }
+
+      return $data;
    }
 }
 

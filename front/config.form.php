@@ -64,6 +64,7 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/logmaintenance.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/configviewstate.class.php';
 PluginNextoolLogMaintenance::maybeRun();
 $licenseConfig = PluginNextoolLicenseConfig::getDefaultConfig();
+$modulesEntitlement = PluginNextoolLicenseValidator::getModulesEntitlement();
 $licenseViewState = PluginNextoolConfigViewState::fromLicenseConfig($licenseConfig);
 $licenseStatusCode = $licenseViewState['licenseStatusCode'];
 $licenseWarnings = $licenseViewState['licenseWarnings'];
@@ -238,16 +239,28 @@ foreach ($allModuleKeys as $moduleKey) {
 
    $isSuspended = ($licenseStatusCode === 'SUSPENDED');
 
+   // Entitlement do módulo (vem do modules_entitlement do ContainerAPI via cache)
+   $moduleEntitlement = $modulesEntitlement[$moduleKey] ?? null;
+   $everLicensed = $moduleEntitlement !== null && !empty($moduleEntitlement['ever_licensed']);
+
+   // can_download_module: controla download e update (requer licença ativa)
+   // can_use_module: controla instalar/ativar/desativar (permissivo se ever_licensed + baixado)
    if ($isDevModule) {
-      $canUseModule = ($licenseTier === 'DESENVOLVIMENTO') && $isLicenseActive && !$isFreeTier && $catalogIsEnabled;
+      $canDownloadModule = ($licenseTier === 'DESENVOLVIMENTO') && $isLicenseActive && !$isFreeTier && $catalogIsEnabled;
+      $canUseModule = $canDownloadModule;
    } elseif ($isPaid) {
-      if ($isSuspended && $moduleDownloaded) {
-         // SUSPENDED + arquivos locais = pode instalar/ativar (operação local)
+      // Download/Update: requer licença ativa
+      $canDownloadModule = $isLicenseActive && !$isFreeTier && $isAllowedByPlan && $catalogIsEnabled;
+      // Instalar/Ativar: livre se ever_licensed + módulo já baixado
+      if ($moduleDownloaded && $everLicensed) {
+         $canUseModule = $catalogIsEnabled;
+      } elseif ($isSuspended && $moduleDownloaded) {
          $canUseModule = $isAllowedByPlan && $catalogIsEnabled;
       } else {
-         $canUseModule = $isLicenseActive && !$isFreeTier && $isAllowedByPlan && $catalogIsEnabled;
+         $canUseModule = $canDownloadModule;
       }
    } else {
+      $canDownloadModule = $catalogIsEnabled;
       $canUseModule = $catalogIsEnabled;
    }
 
@@ -304,6 +317,7 @@ foreach ($allModuleKeys as $moduleKey) {
       'is_installed'      => $isInstalled,
       'is_enabled'        => $isEnabled,
       'module_downloaded' => $moduleDownloaded,
+      'can_download'      => $canDownloadModule,
       'catalog_is_enabled'=> $catalogIsEnabled,
       'update_available'  => $updateAvailable,
       'has_module_data'   => $hasModuleData,
@@ -313,6 +327,12 @@ foreach ($allModuleKeys as $moduleKey) {
       ],
       'plugin_version'       => $currentPluginVersion,
       'min_version_nextools' => $meta['min_version_nextools'] ?? null,
+      'website_url'          => $meta['website_url'] ?? null,
+      'price_cents'          => $meta['price_cents'] ?? null,
+      'category'             => $meta['category'] ?? null,
+      'features'             => $meta['features'] ?? [],
+      'screenshot_url'       => $meta['screenshot_url'] ?? null,
+      'download_count'       => $meta['download_count'] ?? 0,
       'actions_html'      => PluginNextoolModuleCardHelper::renderActions([
          'module_key'              => $moduleKey,
          'is_installed'            => $isInstalled,
@@ -323,6 +343,8 @@ foreach ($allModuleKeys as $moduleKey) {
          'has_assigned_license'    => $hasAssignedLicense,
          'distribution_configured' => $distributionConfigured,
          'can_use_module'          => $canUseModule,
+         'can_download_module'     => $canDownloadModule,
+         'name'                    => $meta['name'] ?? $moduleKey,
          'has_module_data'         => $hasModuleData,
          'has_module_db_data'      => $hasModuleDbData,
          'module_downloaded'       => $moduleDownloaded,
@@ -371,7 +393,7 @@ if ($nextool_is_standalone) {
       'logs'    => ['id' => 'rt-tab-logs', 'label' => __('Logs', 'nextool'), 'icon' => 'ti ti-report-analytics', 'allowed' => $canViewAdminTabs],
    ];
    $canShow = ($nextool_show_only_tab === 'modules' && $canViewAnyModule)
-      || (in_array($nextool_show_only_tab, ['contato', 'licenca', 'logs'], true) && $canViewAdminTabs);
+      || (in_array($nextool_show_only_tab, ['contato', 'licenca', 'logs', 'alertas'], true) && $canViewAdminTabs);
    echo "<div class='m-3' id='nextool-config-form'>";
    if (!$canShow) {
       echo "<div class='alert alert-warning'><i class='ti ti-lock me-2'></i>" . __('Sem permissão para acessar esta seção.', 'nextool') . "</div>";
@@ -417,7 +439,7 @@ foreach ($tabsRegistry as $key => $meta) {
 
 // Hero "Plano atual" reutilizável nas abas administrativas em modo standalone
 $nextool_hero_standalone = '';
-if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'contato', 'logs'], true) && $canViewAdminTabs) {
+if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'contato', 'logs', 'alertas'], true) && $canViewAdminTabs) {
    ob_start();
    $nextoolHeroWithMarginTop = false;
    $nextoolHeroDisableSync = false;
@@ -427,7 +449,8 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
       'modules' => 'PluginNextoolMainConfig$1',
       'contato' => 'PluginNextoolMainConfig$2',
       'licenca' => 'PluginNextoolMainConfig$3',
-      'logs'    => 'PluginNextoolMainConfig$4',
+      'alertas' => 'PluginNextoolMainConfig$4',
+      'logs'    => 'PluginNextoolMainConfig$5',
    ];
    $nextoolHeroForcetab = $nextoolHeroForcetabMap[$nextool_standalone_output_tab] ?? 'PluginNextoolMainConfig$1';
    include GLPI_ROOT . '/plugins/nextool/front/tabs/config.hero.inc.php';
@@ -484,6 +507,8 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
         <?php include GLPI_ROOT . '/plugins/nextool/front/tabs/config.logs.tab.inc.php'; ?>
 
         <?php include GLPI_ROOT . '/plugins/nextool/front/tabs/config.contato.tab.inc.php'; ?>
+
+        <?php include GLPI_ROOT . '/plugins/nextool/front/tabs/config.alertas.tab.inc.php'; ?>
 
       <?php if (!$nextool_is_standalone): ?></div></div><?php endif; ?>
 

@@ -700,19 +700,6 @@ class PluginNextoolModuleManager {
 
       $result = $this->downloadModuleFromDistribution($moduleKey);
 
-      // Sideeffect: verificar atualização do core após download bem-sucedido de módulo FREE.
-      // Downloads FREE não passam por validateLicense, então este é o ponto onde
-      // a hint de core update é alimentada para esses ambientes.
-      if ($result['success']) {
-         try {
-            require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
-            $updater = new PluginNextoolCoreUpdater();
-            $updater->check('stable', 'post_download_sideeffect');
-         } catch (Throwable $e) {
-            Toolbox::logInFile('plugin_nextool', '[CoreUpdate] sideeffect check falhou: ' . $e->getMessage());
-         }
-      }
-
       return $this->buildModuleActionResult(
          $moduleKey,
          $action,
@@ -929,15 +916,15 @@ class PluginNextoolModuleManager {
    }
 
    private function getBillingTier(string $moduleKey): string {
-      // Módulo já descoberto em memória: usa o getter da instância
-      if (isset($this->modules[$moduleKey]) && $this->modules[$moduleKey] instanceof PluginNextoolBaseModule) {
-         return strtoupper(trim($this->modules[$moduleKey]->getBillingTier()));
-      }
-
-      // Fallback: consulta a tabela de catálogo
+      // Prioridade 1: banco (sincronizado do ContainerAPI) — fonte de verdade
       $row = $this->getModuleRow($moduleKey);
       if ($row !== null && isset($row['billing_tier']) && $row['billing_tier'] !== '') {
          return strtoupper(trim((string)$row['billing_tier']));
+      }
+
+      // Prioridade 2: instancia em memoria (fallback de bootstrap para modulos nao sincronizados)
+      if (isset($this->modules[$moduleKey]) && $this->modules[$moduleKey] instanceof PluginNextoolBaseModule) {
+         return strtoupper(trim($this->modules[$moduleKey]->getBillingTier()));
       }
 
       return 'FREE';

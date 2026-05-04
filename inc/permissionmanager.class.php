@@ -358,7 +358,7 @@ class PluginNextoolPermissionManager {
     * @param int    $rightBit  Bitmask a verificar (READ, UPDATE, DELETE, PURGE)
     * @return bool
     */
-   private static function haveRight(string $rightName, int $rightBit): bool {
+   public static function haveRight(string $rightName, int $rightBit): bool {
       // Tentativa rápida via sessão (funciona para perfis central)
       if (Session::haveRight($rightName, $rightBit)) {
          return true;

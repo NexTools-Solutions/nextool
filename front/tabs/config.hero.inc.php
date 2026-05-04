@@ -55,7 +55,6 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                <span class="small text-info fw-semibold">
                   <i class="ti ti-plug-connected"></i>
                   <?php echo __('Precisa de um módulo específico ou integração personalizada?', 'nextool'); ?>
-                  <a href="<?= NEXTOOL_BOOKING_URL ?>" target="_blank" class="text-white text-decoration-underline"><?php echo __('Agende uma reunião.', 'nextool'); ?></a>
                </span>
                <br>
                <span class="small text-licensing-hero fw-semibold">
