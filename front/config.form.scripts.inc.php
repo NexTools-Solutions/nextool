@@ -19,13 +19,13 @@ declare(strict_types=1);
                <i class="ti ti-alert-triangle me-2 text-warning"></i>
                <?php echo __('Confirmação', 'nextool'); ?>
             </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
          </div>
          <div class="modal-body">
             <p id="nextool-confirm-message" class="mb-0"></p>
          </div>
          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?php echo __('Cancelar', 'nextool'); ?></button>
+            <button type="button" class="btn btn-outline-secondary" data-dismiss="modal"><?php echo __('Cancelar', 'nextool'); ?></button>
             <button type="button" class="btn btn-danger" id="nextool-confirm-btn"><?php echo __('Confirmar', 'nextool'); ?></button>
          </div>
       </div>
@@ -41,7 +41,7 @@ declare(strict_types=1);
                <i class="ti ti-alert-octagon me-2 text-danger"></i>
                <?php echo __('Ação irreversível', 'nextool'); ?>
             </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
          </div>
          <div class="modal-body">
             <p id="nextool-typed-confirm-message" class="mb-2"></p>
@@ -56,8 +56,53 @@ declare(strict_types=1);
             </div>
          </div>
          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?php echo __('Cancelar', 'nextool'); ?></button>
+            <button type="button" class="btn btn-outline-secondary" data-dismiss="modal"><?php echo __('Cancelar', 'nextool'); ?></button>
             <button type="button" class="btn btn-danger" id="nextool-typed-confirm-btn" disabled><?php echo __('Confirmar exclusão', 'nextool'); ?></button>
+         </div>
+      </div>
+   </div>
+</div>
+
+<!-- Modal de licenciamento (Stripe Checkout) -->
+<div class="modal fade" id="nextool-licensing-modal" tabindex="-1" aria-hidden="true">
+   <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+         <div class="modal-header">
+            <h5 class="modal-title">
+               <i class="ti ti-certificate me-2 text-primary"></i>
+               <?php echo __('Licenciar Módulo', 'nextool'); ?> - <span id="nextool-licensing-modal-title-name"></span>
+            </h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+         </div>
+         <div class="modal-body">
+            <div class="alert alert-warning mb-3">
+               <i class="ti ti-alert-triangle me-1"></i>
+               <?php echo __('Este licenciamento é válido exclusivamente para o módulo selecionado.', 'nextool'); ?>
+            </div>
+            <p class="mb-2"><?php echo __('Benefícios inclusos na licença:', 'nextool'); ?></p>
+            <ul class="mb-3">
+               <li><?php echo __('Licença válida por 12 meses a partir da data de compra', 'nextool'); ?></li>
+               <li><?php echo __('Todas as atualizações durante o período de licença', 'nextool'); ?></li>
+               <li><?php echo __('Onboarding incluído para configuração inicial', 'nextool'); ?></li>
+               <li><?php echo __('Garantia de compatibilidade com versões suportadas do GLPI', 'nextool'); ?></li>
+               <li><?php echo __('Suporte a falhas e erros durante a vigência da licença', 'nextool'); ?></li>
+            </ul>
+            <div class="alert alert-info mb-3">
+               <i class="ti ti-info-circle me-1"></i>
+               <?php echo __('Você será redirecionado para a página de pagamento segura do Stripe. Após a confirmação do pagamento, sincronize a licença para ativar o módulo.', 'nextool'); ?>
+            </div>
+            <p class="fw-bold mb-2"><?php echo __('Selecione a forma de pagamento:', 'nextool'); ?></p>
+            <div class="row g-2" id="nextool-licensing-methods">
+               <?php
+               // Métodos de pagamento vêm do cache do ContainerAPI (atualizado no Sincronizar)
+               require_once GLPI_ROOT . '/plugins/nextool/inc/licensevalidator.class.php';
+               $paymentMethods = PluginNextoolLicenseValidator::getPaymentMethods();
+               ?>
+            </div>
+            <div id="nextool-licensing-status" class="text-center mt-3 d-none">
+               <i class="ti ti-loader-2 ti-spin me-1"></i>
+               <span><?php echo __('Redirecionando para o pagamento...', 'nextool'); ?></span>
+            </div>
          </div>
       </div>
    </div>
@@ -219,6 +264,107 @@ function nextoolShowTypedConfirm(message, onConfirm) {
    modal.show();
 }
 
+// --- Modal de licenciamento (Stripe Checkout) ---
+var _nextoolPaymentMethodConfig = {
+   card:   { icon: 'ti ti-credit-card', label: <?php echo json_encode(__('Cartão de Crédito', 'nextool')); ?>, desc: '', btnClass: 'btn-outline-primary', extraStyle: 'border: 2px solid #0d6efd;' },
+   boleto: { icon: 'ti ti-barcode',     label: <?php echo json_encode(__('Boleto Bancário', 'nextool')); ?>,   desc: '', btnClass: 'btn-outline-warning' },
+   pix:    { icon: 'ti ti-qrcode',      label: <?php echo json_encode(__('Pix', 'nextool')); ?>,              desc: '', btnClass: 'btn-outline-success' }
+};
+var _nextoolAvailableMethods = <?php echo json_encode($paymentMethods); ?>;
+
+function nextoolRenderPaymentButtons() {
+   var container = document.getElementById('nextool-licensing-methods');
+   if (!container) return;
+   container.innerHTML = '';
+   var methods = _nextoolAvailableMethods;
+   var colClass = methods.length <= 2 ? 'col-6' : (methods.length === 3 ? 'col-4' : 'col-6');
+   for (var i = 0; i < methods.length; i++) {
+      var m = methods[i];
+      var cfg = _nextoolPaymentMethodConfig[m];
+      if (!cfg) continue;
+      var col = document.createElement('div');
+      col.className = colClass;
+      col.innerHTML = '<button type="button" class="btn ' + cfg.btnClass + ' w-100 py-3 nextool-licensing-pay-btn" data-method="' + m + '"' + (cfg.extraStyle ? ' style="' + cfg.extraStyle + '"' : '') + '>'
+         + '<i class="' + cfg.icon + ' fs-1 d-block mb-1"></i>'
+         + cfg.label
+         + (cfg.desc ? '<small class="d-block text-muted mt-1">' + cfg.desc + '</small>' : '')
+         + '</button>';
+      container.appendChild(col);
+   }
+}
+
+function nextoolShowLicensingModal(moduleKey, moduleName) {
+   var modalEl = document.getElementById('nextool-licensing-modal');
+   if (!modalEl) return;
+
+   var titleNameEl = document.getElementById('nextool-licensing-modal-title-name');
+   if (titleNameEl) titleNameEl.textContent = moduleName || moduleKey;
+
+   var statusEl = document.getElementById('nextool-licensing-status');
+   var billingEndpoint = <?php echo json_encode(Plugin::getWebDir('nextool') . '/ajax/billing.php'); ?>;
+
+   // Renderizar botões dinamicamente
+   nextoolRenderPaymentButtons();
+
+   // Reset estado
+   if (statusEl) statusEl.classList.add('d-none');
+
+   // Handler para botões de pagamento (delegação no container)
+   var container = document.getElementById('nextool-licensing-methods');
+   if (container) {
+      // Remover handler anterior
+      var newContainer = container.cloneNode(true);
+      container.parentNode.replaceChild(newContainer, container);
+
+      newContainer.addEventListener('click', function (event) {
+         var btn = event.target.closest('.nextool-licensing-pay-btn');
+         if (!btn || btn.disabled) return;
+
+         var method = btn.dataset.method || 'card';
+
+         // Desabilitar todos os botões e mostrar loading
+         newContainer.querySelectorAll('.nextool-licensing-pay-btn').forEach(function(b) { b.disabled = true; });
+         if (statusEl) statusEl.classList.remove('d-none');
+
+         var csrfToken = nextoolGetAjaxCsrfToken();
+         fetch(billingEndpoint, {
+            method: 'POST',
+            headers: {
+               'Accept': 'application/json',
+               'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+               'X-Requested-With': 'XMLHttpRequest',
+               'X-Glpi-Csrf-Token': csrfToken
+            },
+            body: new URLSearchParams({
+               action: 'create_checkout',
+               module: moduleKey,
+               payment_method: method
+            }).toString(),
+            credentials: 'same-origin'
+         })
+         .then(function (r) { return r.json(); })
+         .then(function (data) {
+            if (data && data.checkout_url) {
+               window.open(data.checkout_url, '_blank');
+               bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+            } else {
+               var msg = (data && data.error) ? data.error : '<?php echo Html::entities_deep(__('Erro ao criar sessão de checkout.', 'nextool')); ?>';
+               alert(msg);
+            }
+            newContainer.querySelectorAll('.nextool-licensing-pay-btn').forEach(function(b) { b.disabled = false; });
+            if (statusEl) statusEl.classList.add('d-none');
+         })
+         .catch(function () {
+            alert('<?php echo Html::entities_deep(__('Falha na comunicação com o servidor.', 'nextool')); ?>');
+            newContainer.querySelectorAll('.nextool-licensing-pay-btn').forEach(function(b) { b.disabled = false; });
+            if (statusEl) statusEl.classList.add('d-none');
+         });
+      });
+   }
+
+   bootstrap.Modal.getOrCreateInstance(modalEl).show();
+}
+
 // --- Executa ação de módulo via AJAX ---
 function nextoolExecuteModuleAction(btn, action, moduleKey, endpoint) {
    var csrfToken = nextoolGetAjaxCsrfToken();
@@ -286,6 +432,13 @@ function nextoolInitModuleActions() {
 
       var confirmMsg = (btn.dataset && btn.dataset.confirm) ? String(btn.dataset.confirm) : '';
       var confirmType = (btn.dataset && btn.dataset.confirmType) ? String(btn.dataset.confirmType) : '';
+
+      // Ação de licenciamento: abre modal Stripe em vez de executar via AJAX
+      if (action === 'licensing') {
+         var moduleName = (btn.dataset && btn.dataset.moduleName) ? String(btn.dataset.moduleName) : moduleKey;
+         nextoolShowLicensingModal(moduleKey, moduleName);
+         return;
+      }
 
       if (confirmMsg !== '') {
          var execute = function () {
@@ -1080,9 +1233,10 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
 
    var storageKey = 'nextool.module.filter';
    var searchStorageKey = 'nextool.module.search';
-   var allowedFilters = ['enabled', 'disabled', 'download', 'install', 'update', 'free', 'licensed'];
+   var allowedFilters = ['enabled', 'disabled', 'download', 'install', 'update', 'free', 'licensed', 'dev', 'category'];
    var allowedFilterSet = new Set(allowedFilters);
    var activeFilter = '';
+   var activeCategory = '';
    var debounceTimer = null;
 
    function isAllowedFilter(filter) {
@@ -1214,7 +1368,12 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
       if (!chips.length) return false;
       chips.forEach(function(chip) {
          var filter = (chip.dataset.filter || '').trim();
-         chip.classList.toggle('active', filter !== '' && filter === activeFilter);
+         if (filter === 'category') {
+            var cat = (chip.dataset.category || '').trim();
+            chip.classList.toggle('active', activeFilter === 'category' && activeCategory === cat);
+         } else {
+            chip.classList.toggle('active', filter !== '' && filter === activeFilter);
+         }
       });
       return true;
    }
@@ -1228,7 +1387,7 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
       case 'disabled':
          return card.dataset.moduleInstalled === '1' && card.dataset.moduleEnabled === '0';
       case 'download':
-         return card.dataset.moduleDownloaded === '0';
+         return card.dataset.moduleDownloaded === '0' && card.dataset.moduleCanDownload === '1';
       case 'install':
          return card.dataset.moduleInstallReady === '1';
       case 'update':
@@ -1236,7 +1395,11 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
       case 'free':
          return card.dataset.moduleTier === 'FREE';
       case 'licensed':
-         return card.dataset.moduleTier !== 'FREE';
+         return card.dataset.moduleTier !== 'FREE' && card.dataset.moduleTier !== 'DEV';
+      case 'dev':
+         return card.dataset.moduleTier === 'DEV';
+      case 'category':
+         return activeCategory !== '' && (card.dataset.moduleCategory || '') === activeCategory;
       default:
          return true;
       }
@@ -1293,7 +1456,12 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
       return true;
    }
 
-   setActiveFilter(getFilterFromUrl() || loadFilterFromStorage(), false);
+   var _restoredFilter = getFilterFromUrl() || loadFilterFromStorage();
+   if (_restoredFilter === 'category') {
+      _restoredFilter = '';
+      saveFilterToStorage('');
+   }
+   setActiveFilter(_restoredFilter, false);
 
    var initializeTimer = null;
    function scheduleInitializeModuleFilters() {
@@ -1353,7 +1521,19 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
       var filter = (chip.dataset.filter || '').trim();
       if (!isAllowedFilter(filter)) return;
 
-      setActiveFilter(activeFilter === filter ? '' : filter);
+      if (filter === 'category') {
+         var cat = (chip.dataset.category || '').trim();
+         if (activeFilter === 'category' && activeCategory === cat) {
+            activeCategory = '';
+            setActiveFilter('');
+         } else {
+            activeCategory = cat;
+            setActiveFilter('category');
+         }
+      } else {
+         activeCategory = '';
+         setActiveFilter(activeFilter === filter ? '' : filter);
+      }
       syncChipClasses();
       applyFilters();
    });
@@ -1370,3 +1550,67 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
    document.addEventListener('glpi.load', scheduleInitializeModuleFilters);
 })();
 </script>
+
+<?php
+require_once GLPI_ROOT . '/plugins/nextool/inc/alertmanager.class.php';
+$_nextoolUnreadAlerts = PluginNextoolAlertManager::getUnreadAlerts();
+if (!empty($_nextoolUnreadAlerts)):
+   $alertsAjaxUrl = Plugin::getWebDir('nextool') . '/ajax/alerts.php';
+?>
+<div class="modal fade" id="nextool-alerts-modal" tabindex="-1" aria-hidden="true">
+   <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+         <div class="modal-header" style="background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 40%, #14b8a6 100%); color: #fff;">
+            <h5 class="modal-title"><i class="ti ti-bell me-2"></i><?php echo __('Novos alertas da NexTool', 'nextool'); ?></h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
+         </div>
+         <div class="modal-body">
+            <div class="list-group list-group-flush">
+               <?php foreach ($_nextoolUnreadAlerts as $ua):
+                  $uaIcon = PluginNextoolAlertManager::getTypeIcon($ua['alert_type']);
+                  $uaBadge = PluginNextoolAlertManager::getTypeBadgeClass($ua['alert_type']);
+               ?>
+               <div class="list-group-item border-0 px-0">
+                  <div class="d-flex gap-2 align-items-start">
+                     <i class="<?php echo $uaIcon; ?> fs-3 mt-1"></i>
+                     <div>
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                           <strong><?php echo Html::entities_deep($ua['title']); ?></strong>
+                           <span class="badge <?php echo $uaBadge; ?>" style="font-size: 0.65rem;"><?php echo ucfirst($ua['alert_type']); ?></span>
+                        </div>
+                        <div class="small"><?php echo PluginNextoolAlertManager::sanitizeBody($ua['body']); ?></div>
+                     </div>
+                  </div>
+               </div>
+               <?php endforeach; ?>
+            </div>
+         </div>
+         <div class="modal-footer">
+            <button type="button" class="btn btn-primary" id="nextool-alerts-modal-dismiss" data-dismiss="modal">
+               <i class="ti ti-check me-1"></i><?php echo __('Entendi', 'nextool'); ?>
+            </button>
+         </div>
+      </div>
+   </div>
+</div>
+<script>
+(function() {
+   var m = document.getElementById('nextool-alerts-modal');
+   if (m && window.jQuery) {
+      jQuery(m).modal('show');
+      var dismissBtn = document.getElementById('nextool-alerts-modal-dismiss');
+      if (dismissBtn) {
+         dismissBtn.addEventListener('click', function() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', <?php echo json_encode($alertsAjaxUrl); ?>);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+            var csrfToken = typeof nextoolGetAjaxCsrfToken === 'function' ? nextoolGetAjaxCsrfToken() : '';
+            if (csrfToken) { xhr.setRequestHeader('X-Glpi-Csrf-Token', csrfToken); }
+            xhr.send('action=mark_all_read');
+         });
+      }
+   }
+})();
+</script>
+<?php endif; ?>

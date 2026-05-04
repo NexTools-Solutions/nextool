@@ -169,4 +169,22 @@ class PluginNextoolHookDispatcher {
       }
       return $item;
    }
+
+   /**
+    * Dispatcher para item_add['nextool']['TicketTask'].
+    */
+   public static function dispatchItemAddTicketTask(CommonDBTM $item) {
+      foreach (self::$itemAdd['TicketTask'] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_add TicketTask: %s - %s',
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
 }

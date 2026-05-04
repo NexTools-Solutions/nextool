@@ -37,9 +37,11 @@ declare(strict_types=1);
             . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$4';
 
          $_GET['embedded'] = '1';
-         unset($_SESSION['glpisearch']['PluginNextoolValidationAttempt']);
-         $_GET['sort']  = 2;
-         $_GET['order'] = 'DESC';
+         if (empty($_GET['sort'])) {
+            unset($_SESSION['glpisearch']['PluginNextoolValidationAttempt']);
+            $_GET['sort']  = 2;
+            $_GET['order'] = 'DESC';
+         }
 
          try {
             Search::show('PluginNextoolValidationAttempt');
