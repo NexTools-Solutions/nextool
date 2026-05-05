@@ -928,7 +928,7 @@ class PluginNextoolModuleManager {
       return null;
    }
 
-   private function getBillingTier(string $moduleKey): string {
+   public function getBillingTier(string $moduleKey): string {
       // Prioridade 1: banco (sincronizado do ContainerAPI) — fonte de verdade
       $row = $this->getModuleRow($moduleKey);
       if ($row !== null && isset($row['billing_tier']) && $row['billing_tier'] !== '') {
@@ -941,6 +941,24 @@ class PluginNextoolModuleManager {
       }
 
       return 'FREE';
+   }
+
+   public function getModulePath(string $moduleKey): ?string {
+      if (!preg_match('/^[a-z0-9_]+$/i', $moduleKey)) {
+         return null;
+      }
+      $path = $this->modulesPath . '/' . $moduleKey;
+      return is_dir($path) ? $path : null;
+   }
+
+   public function isEnabled(string $moduleKey): bool {
+      $row = $this->getModuleRow($moduleKey);
+      return $row !== null && ((int)($row['is_enabled'] ?? 0) === 1);
+   }
+
+   public function isInstalled(string $moduleKey): bool {
+      $row = $this->getModuleRow($moduleKey);
+      return $row !== null && ((int)($row['is_installed'] ?? 0) === 1);
    }
 
    private function isFreePlan(string $plan): bool {
