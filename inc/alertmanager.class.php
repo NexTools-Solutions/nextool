@@ -8,10 +8,15 @@ if (!defined('GLPI_ROOT')) {
 class PluginNextoolAlertManager {
 
    private const TABLE = 'glpi_plugin_nextool_main_alerts';
-   private const ALLOWED_HTML_TAGS = '<p><br><a><strong><b><em><i><u><ul><ol><li><span><div><h1><h2><h3><h4><h5><h6><img><hr>';
+   private const ALLOWED_HTML_TAGS = '<p><br><a><strong><b><em><i><u><ul><ol><li><span><div><h1><h2><h3><h4><h5><h6><hr>';
 
    public static function sanitizeBody(string $body): string {
-      return strip_tags($body, self::ALLOWED_HTML_TAGS);
+      $clean = strip_tags($body, self::ALLOWED_HTML_TAGS);
+      // Remove atributos perigosos que strip_tags preserva
+      $clean = preg_replace('/\s+on\w+\s*=\s*["\'][^"\']*["\']/i', '', $clean);
+      $clean = preg_replace('/\s+on\w+\s*=\s*\S+/i', '', $clean);
+      $clean = preg_replace('/href\s*=\s*["\']?\s*javascript\s*:/i', 'href="#blocked-', $clean);
+      return $clean;
    }
 
    public static function getUnreadAlerts(): array {

@@ -418,7 +418,7 @@ function nextoolInitModuleActions() {
 
    document.addEventListener('click', function (event) {
       var btn = event.target && typeof event.target.closest === 'function'
-         ? event.target.closest('button.nextool-module-action')
+         ? event.target.closest('.nextool-module-action')
          : null;
       if (!btn) return;
 
@@ -1564,26 +1564,20 @@ if (!empty($_nextoolUnreadAlerts)):
             <h5 class="modal-title"><i class="ti ti-bell me-2"></i><?php echo __('Novos alertas da NexTool', 'nextool'); ?></h5>
             <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
          </div>
-         <div class="modal-body">
-            <div class="list-group list-group-flush">
+         <div class="modal-body" style="width:auto !important;">
                <?php foreach ($_nextoolUnreadAlerts as $ua):
                   $uaIcon = PluginNextoolAlertManager::getTypeIcon($ua['alert_type']);
                   $uaBadge = PluginNextoolAlertManager::getTypeBadgeClass($ua['alert_type']);
                ?>
-               <div class="list-group-item border-0 px-0">
-                  <div class="d-flex gap-2 align-items-start">
-                     <i class="<?php echo $uaIcon; ?> fs-3 mt-1"></i>
-                     <div>
-                        <div class="d-flex align-items-center gap-2 mb-1">
-                           <strong><?php echo Html::entities_deep($ua['title']); ?></strong>
-                           <span class="badge <?php echo $uaBadge; ?>" style="font-size: 0.65rem;"><?php echo ucfirst($ua['alert_type']); ?></span>
-                        </div>
-                        <div class="small"><?php echo PluginNextoolAlertManager::sanitizeBody($ua['body']); ?></div>
-                     </div>
+               <div style="padding:10px 0;border-bottom:1px solid #eee;">
+                  <div style="margin-bottom:4px;">
+                     <i class="<?php echo $uaIcon; ?>" style="font-size:1.2rem;margin-right:6px;vertical-align:middle;"></i>
+                     <strong><?php echo Html::entities_deep($ua['title']); ?></strong>
+                     <span class="badge <?php echo $uaBadge; ?>" style="font-size:0.65rem;margin-left:6px;"><?php echo ucfirst($ua['alert_type']); ?></span>
                   </div>
+                  <div style="font-size:0.9rem;width:auto !important;"><?php echo PluginNextoolAlertManager::sanitizeBody($ua['body']); ?></div>
                </div>
                <?php endforeach; ?>
-            </div>
          </div>
          <div class="modal-footer">
             <button type="button" class="btn btn-primary" id="nextool-alerts-modal-dismiss" data-dismiss="modal">
