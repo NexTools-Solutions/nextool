@@ -39,6 +39,11 @@ function plugin_nextool_install() {
       @mkdir(NEXTOOL_MODULES_BASE, 0755, true);
    }
 
+   $coreUpdateDir = rtrim(NEXTOOL_DOC_DIR, '/') . '/core-update';
+   if (!is_dir($coreUpdateDir)) {
+      @mkdir($coreUpdateDir, 0755, true);
+   }
+
    // Avisar se o diretorio de modulos nao pôde ser criado (permissoes do filesystem)
    if (!is_dir(NEXTOOL_MODULES_BASE) || !is_writable(NEXTOOL_MODULES_BASE)) {
       $owner = function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'php') : 'apache';
