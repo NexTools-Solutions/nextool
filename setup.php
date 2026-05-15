@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.0.2');
+define('PLUGIN_NEXTOOL_VERSION', '4.0.3');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -73,10 +73,6 @@ function plugin_version_nextool() {
  * via plugin_nextool_stateless_files() (whitelist explícita).
  *
  * O Firewall recebe STRATEGY_NO_CHECK para module_ajax.php, permitindo que
-         );
-         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
-            'nextool',
-            \Glpi\Http\Firewall::STRATEGY_NO_CHECK
  * o próprio roteador faça a validação (sessão ou stateless conforme o módulo).
  */
 function plugin_nextool_boot() {
@@ -95,10 +91,6 @@ function plugin_nextool_boot() {
          \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
             'nextool',
             '#^/ajax/module_ajax\\.php#',
-            \Glpi\Http\Firewall::STRATEGY_NO_CHECK
-         );
-         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
-            'nextool',
             \Glpi\Http\Firewall::STRATEGY_NO_CHECK
          );
       }
@@ -170,7 +162,6 @@ function plugin_init_nextool() {
       $PLUGIN_HOOKS['use_massive_action']['nextool'] = 1;
    }
 
-   Toolbox::logInFile('plugin_nextool', "[DEBUG] [Setup] Plugin nextool carregando (ativado)\n");
 
    // Gera e persiste o Identificador do Cliente no momento em que o plugin é carregado (ativado)
    // em vez de depender apenas da primeira leitura preguiçosa da configuração.
@@ -312,12 +303,8 @@ function plugin_init_nextool() {
                // Nota: nao pode usar HookManager para este hook (limitacao do core GLPI 11)
                $PLUGIN_HOOKS['post_show_item']['nextool'] = function(array $params) {
                   $item = $params['options']['item'] ?? $params['item'] ?? null;
-                  if ($item instanceof Ticket) {
-                     PluginNextoolHookDispatcher::dispatchPostShowItem('Ticket', $params);
-                  } elseif ($item instanceof Change) {
-                     PluginNextoolHookDispatcher::dispatchPostShowItem('Change', $params);
-                  } elseif ($item instanceof Problem) {
-                     PluginNextoolHookDispatcher::dispatchPostShowItem('Problem', $params);
+                  if ($item instanceof CommonGLPI) {
+                     PluginNextoolHookDispatcher::dispatchPostShowItem($item::getType(), $params);
                   }
                };
             }

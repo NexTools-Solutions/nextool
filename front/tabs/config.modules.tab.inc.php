@@ -218,8 +218,8 @@ declare(strict_types=1);
                                     <h5 class="card-title mb-0 <?php echo $tierColor; ?>"><?php
                                        if (!empty($module['website_url'])) {
                                           echo '<a href="' . Html::entities_deep($module['website_url']) . '" target="_blank" rel="noopener" class="text-decoration-none ' . $tierColor . '">'
-                                             . Html::entities_deep($module['name'])
-                                             . ' <i class="ti ti-external-link" style="font-size: 0.7em; opacity: 0.5;"></i></a>';
+                                             . Html::entities_deep($module['name']) . '</a>'
+                                             . ' <i class="ti ti-external-link nextool-ext-icon"></i>';
                                        } else {
                                           echo Html::entities_deep($module['name']);
                                        }
@@ -240,7 +240,7 @@ declare(strict_types=1);
                                        <?php echo Html::entities_deep(is_array($module['author']) ? ($module['author']['name'] ?? '') : $module['author']); ?>
                                     <?php endif; ?>
                                     <?php if ($dlCount > 0): ?>
-                                       · <i class="ti ti-download" style="font-size: 0.85em;"></i> <?php echo number_format($dlCount, 0, '', '.'); ?> <?php echo __('instalações', 'nextool'); ?>
+                                       · <i class="ti ti-download" style="font-size: 0.85em;"></i> <?php echo number_format($dlCount, 0, '', '.'); ?>
                                     <?php else: ?>
                                        · <span class="text-info"><?php echo __('Novo', 'nextool'); ?></span>
                                     <?php endif; ?>

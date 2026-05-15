@@ -79,7 +79,7 @@ function nextoolBuildModuleRedirectUrl(string $returnTab, string $moduleFilter =
    return Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?' . http_build_query($params);
 }
 
-if (in_array($action, ['install', 'uninstall', 'enable', 'disable', 'update', 'download'], true)) {
+if (in_array($action, ['install', 'uninstall', 'enable', 'disable', 'update', 'download', 'redownload'], true)) {
    if (!PluginNextoolPermissionManager::canManageModule($moduleKey)) {
       http_response_code(403);
       echo json_encode([
@@ -109,7 +109,7 @@ require_once GLPI_ROOT . '/plugins/nextool/inc/nextoolmainconfig.class.php';
 $manager = PluginNextoolModuleManager::getInstance();
 
 // Limpa cache de módulos apenas quando há impacto em arquivos/estrutura local.
-$actionsThatResetModuleCache = ['download', 'purge_data'];
+$actionsThatResetModuleCache = ['download', 'purge_data', 'redownload'];
 if (in_array($action, $actionsThatResetModuleCache, true)) {
    $manager->clearCache();
    $manager->refreshModules();
@@ -185,6 +185,9 @@ switch ($action) {
       break;
    case 'update':
       $result = $manager->updateModule($moduleKey);
+      break;
+   case 'redownload':
+      $result = $manager->redownloadModule($moduleKey);
       break;
 }
 

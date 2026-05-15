@@ -160,6 +160,30 @@ class PluginNextoolModuleCardHelper {
          if ($state['show_config_button'] && strpos($primary, 'ti-settings') === false) {
             $secondary[] = self::renderDropdownItem(__('Configurações', 'nextool'), 'ti ti-settings', $state['config_url']);
          }
+
+      }
+
+      // Re-baixar: disponivel apenas quando desinstalado (arquivos podem existir no disco)
+      if (!$state['is_installed'] && !empty($state['distribution_configured'])) {
+         $secondary[] = self::renderDropdownAction(
+            $state,
+            'redownload',
+            __('Re-baixar', 'nextool'),
+            'ti ti-cloud-download',
+            false,
+            __('Os arquivos do módulo serão substituídos por uma versão fresca do servidor. Dados do banco serão preservados.', 'nextool')
+         );
+      }
+
+      // Links externos: Saiba Mais e Changelogs
+      if (!empty($state['website_url'])) {
+         $secondary[] = self::renderDropdownItem(__('Saiba Mais', 'nextool'), 'ti ti-external-link', $state['website_url'], true);
+      }
+      $moduleKey = $state['module_key'] ?? '';
+      if ($moduleKey !== '') {
+         $changelogUrl = 'https://github.com/NexTools-Solutions/nextool/releases?q='
+            . urlencode('Etiqueta: modulo:' . $moduleKey . '[GLPI_11]');
+         $secondary[] = self::renderDropdownItem(__('Changelogs', 'nextool'), 'ti ti-history', $changelogUrl, true);
       }
 
       // Dados (purge/view) vao no dropdown

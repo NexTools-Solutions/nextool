@@ -288,9 +288,11 @@ foreach ($allModuleKeys as $moduleKey) {
    $moduleCanManage = PluginNextoolPermissionManager::canManageModule($moduleKey);
    $moduleCanPurge = PluginNextoolPermissionManager::canPurgeModuleDataForModule($moduleKey);
 
-   // Ordenação: 1=Atualização disponível, 2=Ativos, 3=Instalados, 4=Disponível para instalar,
-   // 5=Bloqueados, 6=Disponível para download (sempre por último)
-   $sortGroup = 5;
+   // Ordenação por grupo de estado:
+   // 1=Update disponível, 2=Ativos, 3=Instalados, 4=Disponível para instalar,
+   // 5=Vitrine PAID (sem licença), 6=Disponível para download (FREE), 7=Bloqueados
+   // Módulos novos (<30 dias, não instalados) recebem grupo 0 (aparecem primeiro)
+   $sortGroup = 7; // default: bloqueados/edge cases
    if (!empty($updateAvailable)) {
       $sortGroup = 1;
    } elseif ($isEnabled && $moduleDownloaded) {
@@ -298,15 +300,29 @@ foreach ($allModuleKeys as $moduleKey) {
    } elseif ($isInstalled && $moduleDownloaded) {
       $sortGroup = 3;
    } elseif ($canUseModule && $moduleDownloaded) {
-      $sortGroup = 4;  // Pronto para instalar
+      $sortGroup = 4;
+   } elseif ($isPaid && !$canUseModule && $requiresRemoteDownload) {
+      $sortGroup = 5; // Vitrine PAID: sem licença, botão "Licenciar" visível
    } elseif ($canUseModule && $requiresRemoteDownload) {
-      $sortGroup = 6;  // Precisa baixar primeiro (sempre por último)
+      $sortGroup = 6; // FREE disponível para download
+   }
+
+   // Módulos novos (<30 dias) não instalados vão para o topo
+   $isNewModule = false;
+   $catalogCreation = $meta['date_creation'] ?? null;
+   if ($catalogCreation !== null && !$isInstalled && $sortGroup >= 4) {
+      $daysSinceCreation = (int) ((time() - strtotime($catalogCreation)) / 86400);
+      if ($daysSinceCreation <= 30) {
+         $isNewModule = true;
+         $sortGroup = 0;
+      }
    }
 
    $modulesState[] = [
       'module_key'        => $moduleKey,
       'name'              => $meta['name'] ?? $moduleKey,
       '_sort_group'       => $sortGroup,
+      '_is_new'           => $isNewModule,
       'description'       => $meta['description'] ?? __('Descrição não fornecida.', 'nextool'),
       'version'           => $isInstalled && $installedVersion ? $installedVersion : $availableVersion,
       'installed_version' => $installedVersion,
@@ -365,16 +381,33 @@ foreach ($allModuleKeys as $moduleKey) {
          'can_view_module'         => $moduleCanView,
          'is_license_suspended'    => $isSuspended,
          'has_zip_extension'       => $hasZipExtension,
+         'website_url'             => $meta['website_url'] ?? null,
       ]),
    ];
 }
 
 usort($modulesState, static function ($a, $b) {
-   $ga = $a['_sort_group'] ?? 6;
-   $gb = $b['_sort_group'] ?? 6;
+   // 1. Grupo de estado (menor = mais prioritário)
+   $ga = $a['_sort_group'] ?? 7;
+   $gb = $b['_sort_group'] ?? 7;
    if ($ga !== $gb) {
       return $ga <=> $gb;
    }
+   // 2. Dentro do mesmo grupo: PAID antes de FREE (nos grupos de descoberta)
+   if ($ga >= 4) {
+      $pa = ($a['is_paid'] ?? false) ? 0 : 1;
+      $pb = ($b['is_paid'] ?? false) ? 0 : 1;
+      if ($pa !== $pb) {
+         return $pa <=> $pb;
+      }
+   }
+   // 3. Downloads DESC como desempate
+   $da = (int) ($a['download_count'] ?? 0);
+   $db = (int) ($b['download_count'] ?? 0);
+   if ($da !== $db) {
+      return $db <=> $da;
+   }
+   // 4. Nome como fallback final
    return strcasecmp($a['name'] ?? '', $b['name'] ?? '');
 });
 

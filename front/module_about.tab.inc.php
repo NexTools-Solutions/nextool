@@ -19,7 +19,7 @@ if (!defined('GLPI_ROOT')) {
 
 $moduleKey = $GLOBALS['nextool_about_module_key'] ?? '';
 if ($moduleKey === '') {
-   echo '<div class="alert alert-warning m-3">Módulo não identificado.</div>';
+   echo __('<div class="alert alert-warning m-3">Módulo não identificado.</div>', 'nextool');
    return;
 }
 

@@ -58,8 +58,8 @@ if (empty($moduleKey) || empty($filename)) {
    header('Content-Type: application/json; charset=UTF-8');
    echo json_encode([
       'error' => true,
-      'title' => 'Parâmetros inválidos',
-      'message' => 'Módulo e arquivo são obrigatórios. Use: module_ajax.php/[module]/[file] ou module_ajax.php?module=[nome]&file=[arquivo]'
+      'title' => __('Parâmetros inválidos', 'nextool'),
+      'message' => __('Módulo e arquivo são obrigatórios. Use: module_ajax.php/[module]/[file] ou module_ajax.php?module=[nome]&file=[arquivo]', 'nextool')
    ]);
    exit;
 }
@@ -77,8 +77,8 @@ if (!file_exists($filePath)) {
    header('Content-Type: application/json; charset=UTF-8');
    echo json_encode([
       'error' => true,
-      'title' => 'Item não encontrado',
-      'message' => 'Recurso não encontrado.',
+      'title' => __('Item não encontrado', 'nextool'),
+      'message' => __('Recurso não encontrado.', 'nextool'),
    ]);
    exit;
 }
@@ -90,8 +90,8 @@ if ($extension !== 'php') {
    header('Content-Type: application/json; charset=UTF-8');
    echo json_encode([
       'error' => true,
-      'title' => 'Tipo inválido',
-      'message' => 'Apenas arquivos PHP são permitidos'
+      'title' => __('Tipo inválido', 'nextool'),
+      'message' => __('Apenas arquivos PHP são permitidos', 'nextool')
    ]);
    exit;
 }

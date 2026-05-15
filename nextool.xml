@@ -3,7 +3,7 @@
     <name>NexTool Solutions</name>
     <key>nextool</key>
     <state>stable</state>
-    <logo>https://raw.githubusercontent.com/RPGMais/nextool/main/logo_nextools.png</logo>
+    <logo>https://raw.githubusercontent.com/NexTools-Solutions/nextool/main/logo_nextools.png</logo>
     <description>
         <short>
             <en_US>Modular platform for GLPI 11 with AI-powered ticket analysis, digital signatures, email interactions, automatic assignment, and survey management. Core is self-contained; optional modules are downloaded only when the administrator chooses Download/Install in the catalog (HTTPS, SHA256).</en_US>
@@ -101,9 +101,9 @@ Cada módulo puede ser instalado, activado y configurado de forma independiente.
         </long>
     </description>
     <homepage>https://nextoolsolutions.ai</homepage>
-    <download>https://github.com/RPGMais/nextool/releases</download>
-    <issues>https://github.com/RPGMais/nextool/issues</issues>
-    <readme>https://raw.githubusercontent.com/RPGMais/nextool/main/README.md</readme>
+    <download>https://github.com/NexTools-Solutions/nextool/releases</download>
+    <issues>https://github.com/NexTools-Solutions/nextool/issues</issues>
+    <readme>https://raw.githubusercontent.com/NexTools-Solutions/nextool/main/README.md</readme>
     <authors>
         <author>Richard Loureiro</author>
     </authors>
@@ -111,7 +111,7 @@ Cada módulo puede ser instalado, activado y configurado de forma independiente.
         <version>
             <num>4.0.1</num>
             <compatibility>~11.0.0</compatibility>
-            <download_url>https://github.com/RPGMais/nextool/releases/tag/v4.0.1</download_url>
+            <download_url>https://github.com/NexTools-Solutions/nextool/releases/tag/v4.0.1</download_url>
         </version>
     </versions>
     <langs>
@@ -180,7 +180,7 @@ Cada módulo puede ser instalado, activado y configurado de forma independiente.
         </es_ES>
     </tags>
     <screenshots>
-        <screenshot>https://raw.githubusercontent.com/RPGMais/nextool/main/pics/nextool-modules.png</screenshot>
-        <screenshot>https://raw.githubusercontent.com/RPGMais/nextool/main/pics/nextool-config.png</screenshot>
+        <screenshot>https://raw.githubusercontent.com/NexTools-Solutions/nextool/main/pics/nextool-modules.png</screenshot>
+        <screenshot>https://raw.githubusercontent.com/NexTools-Solutions/nextool/main/pics/nextool-config.png</screenshot>
     </screenshots>
 </root>

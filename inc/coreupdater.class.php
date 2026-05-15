@@ -59,7 +59,7 @@ class PluginNextoolCoreUpdater {
                'source' => $source,
                'current_version' => $currentVersion,
                'target_version' => null,
-               'message' => 'Nenhuma release compatível encontrada.',
+               'message' => __('Nenhuma release compatível encontrada.', 'nextool'),
                'duration_ms' => (int)round((microtime(true) - $started) * 1000),
                'details' => ['channel' => $channel],
             ]);
@@ -532,7 +532,7 @@ class PluginNextoolCoreUpdater {
             'source' => $source,
             'current_version' => $currentVersion,
             'target_version' => $targetVersion,
-            'message' => 'Prepare concluído com staging publicado.',
+            'message' => __('Prepare concluído com staging publicado.', 'nextool'),
             'duration_ms' => (int)round((microtime(true) - $started) * 1000),
             'details' => [
                'channel' => $channel,
@@ -623,7 +623,7 @@ class PluginNextoolCoreUpdater {
             'source' => $source,
             'current_version' => $applyResult['data']['previous_version'] ?? null,
             'target_version' => $manifest['version'] ?? null,
-            'message' => 'Apply concluído com sucesso.',
+            'message' => __('Apply concluído com sucesso.', 'nextool'),
             'duration_ms' => (int)round((microtime(true) - $started) * 1000),
             'details' => ['state' => $applyResult['data']['final_state'] ?? null],
          ]);
