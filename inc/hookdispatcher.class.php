@@ -192,6 +192,24 @@ class PluginNextoolHookDispatcher {
       return $item;
    }
 
+   /**
+    * Dispatcher para item_update['nextool']['TicketTask'].
+    */
+   public static function dispatchItemUpdateTicketTask(CommonDBTM $item) {
+      foreach (self::$itemUpdate['TicketTask'] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_update TicketTask: %s - %s',
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
    // ========================================
    // POST SHOW ITEM (timeline separator, etc.)
    // ========================================
