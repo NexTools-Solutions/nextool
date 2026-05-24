@@ -29,6 +29,9 @@ class PluginNextoolHookDispatcher {
    /** @var array[] itemUpdate[itemType] = [ [class, method], ... ] */
    private static $itemUpdate = [];
 
+   /** @var array[] postShowItem[itemType] = [ [class, method], ... ] */
+   private static $postShowItem = [];
+
    /**
     * Registra callback para pre_item_add.
     *
@@ -186,5 +189,109 @@ class PluginNextoolHookDispatcher {
          }
       }
       return $item;
+   }
+
+   /**
+    * Dispatcher para item_update['nextool']['TicketTask'].
+    * Port GLPI 11: 5983240.
+    */
+   public static function dispatchItemUpdateTicketTask(CommonDBTM $item) {
+      foreach (self::$itemUpdate['TicketTask'] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_update TicketTask: %s - %s',
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
+   // ========================================
+   // ITILFollowup
+   // ========================================
+
+   /**
+    * Dispatcher para item_add['nextool']['ITILFollowup'].
+    * Port GLPI 11: e248c1f.
+    */
+   public static function dispatchItemAddITILFollowup(CommonDBTM $item) {
+      foreach (self::$itemAdd['ITILFollowup'] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_add ITILFollowup: %s - %s',
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
+   // ========================================
+   // ITILSolution
+   // ========================================
+
+   /**
+    * Dispatcher para item_add['nextool']['ITILSolution'].
+    * Port GLPI 11: e248c1f.
+    */
+   public static function dispatchItemAddITILSolution(CommonDBTM $item) {
+      foreach (self::$itemAdd['ITILSolution'] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_add ITILSolution: %s - %s',
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
+   // ========================================
+   // POST SHOW ITEM (timeline separator, etc.)
+   // ========================================
+
+   /**
+    * Registra callback para post_show_item.
+    * Port GLPI 11: 7c9a403.
+    *
+    * @param string $itemType Ex.: 'Ticket', 'Change', 'Problem'
+    * @param array  $callback [className, methodName]
+    */
+   public static function registerPostShowItem(string $itemType, array $callback): void {
+      if (!isset(self::$postShowItem[$itemType])) {
+         self::$postShowItem[$itemType] = [];
+      }
+      self::$postShowItem[$itemType][] = $callback;
+   }
+
+   /**
+    * Dispatcher generico para post_show_item.
+    * Chamado pelo hook post_show_item registrado no setup.php.
+    *
+    * @param string $itemType Ex.: 'Ticket'
+    * @param array  $params   Parametros do hook GLPI
+    */
+   public static function dispatchPostShowItem(string $itemType, array $params): void {
+      foreach (self::$postShowItem[$itemType] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $params);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] post_show_item %s: %s',
+               $itemType,
+               $e->getMessage()
+            ));
+         }
+      }
    }
 }

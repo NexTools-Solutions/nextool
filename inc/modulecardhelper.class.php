@@ -44,6 +44,22 @@ class PluginNextoolModuleCardHelper {
          return $out . self::wrapDropdown($secondary);
       }
 
+      // Módulo incompatível com a versão atual do GLPI: aparece no catálogo
+      // (para o cliente conhecer o ecossistema), mas sem botões de instalação.
+      // Dropdown mantém Saiba Mais + Changelogs apontando para a plataforma onde
+      // o módulo realmente existe (primeira major do compat_glpi_majors).
+      if (!self::isCompatibleWithCurrentGlpi($state)) {
+         $compatLabel = self::resolveCompatLabel($state);
+         $primary = '<span class="badge bg-warning text-dark me-1" title="' .
+            Html::entities_deep(__('Este módulo não suporta sua versão do GLPI', 'nextool')) . '">' .
+            '<i class="ti ti-alert-triangle me-1"></i>' .
+            Html::entities_deep($compatLabel) .
+            '</span>';
+         $secondary = [];
+         self::appendExternalLinksForCompat($state, $secondary);
+         return $primary . self::wrapDropdown($secondary);
+      }
+
       if (!$state['has_validated_plan']) {
          $out = self::renderBadge(__('Plano não validado. Solicite a um administrador para realizar este passo.', 'nextool'));
          $secondary = [];
@@ -160,12 +176,93 @@ class PluginNextoolModuleCardHelper {
          if ($state['show_config_button'] && strpos($primary, 'ti-settings') === false) {
             $secondary[] = self::renderDropdownItem(__('Configurações', 'nextool'), 'ti ti-settings', $state['config_url']);
          }
+
+      }
+
+      // Re-baixar: disponivel apenas quando desinstalado (arquivos podem existir no disco)
+      if (!$state['is_installed'] && !empty($state['distribution_configured'])) {
+         $secondary[] = self::renderDropdownAction(
+            $state,
+            'redownload',
+            __('Re-baixar', 'nextool'),
+            'ti ti-cloud-download',
+            false,
+            __('Os arquivos do módulo serão substituídos por uma versão fresca do servidor. Dados do banco serão preservados.', 'nextool')
+         );
+      }
+
+      // Links externos: Saiba Mais e Changelogs
+      if (!empty($state['website_url'])) {
+         $secondary[] = self::renderDropdownItem(__('Saiba Mais', 'nextool'), 'ti ti-external-link', $state['website_url'], true);
+      }
+      $moduleKey = $state['module_key'] ?? '';
+      if ($moduleKey !== '') {
+         $changelogUrl = 'https://github.com/NexTools-Solutions/nextool/releases?q='
+            . urlencode('Etiqueta: modulo:' . $moduleKey . '[GLPI_10]');
+         $secondary[] = self::renderDropdownItem(__('Changelogs', 'nextool'), 'ti ti-history', $changelogUrl, true);
       }
 
       // Dados (purge/view) vao no dropdown
       self::appendDataItems($state, $secondary);
 
       return $primary . self::wrapDropdown($secondary);
+   }
+
+   /**
+    * Verifica se o módulo é compatível com a versão atual do GLPI a partir do
+    * CSV compat_glpi_majors. Quando o campo está vazio (catálogo antigo sem
+    * platforms), assume compatibilidade — fallback retrocompat.
+    */
+   private static function isCompatibleWithCurrentGlpi(array $state): bool {
+      $csv = isset($state['compat_glpi_majors']) ? trim((string) $state['compat_glpi_majors']) : '';
+      if ($csv === '') {
+         return true;
+      }
+      $list = array_filter(array_map('trim', explode(',', $csv)));
+      if (empty($list)) {
+         return true;
+      }
+      $currentMajor = (string) (int) explode('.', GLPI_VERSION)[0];
+      return in_array($currentMajor, $list, true);
+   }
+
+   /**
+    * Resolve a primeira major compatível do módulo a partir do CSV.
+    */
+   private static function resolveFirstCompatMajor(array $state): ?string {
+      $csv = isset($state['compat_glpi_majors']) ? trim((string) $state['compat_glpi_majors']) : '';
+      $list = array_filter(array_map('trim', explode(',', $csv)));
+      return $list ? (string) reset($list) : null;
+   }
+
+   /**
+    * Dropdown items para card de módulo incompatível: Saiba Mais + Changelogs
+    * apontando para a major correta.
+    */
+   private static function appendExternalLinksForCompat(array $state, array &$items): void {
+      if (!empty($state['website_url'])) {
+         $items[] = self::renderDropdownItem(__('Saiba Mais', 'nextool'), 'ti ti-external-link', $state['website_url'], true);
+      }
+      $moduleKey = $state['module_key'] ?? '';
+      $major = self::resolveFirstCompatMajor($state);
+      if ($moduleKey !== '' && $major !== null) {
+         $changelogUrl = 'https://github.com/NexTools-Solutions/nextool/releases?q='
+            . urlencode('Etiqueta: modulo:' . $moduleKey . '[GLPI_' . $major . ']');
+         $items[] = self::renderDropdownItem(__('Changelogs', 'nextool'), 'ti ti-history', $changelogUrl, true);
+      }
+   }
+
+   /**
+    * Constrói o label "Disponível apenas para GLPI X".
+    */
+   private static function resolveCompatLabel(array $state): string {
+      $csv = isset($state['compat_glpi_majors']) ? trim((string) $state['compat_glpi_majors']) : '';
+      $list = array_filter(array_map('trim', explode(',', $csv)));
+      if (empty($list)) {
+         return __('Não disponível para sua versão do GLPI', 'nextool');
+      }
+      $labels = array_map(fn($v) => 'GLPI ' . $v, $list);
+      return sprintf(__('Disponível apenas para %s', 'nextool'), implode(' / ', $labels));
    }
 
    private static function appendDataItems(array $state, array &$items): void {
@@ -189,7 +286,7 @@ class PluginNextoolModuleCardHelper {
          return '';
       }
       return '<div class="dropdown d-inline-block">'
-         . '<button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-toggle="dropdown" aria-expanded="false">'
+         . '<button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">'
          . '<i class="ti ti-dots"></i></button>'
          . '<ul class="dropdown-menu dropdown-menu-end">'
          . implode('', $items)

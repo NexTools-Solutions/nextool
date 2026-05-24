@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.0.3');
+define('PLUGIN_NEXTOOL_VERSION', '4.1.0');
 
 /** GLPI mínimo e máximo suportados */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -148,7 +148,6 @@ function plugin_init_nextool() {
       $PLUGIN_HOOKS['use_massive_action']['nextool'] = 1;
    }
 
-   Toolbox::logInFile('plugin_nextool', "[DEBUG] [Setup] Plugin nextool carregando (ativado)\n");
 
    // Gera e persiste o Identificador do Cliente no momento em que o plugin é carregado (ativado)
    // em vez de depender apenas da primeira leitura preguiçosa da configuração.
@@ -285,6 +284,26 @@ function plugin_init_nextool() {
                   'PluginNextoolHookDispatcher',
                   'dispatchItemAddTicketTask'
                ];
+               // Port GLPI 11: 5983240 -- dispatcher item_update para TicketTask
+               $PLUGIN_HOOKS['item_update']['nextool']['TicketTask'] = [
+                  'PluginNextoolHookDispatcher',
+                  'dispatchItemUpdateTicketTask'
+               ];
+               // Port GLPI 11: e248c1f -- dispatchers ITILFollowup e ITILSolution
+               $PLUGIN_HOOKS['item_add']['nextool']['ITILFollowup'] = [
+                  'PluginNextoolHookDispatcher',
+                  'dispatchItemAddITILFollowup'
+               ];
+               $PLUGIN_HOOKS['item_add']['nextool']['ITILSolution'] = [
+                  'PluginNextoolHookDispatcher',
+                  'dispatchItemAddITILSolution'
+               ];
+               // Port GLPI 11: 7c9a403 -- dispatch post_show_item generico
+               $PLUGIN_HOOKS['post_show_item']['nextool'] = function ($params) {
+                  $item = $params['item'] ?? null;
+                  if (!is_object($item)) { return; }
+                  PluginNextoolHookDispatcher::dispatchPostShowItem(get_class($item), $params);
+               };
             }
 
             // Registra menus de módulos ativos via getMenuRegistration()

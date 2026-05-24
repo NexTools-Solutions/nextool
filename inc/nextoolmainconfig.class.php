@@ -25,6 +25,32 @@ class PluginNextoolMainConfig extends CommonDBTM {
 
    static $rightname = 'config';
 
+   // O $rightname='config' acima cobre o bypass de admin global (config UPDATE).
+   // Para perfis customizados com permissões granulares do plugin, os métodos
+   // can*() abaixo delegam ao PermissionManager — caso contrário CommonDBTM::can()
+   // exigiria config/READ e bloquearia qualquer perfil não-admin no display().
+   public static function canView(): bool {
+      return PluginNextoolPermissionManager::canViewAnyModule()
+          || PluginNextoolPermissionManager::canAccessAdminTabs();
+   }
+
+   public static function canCreate(): bool {
+      return PluginNextoolPermissionManager::canManageAdminTabs();
+   }
+
+   public static function canUpdate(): bool {
+      return PluginNextoolPermissionManager::canManageAdminTabs()
+          || PluginNextoolPermissionManager::canManageModules();
+   }
+
+   public static function canDelete(): bool {
+      return PluginNextoolPermissionManager::canManageAdminTabs();
+   }
+
+   public static function canPurge(): bool {
+      return PluginNextoolPermissionManager::canManageAdminTabs();
+   }
+
    const CONFIG_ID = 1;
 
    /** Tabs fixos (1-4): Módulos, Contato, Licenciamento, Logs */

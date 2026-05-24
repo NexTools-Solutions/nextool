@@ -35,6 +35,20 @@ if (!is_file($prefClassPath)) {
 }
 require_once $prefClassPath;
 
+$action = isset($_REQUEST['action']) ? trim((string) $_REQUEST['action']) : '';
+
+if ($action === 'toggle' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+   $newState = PluginNextoolColumnresizeUserPref::toggleForCurrentUser();
+   echo json_encode(['ok' => true, 'enabled' => $newState]);
+   exit;
+}
+
+if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+   $enabled = PluginNextoolColumnresizeUserPref::isEnabledForCurrentUser();
+   echo json_encode(['enabled' => $enabled]);
+   exit;
+}
+
 $path = isset($_REQUEST['path']) ? trim((string) $_REQUEST['path']) : '';
 if ($path === '' || strpos($path, '..') !== false) {
    http_response_code(400);
@@ -44,14 +58,16 @@ if ($path === '' || strpos($path, '..') !== false) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
    $data = PluginNextoolColumnresizeUserPref::getForCurrentUser($path);
+   $enabled = PluginNextoolColumnresizeUserPref::isEnabledForCurrentUser();
    if ($data === null) {
-      echo json_encode(['widths' => null, 'reduceState' => null]);
+      echo json_encode(['widths' => null, 'reduceState' => null, 'enabled' => $enabled]);
       exit;
    }
 
    echo json_encode([
       'widths'      => $data['widths'],
       'reduceState' => $data['reduceState'],
+      'enabled'     => $enabled,
    ]);
    exit;
 }

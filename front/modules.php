@@ -62,12 +62,13 @@ if (!file_exists($filePath)) {
 // Verifica extensão do arquivo
 $extension = pathinfo($filename, PATHINFO_EXTENSION);
 
-// Arquivos CSS/JS (.css.php, .js.php) — servidos diretamente SEM incluir o HTML do GLPI
+// Arquivos CSS/JS (.css.php, .js.php) — servidos diretamente SEM o HTML do GLPI,
+// mas exigem sessão autenticada (mesmo padrão de module_assets.php).
 if (preg_match('/\.(css|js)\.php$/', $filename)) {
-   
-   // Para arquivos CSS/JS, não inclui includes.php (evita headers HTML)
-   // Carrega o arquivo diretamente (ele já define seus próprios headers)
-   // Usa output buffering para garantir que nenhum output anterior interfira
+   require_once GLPI_ROOT . '/inc/includes.php';
+   Session::checkLoginUser();
+
+   // Output buffering para isolar o conteúdo emitido pelo arquivo do módulo
    ob_start();
    include($filePath);
    ob_end_flush();

@@ -21,8 +21,11 @@ if (!defined('GLPI_ROOT')) {
 
 require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
+require_once GLPI_ROOT . '/plugins/nextool/inc/hmacsignaturetrait.class.php';
 
 class PluginNextoolDistributionClient {
+
+   use PluginNextoolHmacSignatureTrait;
 
    public function __construct(
       private string $baseUrl,
@@ -246,15 +249,10 @@ class PluginNextoolDistributionClient {
         throw new RuntimeException(__('Falha ao montar payload de manifesto.', 'nextool'));
       }
 
-      $timestamp = (string) time();
-      $signature = $this->generateSignature($body, $timestamp);
-
-      $requestHeaders = [
-         'Content-Type: application/json',
-         'X-Client-Identifier: ' . $this->clientIdentifier,
-         'X-Timestamp: ' . $timestamp,
-         'X-Signature: ' . $signature,
-      ];
+      $requestHeaders = array_merge(
+         ['Content-Type: application/json'],
+         self::buildHmacHeadersV2($this->clientIdentifier, '/api/distribution/install-request', $body, $this->clientSecret)
+      );
       if (!isset($GLOBALS['nextool_request_group_id'])) {
          require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
@@ -466,18 +464,13 @@ class PluginNextoolDistributionClient {
          throw new RuntimeException(__('Falha ao montar payload do formulário de contato.', 'nextool'));
       }
 
-      $timestamp = (string) time();
-      $signature = $this->generateSignature($body, $timestamp);
-
       $response = $this->performRequest($this->baseUrl . '/api/contact/leads', [
          'method' => 'POST',
          'body' => $body,
-         'headers' => [
-            'Content-Type: application/json',
-            'X-Client-Identifier: ' . $this->clientIdentifier,
-            'X-Timestamp: ' . $timestamp,
-            'X-Signature: ' . $signature,
-         ],
+         'headers' => array_merge(
+            ['Content-Type: application/json'],
+            self::buildHmacHeadersV2($this->clientIdentifier, '/api/contact/leads', $body, $this->clientSecret)
+         ),
          'timeout' => 60,
       ]);
 
@@ -496,9 +489,6 @@ class PluginNextoolDistributionClient {
       return $data;
    }
 
-   private function generateSignature(string $body, string $timestamp): string {
-      return hash_hmac('sha256', $body . '|' . $timestamp, $this->clientSecret);
-   }
 
    /**
     * Obtém o domínio do servidor para envio ao ContainerAPI (identificação do ambiente).
@@ -707,15 +697,10 @@ class PluginNextoolDistributionClient {
          return ['error' => 'JSON encode failed'];
       }
 
-      $timestamp = (string) time();
-      $signature = hash_hmac('sha256', $payload . '|' . $timestamp, $clientSecret);
-
-      $headers = [
-         'Content-Type: application/json',
-         'X-Client-Identifier: ' . $clientIdentifier,
-         'X-Timestamp: ' . $timestamp,
-         'X-Signature: ' . $signature,
-      ];
+      $headers = array_merge(
+         ['Content-Type: application/json'],
+         self::buildHmacHeadersV2($clientIdentifier, '/api/billing/checkout-session', $payload, $clientSecret)
+      );
 
       if (!isset($GLOBALS['nextool_request_group_id'])) {
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();

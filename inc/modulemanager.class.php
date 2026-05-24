@@ -58,6 +58,12 @@ class PluginNextoolModuleManager {
    /** @var int Tempo de expiração do cache em segundos (1 hora) */
    private $cacheExpiration = 3600;
 
+   /** @var string[] Modulos em modo legado (sem module.json) */
+   private $legacyModules = [];
+
+   /** @var array<string, string> Modulos bloqueados por manifesto + motivo */
+   private $blockedModules = [];
+
    /**
     * Cache local de tabelas descobertas via BaseModule::getDataTables().
     * Populado sob demanda por getModuleDataTables().
@@ -144,6 +150,16 @@ class PluginNextoolModuleManager {
              continue;
           }
 
+          // Guard de compatibilidade: valida module.json antes de carregar PHP
+          $manifestCheck = $this->validateModuleManifest($moduleKey, $dir);
+          if ($manifestCheck['status'] === 'blocked') {
+             $this->blockedModules[$moduleKey] = $manifestCheck['message'];
+             continue;
+          }
+          if ($manifestCheck['status'] === 'legacy') {
+             $this->legacyModules[] = $moduleKey;
+          }
+
           require_once $classFile;
           $className = 'PluginNextool' . ucfirst($moduleKey);
 
@@ -156,6 +172,11 @@ class PluginNextoolModuleManager {
              $this->modules[$moduleKey] = $module;
           }
       }
+
+      // Sincronizar banco.version com disco quando divergente (módulos instalados).
+      // Evita botão "Atualizar" visível em estado coerente onde o disco já está na
+      // versão alvo mas o banco ficou desatualizado (redeploy, FTP, install manual).
+      $this->syncInstalledVersionsFromDisk();
 
       // Salva no cache
       $this->saveCache();
@@ -548,10 +569,21 @@ class PluginNextoolModuleManager {
       if ($result) {
          // Remove dos módulos carregados
          unset($this->loadedModules[$moduleKey]);
-         
+
          // Limpa cache de memória para forçar recarregamento
          // Cache de arquivo permanece (módulos não mudaram)
          $this->modules = [];
+
+         // Port GLPI 11 (7250e76): desabilitar cron tasks do módulo para evitar
+         // erro "função indefinida" quando o GLPI tenta executar cron de módulo
+         // desabilitado cujo arquivo de classe não é carregado.
+         $cronIterator = $DB->request([
+            'FROM'  => 'glpi_crontasks',
+            'WHERE' => ['itemtype' => ['LIKE', 'PluginNextool' . ucfirst($moduleKey) . '%']]
+         ]);
+         foreach ($cronIterator as $cronRow) {
+            $DB->update('glpi_crontasks', ['state' => 0], ['id' => $cronRow['id']]);
+         }
 
          $module->onDisable();
          
@@ -589,6 +621,106 @@ class PluginNextoolModuleManager {
       }
 
       return true;
+   }
+
+   /**
+    * Valida module.json para compatibilidade de versao GLPI.
+    *
+    * Fase 1:
+    * - module.json presente + glpi_major errado -> blocked
+    * - module.json presente + correto -> ok
+    * - module.json ausente -> legacy (warning, ainda carrega)
+    *
+    * @param string $moduleKey
+    * @param string $moduleDir Caminho fisico do diretorio do modulo
+    * @return array
+    */
+   private function validateModuleManifest($moduleKey, $moduleDir) {
+      $manifestPath = $moduleDir . '/module.json';
+
+      if (!file_exists($manifestPath)) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            '[ModuleManifest] LEGACY %s: module.json ausente. Atualize o modulo.',
+            $moduleKey
+         ));
+         return ['status' => 'legacy', 'message' => null];
+      }
+
+      $content = @file_get_contents($manifestPath);
+      if ($content === false) {
+         return ['status' => 'blocked', 'message' => 'Falha ao ler module.json'];
+      }
+
+      $manifest = json_decode($content, true);
+      if (!is_array($manifest)) {
+         return ['status' => 'blocked', 'message' => 'module.json invalido (JSON malformado)'];
+      }
+
+      $currentGlpiMajor = (int) explode('.', GLPI_VERSION)[0];
+
+      if (isset($manifest['glpi_major'])) {
+         if ((int) $manifest['glpi_major'] !== $currentGlpiMajor) {
+            $msg = sprintf(
+               'Modulo construido para GLPI %d, mas este ambiente e GLPI %d',
+               (int) $manifest['glpi_major'],
+               $currentGlpiMajor
+            );
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[ModuleManifest] BLOCKED %s: %s',
+               $moduleKey,
+               $msg
+            ));
+            return ['status' => 'blocked', 'message' => $msg];
+         }
+      }
+
+      if (isset($manifest['min_plugin_version']) && defined('PLUGIN_NEXTOOL_VERSION')) {
+         if (version_compare(PLUGIN_NEXTOOL_VERSION, $manifest['min_plugin_version'], '<')) {
+            $msg = sprintf(
+               'Requer NexTool >= %s, versao atual %s',
+               $manifest['min_plugin_version'],
+               PLUGIN_NEXTOOL_VERSION
+            );
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[ModuleManifest] BLOCKED %s: %s',
+               $moduleKey,
+               $msg
+            ));
+            return ['status' => 'blocked', 'message' => $msg];
+         }
+      }
+
+      if (isset($manifest['module_key']) && $manifest['module_key'] !== $moduleKey) {
+         $msg = sprintf(
+            'module_key no manifesto (%s) difere do esperado (%s)',
+            $manifest['module_key'],
+            $moduleKey
+         );
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            '[ModuleManifest] BLOCKED %s: %s',
+            $moduleKey,
+            $msg
+         ));
+         return ['status' => 'blocked', 'message' => $msg];
+      }
+
+      return ['status' => 'ok', 'message' => null];
+   }
+
+   /**
+    * Retorna modulos em modo legado (sem module.json).
+    * @return array
+    */
+   public function getLegacyModules() {
+      return $this->legacyModules;
+   }
+
+   /**
+    * Retorna modulos bloqueados por incompatibilidade de manifesto.
+    * @return array module_key => motivo
+    */
+   public function getBlockedModules() {
+      return $this->blockedModules;
    }
 
    /**
@@ -758,6 +890,75 @@ class PluginNextoolModuleManager {
       ];
    }
 
+   /**
+    * Substitui arquivos do modulo no disco sem tocar no banco de dados.
+    * Baixa versao fresca do ContainerAPI (validacao completa: HMAC, licenca, entitlement).
+    * Tabelas e dados do modulo sao preservados.
+    *
+    * @param string $moduleKey
+    * @return array
+    */
+   public function redownloadModule($moduleKey) {
+      global $DB;
+
+      $action = 'redownload';
+      $baseContext = [
+         'origin'            => 'module_redownload',
+         'requested_modules' => [$moduleKey],
+      ];
+
+      $row = $this->getModuleRow($moduleKey);
+      if ($row === null) {
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            __('Módulo não encontrado no catálogo.', 'nextool'), $baseContext);
+      }
+
+      $wasEnabled = (bool) ($row['is_enabled'] ?? 0);
+
+      if ($wasEnabled) {
+         $module = $this->getModule($moduleKey);
+         if ($module !== null) {
+            $module->onDisable();
+         }
+      }
+
+      if ($this->moduleDirectoryExists($moduleKey)) {
+         $this->deleteModuleDirectory($moduleKey);
+      }
+
+      $download = $this->downloadModuleFromDistribution($moduleKey);
+      if (!$download['success']) {
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            $download['message'], $baseContext);
+      }
+
+      $this->blockedModules = [];
+      $this->legacyModules = [];
+      $this->discoverModules(true);
+
+      $newModule = $this->getModule($moduleKey);
+      if ($newModule !== null) {
+         $DB->update(
+            'glpi_plugin_nextool_main_modules',
+            [
+               'version'  => $newModule->getVersion(),
+               'date_mod' => date('Y-m-d H:i:s'),
+            ],
+            ['module_key' => $moduleKey]
+         );
+
+         if ($wasEnabled) {
+            $newModule->onEnable();
+         }
+      }
+
+      $this->clearCache();
+
+      return $this->buildModuleActionResult($moduleKey, $action, true,
+         __('Arquivos do módulo substituídos com sucesso. Dados do banco preservados.', 'nextool'),
+         $baseContext);
+   }
+
    public function updateModule($moduleKey) {
       global $DB;
 
@@ -774,6 +975,45 @@ class PluginNextoolModuleManager {
 
       $module = $this->getModule($moduleKey);
       if ($module === null) {
+         // Modulo bloqueado por manifesto: permitir download para corrigir compatibilidade
+         if (isset($this->blockedModules[$moduleKey])) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[ModuleManifest] Tentando atualizar modulo bloqueado %s (%s)',
+               $moduleKey,
+               $this->blockedModules[$moduleKey]
+            ));
+            $download = $this->downloadModuleFromDistribution($moduleKey);
+            if (!$download['success']) {
+               return $this->buildModuleActionResult($moduleKey, $action, false, $download['message'], $baseContext);
+            }
+            $this->blockedModules = [];
+            $this->legacyModules = [];
+            $this->discoverModules(true);
+            $module = $this->getModule($moduleKey);
+            if ($module === null) {
+               return $this->buildModuleActionResult($moduleKey, $action, false,
+                  __('Módulo continua incompatível após download. Verifique a versão disponível.', 'nextool'),
+                  $baseContext
+               );
+            }
+            $DB->update(
+               'glpi_plugin_nextool_main_modules',
+               [
+                  'version'           => $module->getVersion(),
+                  'available_version' => $download['version'] ?? $module->getVersion(),
+                  'date_mod'          => date('Y-m-d H:i:s'),
+               ],
+               ['module_key' => $moduleKey]
+            );
+            $this->clearCache();
+            return $this->buildModuleActionResult($moduleKey, $action, true,
+               __('Módulo atualizado com sucesso (compatibilidade restaurada).', 'nextool'),
+               array_merge($baseContext, [
+                  'from_version' => $row['version'] ?? 'unknown',
+                  'to_version'   => $module->getVersion(),
+               ])
+            );
+         }
          return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não encontrado no diretório local.', 'nextool'), $baseContext);
       }
 
@@ -981,6 +1221,59 @@ class PluginNextoolModuleManager {
          ],
          ['module_key' => $moduleKey]
       );
+   }
+
+   /**
+    * Sincroniza banco.version com $module->getVersion() (disco) para módulos instalados.
+    * Disco é a fonte de verdade do que está realmente carregado pelo plugin. Quando
+    * o registro do banco fica defasado (redeploy, FTP, install manual fora do UI), o
+    * UI mostra "Atualizar" e o backend rejeita por já estar na versão alvo. Esta
+    * sincronização lazy evita essa incoerência.
+    */
+   private function syncInstalledVersionsFromDisk(): void {
+      global $DB;
+
+      if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
+         return;
+      }
+
+      foreach ($this->modules as $moduleKey => $module) {
+         $diskVersion = $module->getVersion();
+         if ($diskVersion === null || $diskVersion === '') {
+            continue;
+         }
+
+         $iterator = $DB->request([
+            'FROM'  => 'glpi_plugin_nextool_main_modules',
+            'WHERE' => ['module_key' => $moduleKey, 'is_installed' => 1],
+            'LIMIT' => 1,
+         ]);
+         if (!count($iterator)) {
+            continue;
+         }
+         $row = $iterator->current();
+
+         $dbVersion = $row['version'] ?? null;
+         if ($dbVersion === $diskVersion) {
+            continue;
+         }
+
+         $DB->update(
+            'glpi_plugin_nextool_main_modules',
+            [
+               'version'  => $diskVersion,
+               'date_mod' => date('Y-m-d H:i:s'),
+            ],
+            ['id' => (int)$row['id']]
+         );
+
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[ModuleManager] syncInstalledVersionsFromDisk: %s banco=%s -> disco=%s\n",
+            $moduleKey,
+            $dbVersion ?? 'null',
+            $diskVersion
+         ));
+      }
    }
 
    public function moduleHasData(string $moduleKey): bool {
@@ -1284,9 +1577,14 @@ class PluginNextoolModuleManager {
          
          // Nova estrutura: modules/[nome]/inc/[nome].class.php
          $classFile = $dir . '/inc/' . $moduleName . '.class.php';
-         
+
          if (file_exists($classFile)) {
             $filetimes[] = $classFile . ':' . filemtime($classFile);
+         }
+
+         $manifestFile = $dir . '/module.json';
+         if (file_exists($manifestFile)) {
+            $filetimes[] = $manifestFile . ':' . filemtime($manifestFile);
          }
       }
 
@@ -1389,10 +1687,21 @@ class PluginNextoolModuleManager {
             // Cache inválido - arquivo não existe mais
             return false;
          }
-         
+
+         // Guard de compatibilidade: valida module.json antes de carregar PHP
+         $moduleManifestDir = $this->modulesPath . '/' . $moduleDirName;
+         $manifestCheck = $this->validateModuleManifest($moduleKey, $moduleManifestDir);
+         if ($manifestCheck['status'] === 'blocked') {
+            $this->blockedModules[$moduleKey] = $manifestCheck['message'];
+            return false; // Cache stale, rebuild via discoverModules
+         }
+         if ($manifestCheck['status'] === 'legacy') {
+            $this->legacyModules[] = $moduleKey;
+         }
+
          // Carrega classe
          require_once $classFile;
-         
+
          $className = 'PluginNextool' . ucfirst($moduleDirName);
          if (!class_exists($className)) {
             // Cache inválido - classe não existe

@@ -224,6 +224,43 @@ declare(strict_types=1);
    }
    #nextool-config-form .nextool-color-dev  { color: #0ea5e9 !important; }
 
+   #nextool-config-form .nextool-ext-icon { opacity: 0.7; }
+   #nextool-config-form .nextool-color-free .nextool-ext-icon { color: #0d9488 !important; }
+   #nextool-config-form .nextool-color-dev .nextool-ext-icon { color: #0ea5e9 !important; }
+   #nextool-config-form .nextool-color-paid .nextool-ext-icon {
+      background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 40%, #14b8a6 100%) !important;
+      -webkit-background-clip: text !important;
+      -webkit-text-fill-color: transparent !important;
+      background-clip: text !important;
+   }
+
+   #nextool-config-form .nextool-module-card .dropdown .btn-outline-secondary {
+      background-color: #6c757d !important;
+      color: #fff !important;
+      border-color: #6c757d !important;
+      transition: background-color 0.2s, transform 0.15s;
+   }
+   #nextool-config-form .nextool-module-card .dropdown .btn-outline-secondary:hover {
+      background-color: #495057 !important;
+      border-color: #495057 !important;
+      transform: scale(1.08);
+   }
+
+   #nextool-config-form .nextool-module-card .nextool-module-action {
+      transition: transform 0.15s, filter 0.2s;
+   }
+   #nextool-config-form .nextool-module-card .nextool-module-action:hover:not(:disabled) {
+      transform: scale(1.06);
+      filter: brightness(0.9);
+   }
+
+   #nextool-config-form .nextool-module-card .card-title a {
+      transition: opacity 0.2s;
+   }
+   #nextool-config-form .nextool-module-card .card-title a:hover {
+      opacity: 0.7;
+   }
+
    #nextool-config-form .nextool-badge-ribbon {
       position: absolute;
       top: -2px;

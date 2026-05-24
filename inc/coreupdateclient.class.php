@@ -13,8 +13,11 @@ if (!defined('GLPI_ROOT')) {
 }
 
 require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+require_once GLPI_ROOT . '/plugins/nextool/inc/hmacsignaturetrait.class.php';
 
 class PluginNextoolCoreUpdateClient {
+
+   use PluginNextoolHmacSignatureTrait;
 
    private string $baseUrl;
 
@@ -100,18 +103,13 @@ class PluginNextoolCoreUpdateClient {
          throw new RuntimeException(__('Falha ao serializar payload de manifesto do core.', 'nextool'));
       }
 
-      $timestamp = (string)time();
-      $signature = hash_hmac('sha256', $body . '|' . $timestamp, $this->clientSecret);
-
       $response = $this->performRequest($this->baseUrl . '/api/distribution/plugin/install-request', [
          'method' => 'POST',
          'timeout' => 60,
-         'headers' => [
-            'Content-Type: application/json',
-            'X-Client-Identifier: ' . $this->clientIdentifier,
-            'X-Timestamp: ' . $timestamp,
-            'X-Signature: ' . $signature,
-         ],
+         'headers' => array_merge(
+            ['Content-Type: application/json'],
+            self::buildHmacHeadersV2($this->clientIdentifier, '/api/distribution/plugin/install-request', $body, $this->clientSecret)
+         ),
          'body' => $body,
       ]);
 

@@ -29,8 +29,11 @@ if (!defined('GLPI_ROOT')) {
 require_once GLPI_ROOT . '/plugins/nextool/inc/logmaintenance.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/validationattempt.class.php';
+require_once GLPI_ROOT . '/plugins/nextool/inc/hmacsignaturetrait.class.php';
 
 class PluginNextoolLicenseValidator {
+
+   use PluginNextoolHmacSignatureTrait;
 
    /** Aliases de planos legados → nomes atuais (espelho do PlanNormalizer do ContainerAPI). */
    private const PLAN_ALIASES = [
@@ -680,11 +683,12 @@ class PluginNextoolLicenseValidator {
       }
 
       foreach ([
-         105 => ['price_cents',     'int unsigned',  'website_url',       'Preco anual em centavos'],
-         106 => ['category',        'varchar(50)',   'price_cents',       'Categoria do modulo'],
-         107 => ['features_json',   'text',          'category',          'JSON array com features'],
-         108 => ['screenshot_url',  'varchar(512)',  'features_json',     'URL do screenshot'],
-         109 => ['download_count',  'int unsigned',  'screenshot_url',    'Total de downloads'],
+         105 => ['price_cents',        'int unsigned',  'website_url',       'Preco anual em centavos'],
+         106 => ['category',           'varchar(50)',   'price_cents',       'Categoria do modulo'],
+         107 => ['features_json',      'text',          'category',          'JSON array com features'],
+         108 => ['screenshot_url',     'varchar(512)',  'features_json',     'URL do screenshot'],
+         109 => ['download_count',     'int unsigned',  'screenshot_url',    'Total de downloads'],
+         110 => ['compat_glpi_majors', 'varchar(20)',   'min_version_nextools', 'CSV de versoes major GLPI compativeis (ex: "10,11")'],
       ] as $ver => [$field, $type, $after, $comment]) {
          if (!$DB->fieldExists($table, $field)) {
             $m = new Migration($ver);
@@ -734,6 +738,16 @@ class PluginNextoolLicenseValidator {
          if ($screenshotUrl === '') { $screenshotUrl = null; }
          $downloadCount = isset($entry['download_count']) ? (int)$entry['download_count'] : 0;
 
+         // Bloco platforms (ContainerAPI 4.0+). Quando ausente, cai no fallback
+         // legado: módulo é considerado compatível apenas com a plataforma atual.
+         $compatMajors = null;
+         if (isset($entry['platforms']) && is_array($entry['platforms'])) {
+            $list = [];
+            if (!empty($entry['platforms']['glpi_10']['available'])) { $list[] = '10'; }
+            if (!empty($entry['platforms']['glpi_11']['available'])) { $list[] = '11'; }
+            $compatMajors = $list ? implode(',', $list) : null;
+         }
+
          if ($billingTier === '') {
             $billingTier = 'FREE';
          }
@@ -759,6 +773,7 @@ class PluginNextoolLicenseValidator {
                'is_available'          => $isAvailable,
                'available_version'     => $version !== '' ? $version : null,
                'min_version_nextools'  => $minVersionNextools,
+               'compat_glpi_majors'    => $compatMajors,
                'website_url'           => $websiteUrl,
                'icon'                  => $icon,
                'price_cents'           => $priceCents,
@@ -787,6 +802,7 @@ class PluginNextoolLicenseValidator {
                   'version'                => null,
                   'available_version'      => $version !== '' ? $version : null,
                   'min_version_nextools'   => $minVersionNextools,
+                  'compat_glpi_majors'     => $compatMajors,
                   'website_url'            => $websiteUrl,
                   'icon'                   => $icon ?? 'ti ti-puzzle',
                   'price_cents'            => $priceCents,
@@ -825,6 +841,29 @@ class PluginNextoolLicenseValidator {
             }
          }
       }
+
+      // Ocultar modulos que nao vieram no catalogo e nao estao instalados
+      // (port GLPI 11: cd62918 + 9a13a60 -- marca is_available=0 ao inves de deletar).
+      // Corrige cards duplicados apos renomear modulo (ex: rename → vira "orfao" no local).
+      if (!empty($moduleKeysInCatalog)) {
+         $allLocal = $DB->request([
+            'FROM'   => $table,
+            'SELECT' => ['module_key', 'is_installed', 'is_available'],
+         ]);
+         foreach ($allLocal as $row) {
+            $mk = $row['module_key'] ?? '';
+            if ($mk === '' || in_array($mk, $moduleKeysInCatalog, true)) {
+               continue;
+            }
+            if ((int)($row['is_installed'] ?? 0) === 0 && (int)($row['is_available'] ?? 0) !== 0) {
+               $DB->update(
+                  $table,
+                  ['is_available' => 0, 'date_mod' => date('Y-m-d H:i:s')],
+                  ['module_key' => $mk]
+               );
+            }
+         }
+      }
    }
 
    /**
@@ -853,14 +892,10 @@ class PluginNextoolLicenseValidator {
          return null;
       }
 
-      $timestamp = (string) time();
-      $signature = hash_hmac('sha256', $body . '|' . $timestamp, $clientSecret);
-      $headers = [
-         'Content-Type: application/json',
-         'X-Client-Identifier: ' . $clientIdentifier,
-         'X-Timestamp: ' . $timestamp,
-         'X-Signature: ' . $signature,
-      ];
+      $headers = array_merge(
+         ['Content-Type: application/json'],
+         self::buildHmacHeadersV2($clientIdentifier, '/api/licensing/validate', $body, $clientSecret)
+      );
       if (isset($GLOBALS['nextool_request_group_id'])) {
          $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
       }
