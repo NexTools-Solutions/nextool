@@ -30,6 +30,32 @@ class PluginNextoolMainConfig extends CommonDBTM {
    /** Tabs fixos (1-5): Módulos, Contato, Licenciamento, Alertas, Logs */
    const FIXED_TAB_COUNT = 5;
 
+   // O $rightname='config' acima cobre o bypass de admin global (config UPDATE).
+   // Para perfis customizados com permissões granulares do plugin, os métodos
+   // can*() abaixo delegam ao PermissionManager — caso contrário CommonDBTM::can()
+   // exigiria config/READ e bloquearia qualquer perfil não-admin no display().
+   public static function canView(): bool {
+      return PluginNextoolPermissionManager::canViewAnyModule()
+          || PluginNextoolPermissionManager::canAccessAdminTabs();
+   }
+
+   public static function canCreate(): bool {
+      return PluginNextoolPermissionManager::canManageAdminTabs();
+   }
+
+   public static function canUpdate(): bool {
+      return PluginNextoolPermissionManager::canManageAdminTabs()
+          || PluginNextoolPermissionManager::canManageModules();
+   }
+
+   public static function canDelete(): bool {
+      return PluginNextoolPermissionManager::canManageAdminTabs();
+   }
+
+   public static function canPurge(): bool {
+      return PluginNextoolPermissionManager::canManageAdminTabs();
+   }
+
    public static function getTable($classname = null) {
       return 'glpi_plugin_nextool_main_config_display';
    }
@@ -87,8 +113,19 @@ class PluginNextoolMainConfig extends CommonDBTM {
     *
     * @return array<int, array{module_key: string, name: string, icon: string, config_url: string}>
     */
+   /**
+    * Cache per-request do resultado de getModuleConfigTabs().
+    * Invalidado em clearModuleConfigTabsCache(), chamado por enableModule/disableModule
+    * e por applyModulesCatalogSync quando o catálogo muda.
+    */
+   private static ?array $tabsCache = null;
+
    public static function getModuleConfigTabs(): array {
       global $DB;
+
+      if (self::$tabsCache !== null) {
+         return self::$tabsCache;
+      }
 
       $tabs = [];
       $table = 'glpi_plugin_nextool_main_modules';
@@ -142,7 +179,12 @@ class PluginNextoolMainConfig extends CommonDBTM {
          $tabNum++;
       }
 
+      self::$tabsCache = $tabs;
       return $tabs;
+   }
+
+   public static function clearModuleConfigTabsCache(): void {
+      self::$tabsCache = null;
    }
 
    /**

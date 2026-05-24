@@ -23,13 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
    exit;
 }
 
+require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
 
 $action = isset($_POST['action']) ? trim((string)$_POST['action']) : '';
 $channel = isset($_POST['channel']) ? trim((string)$_POST['channel']) : 'stable';
 
-Toolbox::logInFile('plugin_nextool', sprintf(
+PluginNextoolConfig::debugLog(sprintf(
    "[DEBUG] [CoreUpdate] Requisição recebida: action=%s channel=%s user_id=%s\n",
    $action,
    $channel,
@@ -41,7 +42,7 @@ $writeActions = ['prepare', 'apply', 'cancel_staging', 'restore'];
 $allActions = array_merge($readActions, $writeActions);
 
 if (!in_array($action, $allActions, true)) {
-   Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdate] Ação inválida rejeitada: %s\n", $action));
+   PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdate] Ação inválida rejeitada: %s\n", $action));
    http_response_code(400);
    echo json_encode([
       'success' => false,
@@ -57,7 +58,7 @@ if (in_array($action, $readActions, true)) {
 }
 
 $updater = new PluginNextoolCoreUpdater();
-Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdate] Iniciando execução da ação: %s\n", $action));
+PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdate] Iniciando execução da ação: %s\n", $action));
 
 try {
    $result = null;
@@ -120,7 +121,7 @@ try {
    }
 
    if (!is_array($result)) {
-      Toolbox::logInFile('plugin_nextool', "[DEBUG] [CoreUpdate] Resultado inválido (não é array) retornado pelo updater.\n");
+      PluginNextoolConfig::debugLog("[DEBUG] [CoreUpdate] Resultado inválido (não é array) retornado pelo updater.\n");
       throw new RuntimeException('Resultado inválido do updater.');
    }
 

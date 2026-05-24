@@ -12,27 +12,16 @@ declare(strict_types=1);
  */
 
 include('../../../inc/includes.php');
-
-header('Content-Type: application/json; charset=UTF-8');
-
+require_once GLPI_ROOT . '/plugins/nextool/inc/ajaxbootstrap.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-if (!PluginNextoolPermissionManager::canManageModules()) {
-   http_response_code(403);
-   echo json_encode([
-      'success' => false,
-      'message' => __('Você não tem permissão para gerenciar os módulos do NexTool.', 'nextool'),
-   ]);
-   exit;
-}
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-   http_response_code(405);
-   echo json_encode([
-      'success' => false,
-      'message' => __('Método inválido para esta ação.', 'nextool'),
-   ]);
-   exit;
-}
+PluginNextoolAjaxBootstrap::start([
+   'permission_callback' => ['PluginNextoolPermissionManager', 'canManageModules'],
+   'errors'              => [
+      'forbidden'  => __('Você não tem permissão para gerenciar os módulos do NexTool.', 'nextool'),
+      'bad_method' => __('Método inválido para esta ação.', 'nextool'),
+   ],
+]);
 
 // CSRF: o GLPI valida automaticamente em inc/includes.php.
 // Não revalidar aqui com Session::checkCSRF()/validateCSRF(), pois essas rotinas

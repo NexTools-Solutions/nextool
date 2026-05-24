@@ -186,6 +186,45 @@ function nextoolGetAjaxCsrfToken() {
    return meta ? meta.getAttribute('content') : '';
 }
 
+/**
+ * Helper compartilhado para POST JSON aos endpoints AJAX do plugin (ME-02).
+ * Encapsula headers obrigatórios (Accept, Content-Type, X-Requested-With,
+ * X-Glpi-Csrf-Token), encode form-urlencoded e parse de JSON. Devolve uma
+ * Promise que resolve para um objeto `{ok, status, data}` onde `data` é o
+ * JSON parseado (ou `{}` se body inválido).
+ *
+ * Não aplicável a callsites que usam FormData (multipart) ou que precisam
+ * de parsing customizado da Response (ex.: ler headers de versão).
+ *
+ * @param {string} endpoint URL do endpoint AJAX
+ * @param {Object} params   Pares chave/valor que vão no body como form-urlencoded
+ * @param {Object} [opts]   { rejectOnNoCsrf?: boolean } -- default false (envia mesmo sem token)
+ * @returns {Promise<{ok: boolean, status: number, data: Object}>}
+ */
+function nextoolPostJson(endpoint, params, opts) {
+   opts = opts || {};
+   var csrfToken = nextoolGetAjaxCsrfToken();
+   if (!csrfToken && opts.rejectOnNoCsrf) {
+      return Promise.reject(new Error('csrf-token-not-found'));
+   }
+   return fetch(endpoint, {
+      method: 'POST',
+      headers: {
+         'Accept': 'application/json',
+         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+         'X-Requested-With': 'XMLHttpRequest',
+         'X-Glpi-Csrf-Token': csrfToken || ''
+      },
+      body: new URLSearchParams(params || {}).toString(),
+      credentials: 'same-origin'
+   }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+         return { ok: r.ok, status: r.status, data: data };
+      });
+   });
+}
+window.nextoolPostJson = nextoolPostJson;
+
 // --- Modal de confirmação simples ---
 function nextoolShowConfirm(message, onConfirm) {
    var modalEl = document.getElementById('nextool-confirm-modal');
@@ -326,24 +365,13 @@ function nextoolShowLicensingModal(moduleKey, moduleName) {
          newContainer.querySelectorAll('.nextool-licensing-pay-btn').forEach(function(b) { b.disabled = true; });
          if (statusEl) statusEl.classList.remove('d-none');
 
-         var csrfToken = nextoolGetAjaxCsrfToken();
-         fetch(billingEndpoint, {
-            method: 'POST',
-            headers: {
-               'Accept': 'application/json',
-               'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-               'X-Requested-With': 'XMLHttpRequest',
-               'X-Glpi-Csrf-Token': csrfToken
-            },
-            body: new URLSearchParams({
-               action: 'create_checkout',
-               module: moduleKey,
-               payment_method: method
-            }).toString(),
-            credentials: 'same-origin'
+         nextoolPostJson(billingEndpoint, {
+            action: 'create_checkout',
+            module: moduleKey,
+            payment_method: method
          })
-         .then(function (r) { return r.json(); })
-         .then(function (data) {
+         .then(function (result) {
+            var data = result.data;
             if (data && data.checkout_url) {
                window.open(data.checkout_url, '_blank');
                bootstrap.Modal.getOrCreateInstance(modalEl).hide();
@@ -380,27 +408,12 @@ function nextoolExecuteModuleAction(btn, action, moduleKey, endpoint) {
    btn.disabled = true;
    btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i><?php echo Html::entities_deep(__('Processando...', 'nextool')); ?>';
 
-   fetch(endpoint, {
-      method: 'POST',
-      headers: {
-         'Accept': 'application/json',
-         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-         'X-Requested-With': 'XMLHttpRequest',
-         'X-Glpi-Csrf-Token': csrfToken
-      },
-      body: new URLSearchParams({
-         action: action,
-         module: moduleKey,
-         forcetab: forcetab,
-         module_filter: moduleFilter
-      }).toString(),
-      credentials: 'same-origin'
+   nextoolPostJson(endpoint, {
+      action: action,
+      module: moduleKey,
+      forcetab: forcetab,
+      module_filter: moduleFilter
    })
-      .then(function (r) {
-         return r.json().catch(function () { return {}; }).then(function (data) {
-            return { ok: r.ok, status: r.status, data: data };
-         });
-      })
       .then(function (result) {
          if (!result.ok) {
             var rawMsg = (result.data && result.data.message) ? String(result.data.message) : '';
@@ -915,22 +928,11 @@ function nextoolInitCoreUpdateModal() {
    }
 
    function fetchBackups() {
-      var csrfToken = nextoolGetAjaxCsrfToken();
-      if (!csrfToken || !backupSectionEl) return;
+      if (!backupSectionEl) return;
 
-      fetch(endpoint, {
-         method: 'POST',
-         headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-Glpi-Csrf-Token': csrfToken
-         },
-         body: new URLSearchParams({ action: 'list_backups', channel: 'stable' }).toString(),
-         credentials: 'same-origin'
-      })
-      .then(function(r) { return r.json().catch(function() { return {}; }); })
-      .then(function(data) {
+      nextoolPostJson(endpoint, { action: 'list_backups', channel: 'stable' })
+      .then(function(result) {
+         var data = result.data;
          if (!data || !data.data || !data.data.backups || data.data.backups.length === 0) {
             backupSectionEl.className = 'd-none';
             return;
@@ -981,22 +983,9 @@ function nextoolInitCoreUpdateModal() {
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2 ti-spin me-1"></i>' + LABEL_RESTORING;
 
-      var csrfToken = nextoolGetAjaxCsrfToken();
-      if (!csrfToken) { btn.disabled = false; return; }
-
-      fetch(endpoint, {
-         method: 'POST',
-         headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-Glpi-Csrf-Token': csrfToken
-         },
-         body: new URLSearchParams({ action: 'restore', backup_id: backupId }).toString(),
-         credentials: 'same-origin'
-      })
-      .then(function(r) { return r.json().catch(function() { return {}; }); })
-      .then(function(data) {
+      nextoolPostJson(endpoint, { action: 'restore', backup_id: backupId })
+      .then(function(result) {
+         var data = result.data;
          if (data && data.success) {
             if (alertEl) {
                alertEl.className = 'alert alert-success mb-2';

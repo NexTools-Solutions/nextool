@@ -29,14 +29,43 @@ if (!defined('GLPI_ROOT')) {
 require_once GLPI_ROOT . '/plugins/nextool/inc/logmaintenance.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/validationattempt.class.php';
+require_once GLPI_ROOT . '/plugins/nextool/inc/hmacsignaturetrait.class.php';
 
 class PluginNextoolLicenseValidator {
+
+   use PluginNextoolHmacSignatureTrait;
 
    /** Aliases de planos legados → nomes atuais (espelho do PlanNormalizer do ContainerAPI). */
    private const PLAN_ALIASES = [
       'STARTER' => 'DESENVOLVIMENTO',
       'PRO'     => 'LICENCIADO',
    ];
+
+   /**
+    * Namespaces de configuração persistidos via Config::setConfigurationValues por este validator.
+    * Útil para uninstall do plugin (limpar todos os namespaces de uma vez).
+    */
+   public const CONFIG_NAMESPACES = [
+      'plugin:nextool_billing',
+      'plugin:nextool_entitlement',
+      'plugin:nextool_core_update',
+   ];
+
+   /**
+    * Encapsula Config::setConfigurationValues + try/catch + log de falha.
+    * Logs vão para o arquivo plugin_nextool com prefixo do label.
+    */
+   private static function persistConfig(string $namespace, array $values, string $logLabel): void {
+      try {
+         Config::setConfigurationValues($namespace, $values);
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'LicenseValidator: falha ao persistir %s - %s',
+            $logLabel,
+            $e->getMessage()
+         ));
+      }
+   }
 
    /**
     * Normaliza nome de plano, convertendo aliases legados para os nomes atuais.
@@ -69,10 +98,12 @@ class PluginNextoolLicenseValidator {
       global $DB;
 
       $force_refresh = !empty($options['force_refresh']);
-      Toolbox::logInFile('plugin_nextool', sprintf(
-         "[DEBUG] [LicenseValidator] validateLicense() force_refresh=%s\n",
-         $force_refresh ? 'true' : 'false'
-      ));
+      if (PluginNextoolConfig::isDebugEnabled()) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[DEBUG] [LicenseValidator] validateLicense() force_refresh=%s\n",
+            $force_refresh ? 'true' : 'false'
+         ));
+      }
       $context       = isset($options['context']) && is_array($options['context'])
          ? $options['context']
          : [];
@@ -318,7 +349,8 @@ class PluginNextoolLicenseValidator {
       if ($DB->tableExists('glpi_plugin_nextool_main_modules')) {
          $localModules = [];
          $iterator = $DB->request([
-            'FROM' => 'glpi_plugin_nextool_main_modules',
+            'SELECT' => ['module_key', 'name', 'version', 'billing_tier', 'is_enabled', 'is_available'],
+            'FROM'   => 'glpi_plugin_nextool_main_modules',
          ]);
          foreach ($iterator as $row) {
             $localModules[] = [
@@ -681,11 +713,12 @@ class PluginNextoolLicenseValidator {
       }
 
       foreach ([
-         105 => ['price_cents',     'int unsigned',  'website_url',       'Preco anual em centavos'],
-         106 => ['category',        'varchar(50)',   'price_cents',       'Categoria do modulo'],
-         107 => ['features_json',   'text',          'category',          'JSON array com features'],
-         108 => ['screenshot_url',  'varchar(512)',  'features_json',     'URL do screenshot'],
-         109 => ['download_count',  'int unsigned',  'screenshot_url',    'Total de downloads'],
+         105 => ['price_cents',        'int unsigned',  'website_url',       'Preco anual em centavos'],
+         106 => ['category',           'varchar(50)',   'price_cents',       'Categoria do modulo'],
+         107 => ['features_json',      'text',          'category',          'JSON array com features'],
+         108 => ['screenshot_url',     'varchar(512)',  'features_json',     'URL do screenshot'],
+         109 => ['download_count',     'int unsigned',  'screenshot_url',    'Total de downloads'],
+         110 => ['compat_glpi_majors', 'varchar(20)',   'min_version_nextools', 'CSV de versoes major GLPI compativeis (ex: "10,11")'],
       ] as $ver => [$field, $type, $after, $comment]) {
          if (!$DB->fieldExists($table, $field)) {
             $m = new Migration($ver);
@@ -735,6 +768,16 @@ class PluginNextoolLicenseValidator {
          if ($screenshotUrl === '') { $screenshotUrl = null; }
          $downloadCount = isset($entry['download_count']) ? (int)$entry['download_count'] : 0;
 
+         // Bloco platforms (ContainerAPI 4.0+). Quando ausente, cai no fallback
+         // legado: módulo é considerado compatível apenas com a plataforma atual.
+         $compatMajors = null;
+         if (isset($entry['platforms']) && is_array($entry['platforms'])) {
+            $list = [];
+            if (!empty($entry['platforms']['glpi_10']['available'])) { $list[] = '10'; }
+            if (!empty($entry['platforms']['glpi_11']['available'])) { $list[] = '11'; }
+            $compatMajors = $list ? implode(',', $list) : null;
+         }
+
          if ($billingTier === '') {
             $billingTier = 'FREE';
          }
@@ -760,6 +803,7 @@ class PluginNextoolLicenseValidator {
                'is_available'          => $isAvailable,
                'available_version'     => $version !== '' ? $version : null,
                'min_version_nextools'  => $minVersionNextools,
+               'compat_glpi_majors'    => $compatMajors,
                'website_url'           => $websiteUrl,
                'icon'                  => $icon,
                'price_cents'           => $priceCents,
@@ -788,6 +832,7 @@ class PluginNextoolLicenseValidator {
                   'version'                => null,
                   'available_version'      => $version !== '' ? $version : null,
                   'min_version_nextools'   => $minVersionNextools,
+                  'compat_glpi_majors'     => $compatMajors,
                   'website_url'            => $websiteUrl,
                   'icon'                   => $icon ?? 'ti ti-puzzle',
                   'price_cents'            => $priceCents,
@@ -826,6 +871,42 @@ class PluginNextoolLicenseValidator {
             }
          }
       }
+
+      // Ocultar modulos que nao vieram no catalogo e nao estao instalados
+      if (!empty($moduleKeysInCatalog)) {
+         $allLocal = $DB->request([
+            'FROM'   => $table,
+            'SELECT' => ['module_key', 'is_installed', 'is_available'],
+         ]);
+         foreach ($allLocal as $row) {
+            $mk = $row['module_key'] ?? '';
+            if ($mk === '' || in_array($mk, $moduleKeysInCatalog, true)) {
+               continue;
+            }
+            if ((int)($row['is_installed'] ?? 0) === 0 && (int)($row['is_available'] ?? 0) !== 0) {
+               $DB->update(
+                  $table,
+                  ['is_available' => 0, 'date_mod' => date('Y-m-d H:i:s')],
+                  ['module_key' => $mk]
+               );
+            }
+         }
+      }
+
+      // HI-07: catálogo pode ter introduzido ou removido módulos -- ressincroniza
+      // os profilerights uma vez aqui (em vez de re-sync universal a cada init).
+      // Reseta a flag-file da versão atual: como o sync já rodou agora, o próximo
+      // init vê a flag fresca e faz skip.
+      PluginNextoolPermissionManager::syncModuleRights();
+      if (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR) && defined('PLUGIN_NEXTOOL_VERSION')) {
+         $currentFlag = GLPI_CACHE_DIR . '/nextool_rights_synced_v' . PLUGIN_NEXTOOL_VERSION;
+         foreach (glob(GLPI_CACHE_DIR . '/nextool_rights_synced_v*') ?: [] as $oldFlag) {
+            if ($oldFlag !== $currentFlag) {
+               @unlink($oldFlag);
+            }
+         }
+         @touch($currentFlag);
+      }
    }
 
    /**
@@ -854,14 +935,10 @@ class PluginNextoolLicenseValidator {
          return null;
       }
 
-      $timestamp = (string) time();
-      $signature = hash_hmac('sha256', $body . '|' . $timestamp, $clientSecret);
-      $headers = [
-         'Content-Type: application/json',
-         'X-Client-Identifier: ' . $clientIdentifier,
-         'X-Timestamp: ' . $timestamp,
-         'X-Signature: ' . $signature,
-      ];
+      $headers = array_merge(
+         ['Content-Type: application/json'],
+         self::buildHmacHeadersV2($clientIdentifier, '/api/licensing/validate', $body, $clientSecret)
+      );
       if (!isset($GLOBALS['nextool_request_group_id'])) {
          require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
@@ -882,6 +959,8 @@ class PluginNextoolLicenseValidator {
             CURLOPT_POSTFIELDS     => $body,
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_TIMEOUT        => 15,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
          ]);
 
          $response = curl_exec($ch);
@@ -1282,13 +1361,9 @@ class PluginNextoolLicenseValidator {
     * Persiste payment_methods disponíveis na config GLPI.
     */
    private static function persistPaymentMethods(array $methods): void {
-      try {
-         Config::setConfigurationValues('plugin:nextool_billing', [
-            'payment_methods' => json_encode(array_values($methods)),
-         ]);
-      } catch (Throwable $e) {
-         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir payment_methods - ' . $e->getMessage());
-      }
+      self::persistConfig('plugin:nextool_billing', [
+         'payment_methods' => json_encode(array_values($methods)),
+      ], 'payment_methods');
    }
 
    /**
@@ -1312,13 +1387,9 @@ class PluginNextoolLicenseValidator {
     * Persiste modules_entitlement na config GLPI para uso no config.form.php.
     */
    private static function persistModulesEntitlement(array $entitlement): void {
-      try {
-         Config::setConfigurationValues('plugin:nextool_entitlement', [
-            'modules_entitlement' => json_encode($entitlement, JSON_UNESCAPED_SLASHES),
-         ]);
-      } catch (Throwable $e) {
-         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir modules_entitlement - ' . $e->getMessage());
-      }
+      self::persistConfig('plugin:nextool_entitlement', [
+         'modules_entitlement' => json_encode($entitlement, JSON_UNESCAPED_SLASHES),
+      ], 'modules_entitlement');
    }
 
    /**
@@ -1401,18 +1472,8 @@ class PluginNextoolLicenseValidator {
          return;
       }
 
-      $items = new \RecursiveIteratorIterator(
-         new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-         \RecursiveIteratorIterator::CHILD_FIRST
-      );
-
-      foreach ($items as $item) {
-         if ($item->isDir()) {
-            @rmdir($item->getRealPath());
-         } else {
-            @unlink($item->getRealPath());
-         }
-      }
+      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      PluginNextoolFileHelper::deleteDirectory($path, false);
 
       @rmdir($path);
 
@@ -1427,15 +1488,11 @@ class PluginNextoolLicenseValidator {
     * NÃO sobrescreve staged_target_version/staged_source/staged_at (controlados pelo CoreUpdater).
     */
    private static function persistCoreUpdateHint(array $hint): void {
-      try {
-         $available = !empty($hint['available']);
-         Config::setConfigurationValues('plugin:nextool_core_update', [
-            'update_available'         => $available ? '1' : '0',
-            'latest_available_version' => $available ? (string)($hint['latest_version'] ?? '') : '',
-         ]);
-      } catch (Throwable $e) {
-         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir core_update hint - ' . $e->getMessage());
-      }
+      $available = !empty($hint['available']);
+      self::persistConfig('plugin:nextool_core_update', [
+         'update_available'         => $available ? '1' : '0',
+         'latest_available_version' => $available ? (string)($hint['latest_version'] ?? '') : '',
+      ], 'core_update hint');
    }
 
    private static function persistAlerts(array $alerts): void {

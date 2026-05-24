@@ -25,6 +25,25 @@ class PluginNextoolConfig extends CommonDBTM {
 
    private const CLIENT_ID_SALT = 'RITEC_SALT_V2';
 
+   /** Origens permitidas no formulário de contato (LO-01). Fonte única para validação + template. */
+   public const CONTACT_SOURCES = [
+      'canais_jmba',
+      'indicacao',
+      'linkedin',
+      'telegram',
+      'outros',
+   ];
+
+   /** Motivos permitidos no formulário de contato (LO-01). */
+   public const CONTACT_REASONS = [
+      'duvidas',
+      'apresentacao',
+      'desenvolvimento',
+      'melhoria',
+      'contratar',
+      'outros',
+   ];
+
    static $rightname = 'config';
 
    public static function getPluginVersion(): string {
@@ -43,6 +62,17 @@ class PluginNextoolConfig extends CommonDBTM {
 
    public static function isDebugEnabled(): bool {
       return isset($_SESSION['glpi_use_mode']) && $_SESSION['glpi_use_mode'] === Session::DEBUG_MODE;
+   }
+
+   /**
+    * Wrapper sobre Toolbox::logInFile que escreve apenas em DEBUG_MODE.
+    * Use para logs marcados como [DEBUG] que não devem poluir produção
+    * (LO-03 do audit-deep).
+    */
+   public static function debugLog(string $message): void {
+      if (self::isDebugEnabled()) {
+         Toolbox::logInFile('plugin_nextool', $message);
+      }
    }
 
    public static function getTable($classname = null) {
@@ -110,12 +140,22 @@ class PluginNextoolConfig extends CommonDBTM {
    }
 
    /**
+    * Cache per-request do resultado de getConfig().
+    * Invalidado em saveConfig() e em rotas que mutam glpi_plugin_nextool_main_configs.
+    */
+   private static ?array $cachedConfig = null;
+
+   /**
     * Obtém a configuração atual
-    * 
+    *
     * @return array Configuração atual
     */
    public static function getConfig() {
       global $DB;
+
+      if (self::$cachedConfig !== null) {
+         return self::$cachedConfig;
+      }
 
       // Se a tabela principal ainda não existir (plugin recém-detectado, mas não instalado),
       // devolve configuração padrão sem tentar acessar o banco.
@@ -172,6 +212,7 @@ class PluginNextoolConfig extends CommonDBTM {
          $config['client_identifier'] = $id;
       }
 
+      self::$cachedConfig = $config;
       return $config;
    }
 
@@ -183,6 +224,8 @@ class PluginNextoolConfig extends CommonDBTM {
     */
    public static function saveConfig($data) {
       global $DB;
+
+      self::$cachedConfig = null;
 
       $is_active = isset($data['is_active']) && $data['is_active'] == '1' ? 1 : 0;
       $endpoint_url = isset($data['endpoint_url']) ? trim((string)$data['endpoint_url']) : null;

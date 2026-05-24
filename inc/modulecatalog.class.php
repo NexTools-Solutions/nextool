@@ -86,6 +86,7 @@ class PluginNextoolModuleCatalog {
             'features'     => !empty($row['features_json']) ? json_decode($row['features_json'], true) : [],
             'screenshot_url' => isset($row['screenshot_url']) && $row['screenshot_url'] !== '' ? $row['screenshot_url'] : null,
             'download_count' => (int)($row['download_count'] ?? 0),
+            'compat_glpi_majors' => isset($row['compat_glpi_majors']) && $row['compat_glpi_majors'] !== '' ? $row['compat_glpi_majors'] : null,
             'date_creation'  => $row['date_creation'] ?? null,
          ];
       }

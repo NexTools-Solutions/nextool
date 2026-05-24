@@ -11,27 +11,15 @@ declare(strict_types=1);
  */
 
 include('../../../inc/includes.php');
-
-header('Content-Type: application/json; charset=UTF-8');
-
-if (!Session::getLoginUserID()) {
-   http_response_code(403);
-   echo json_encode([
-      'success' => false,
-      'message' => __('Sessão inválida.', 'nextool'),
-   ]);
-   exit;
-}
-
+require_once GLPI_ROOT . '/plugins/nextool/inc/ajaxbootstrap.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-if (!PluginNextoolPermissionManager::canManageAdminTabs()) {
-   http_response_code(403);
-   echo json_encode([
-      'success' => false,
-      'message' => __('Sem permissão para acessar a chave de segurança.', 'nextool'),
-   ]);
-   exit;
-}
+
+PluginNextoolAjaxBootstrap::start([
+   'permission_callback' => ['PluginNextoolPermissionManager', 'canManageAdminTabs'],
+   'errors'              => [
+      'forbidden' => __('Sem permissão para acessar a chave de segurança.', 'nextool'),
+   ],
+]);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
    http_response_code(405);

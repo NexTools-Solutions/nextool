@@ -382,6 +382,7 @@ foreach ($allModuleKeys as $moduleKey) {
          'is_license_suspended'    => $isSuspended,
          'has_zip_extension'       => $hasZipExtension,
          'website_url'             => $meta['website_url'] ?? null,
+         'compat_glpi_majors'      => $meta['compat_glpi_majors'] ?? null,
       ]),
    ];
 }
@@ -470,14 +471,16 @@ foreach ($tabsRegistry as $key => $meta) {
    }
 }
 
-// Hero "Plano atual" reutilizável nas abas administrativas em modo standalone
+// Hero "Plano atual" reutilizável nas abas administrativas em modo standalone.
+// Exibido para qualquer perfil que enxergue a tela (informativo). Botões Sincronizar
+// e "Atualização Disponível" são ocultados para perfis sem canManageAdminTabs.
 $nextool_hero_standalone = '';
-if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'contato', 'logs', 'alertas'], true) && $canViewAdminTabs) {
+if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'contato', 'logs', 'alertas'], true)) {
    ob_start();
    $nextoolHeroWithMarginTop = false;
    $nextoolHeroDisableSync = false;
-   $nextoolHeroHideSync = $requiresPolicyAcceptance;
-   $nextoolHeroShowCoreUpdate = $coreUpdateAvailable;
+   $nextoolHeroHideSync = $requiresPolicyAcceptance || !$canManageAdminTabs;
+   $nextoolHeroShowCoreUpdate = $coreUpdateAvailable && $canManageAdminTabs;
    $nextoolHeroForcetabMap = [
       'modules' => 'PluginNextoolMainConfig$1',
       'contato' => 'PluginNextoolMainConfig$2',
@@ -518,17 +521,18 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
         </li>
         <?php endforeach; ?>
      </ul>
-      <?php if ($canViewAdminTabs): ?>
       <?php
+         // Hero informativo: visível para todo perfil que enxerga a tela.
+         // Sincronizar e "Atualização Disponível" são ocultados via flags abaixo
+         // para perfis sem canManageAdminTabs.
          $nextoolHeroWithMarginTop = true;
          $nextoolHeroDisableSync = false;
-         $nextoolHeroHideSync = $requiresPolicyAcceptance;
-         $nextoolHeroShowCoreUpdate = $coreUpdateAvailable;
+         $nextoolHeroHideSync = $requiresPolicyAcceptance || !$canManageAdminTabs;
+         $nextoolHeroShowCoreUpdate = $coreUpdateAvailable && $canManageAdminTabs;
          // Em modo não-standalone, o JS resolve a aba ativa dinamicamente.
          $nextoolHeroForcetab = '';
          include GLPI_ROOT . '/plugins/nextool/front/tabs/config.hero.inc.php';
       ?>
-      <?php endif; ?>
 <?php endif; ?>
 
       <?php if (!$nextool_is_standalone): ?><div class="tab-content mt-4" id="nextool-config-tabs-content"><?php endif; ?>

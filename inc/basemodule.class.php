@@ -24,10 +24,15 @@ if (!defined('GLPI_ROOT')) {
 abstract class PluginNextoolBaseModule {
 
    /**
+    * Cache em memória da versão lida do module.json (evita I/O repetido).
+    */
+   private ?string $cachedVersion = null;
+
+   /**
     * Nome único do módulo (chave de identificação)
     * Deve ser único, sem espaços, lowercase
     * Exemplo: 'emailtools', 'reporttools', 'customfields'
-    * 
+    *
     * @return string Nome único do módulo
     */
    abstract public function getModuleKey();
@@ -49,12 +54,37 @@ abstract class PluginNextoolBaseModule {
    abstract public function getDescription();
 
    /**
-    * Versão do módulo
-    * Usar semantic versioning (X.Y.Z)
-    * 
-    * @return string Versão
+    * Versão do módulo, lida do module.json (fonte única de verdade).
+    *
+    * Módulos NÃO devem sobrescrever este método nem declarar versão hardcoded em
+    * PHP — o module.json é o único lugar onde a versão vive. O pipeline de release
+    * atualiza apenas o module.json e tudo flui daí. Sobrescrever só é justificável
+    * para módulos com lógica de versionamento dinâmica (raro).
+    *
+    * @return string Versão semântica (X.Y.Z) ou string vazia se module.json ausente/inválido
     */
-   abstract public function getVersion();
+   public function getVersion() {
+      if ($this->cachedVersion !== null) {
+         return $this->cachedVersion;
+      }
+      $manifestPath = $this->getModulePath() . '/module.json';
+      if (!is_file($manifestPath)) {
+         $this->cachedVersion = '';
+         return '';
+      }
+      $raw = @file_get_contents($manifestPath);
+      if ($raw === false) {
+         $this->cachedVersion = '';
+         return '';
+      }
+      $data = json_decode($raw, true);
+      if (!is_array($data) || !isset($data['version']) || !is_string($data['version'])) {
+         $this->cachedVersion = '';
+         return '';
+      }
+      $this->cachedVersion = $data['version'];
+      return $this->cachedVersion;
+   }
 
    /**
     * Ícone do módulo (classe Tabler Icons)
@@ -108,14 +138,23 @@ abstract class PluginNextoolBaseModule {
 
    /**
     * Executa processos de upgrade entre versões.
-    * Por padrão, reutiliza install() para garantir idempotência, mas módulos
-    * podem sobrescrever para aplicar migrations específicas.
+    *
+    * Roda upgrade.sql (se existir) antes de delegar para install(). O upgrade.sql
+    * é idempotente por convenção (ALTER TABLE MODIFY, ADD COLUMN IF NOT EXISTS, etc.)
+    * e roda sempre que o módulo é atualizado, independente das versões $from/$to.
+    * Para migrations destrutivas raras, sobrescreva este método no módulo.
     *
     * @param string|null $currentVersion
     * @param string|null $targetVersion
     * @return bool
     */
    public function upgrade(?string $currentVersion, ?string $targetVersion) {
+      $upgradeSql = $this->getSqlPath('upgrade.sql');
+      if ($upgradeSql !== null && file_exists($upgradeSql)) {
+         if (!$this->executeSqlFile('upgrade.sql')) {
+            return false;
+         }
+      }
       return $this->install();
    }
 
@@ -423,38 +462,17 @@ abstract class PluginNextoolBaseModule {
     * @return bool True se está instalado
     */
    public function isInstalled() {
-      global $DB;
-
-      $iterator = $DB->request([
-         'FROM'  => 'glpi_plugin_nextool_main_modules',
-         'WHERE' => [
-            'module_key'   => $this->getModuleKey(),
-            'is_installed' => 1
-         ],
-         'LIMIT' => 1
-      ]);
-
-      return count($iterator) > 0;
+      return PluginNextoolModuleManager::getInstance()->isInstalled($this->getModuleKey());
    }
 
    /**
-    * Verifica se módulo está ativo
-    * 
+    * Verifica se módulo está ativo.
+    * Delega ao ModuleManager para reuso do moduleRowCache.
+    *
     * @return bool True se está ativo
     */
    public function isEnabled() {
-      global $DB;
-
-      $iterator = $DB->request([
-         'FROM'  => 'glpi_plugin_nextool_main_modules',
-         'WHERE' => [
-            'module_key' => $this->getModuleKey(),
-            'is_enabled' => 1
-         ],
-         'LIMIT' => 1
-      ]);
-
-      return count($iterator) > 0;
+      return PluginNextoolModuleManager::getInstance()->isEnabled($this->getModuleKey());
    }
 
    /**

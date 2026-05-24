@@ -131,6 +131,8 @@ class PluginNextoolFileHelper {
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
       curl_setopt($ch, CURLOPT_TIMEOUT, (int)($options['timeout'] ?? 30));
       curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+      curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+      curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 
       if ($method === 'POST') {
          curl_setopt($ch, CURLOPT_POST, true);
@@ -174,5 +176,54 @@ class PluginNextoolFileHelper {
          return 'zip';
       }
       return 'unknown';
+   }
+
+   /**
+    * Valida que nenhuma entrada de archive tente path traversal (../) ou
+    * caminho absoluto (/). Lança RuntimeException no primeiro problema.
+    *
+    * Aceita tanto PharData (iterável de SplFileInfo com getPathName) quanto
+    * ZipArchive (acesso via numFiles + getNameIndex). Para qualquer outro
+    * tipo, valida cada entry como string.
+    *
+    * @param PharData|ZipArchive $archive
+    * @param string $contextLabel Rótulo amigável usado na mensagem de erro
+    * @throws RuntimeException quando alguma entrada é insegura
+    */
+   public static function assertSecureArchiveEntries($archive, string $contextLabel = 'pacote'): void {
+      $check = static function (string $entryName) use ($contextLabel): void {
+         $normalized = str_replace('\\', '/', $entryName);
+         if ($normalized === '' || str_contains($normalized, "\0")) {
+            throw new RuntimeException(sprintf(
+               __('Entrada inválida no %s (nome vazio ou byte nulo).', 'nextool'),
+               $contextLabel
+            ));
+         }
+         if (str_starts_with($normalized, '/') || preg_match('#(^|/)\.\.(/|$)#', $normalized) === 1) {
+            throw new RuntimeException(sprintf(
+               __('Entrada insegura no %s: %s', 'nextool'),
+               $contextLabel,
+               $entryName
+            ));
+         }
+      };
+
+      if ($archive instanceof PharData) {
+         // PharData é Iterator de SplFileInfo cujo getFilename / getPathname
+         // retornam o nome relativo da entrada.
+         foreach (new RecursiveIteratorIterator($archive) as $entry) {
+            $check((string)$entry->getSubPathname());
+         }
+         return;
+      }
+
+      if ($archive instanceof ZipArchive) {
+         for ($i = 0; $i < $archive->numFiles; $i++) {
+            $check((string)$archive->getNameIndex($i));
+         }
+         return;
+      }
+
+      throw new InvalidArgumentException('assertSecureArchiveEntries: tipo de archive não suportado.');
    }
 }

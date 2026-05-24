@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.0.4');
+define('PLUGIN_NEXTOOL_VERSION', '4.1.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -120,10 +120,13 @@ function plugin_init_nextool() {
       }
    }
 
-   // Apply pendente: após copy do staging para plugins/, executar Plugin::install na nova requisição
-   $coreUpdateState = Config::getConfigurationValues('plugin:nextool_core_update');
-   $pendingVersion = $coreUpdateState['pending_apply_version'] ?? null;
-   if ($pendingVersion !== null && $pendingVersion !== '') {
+   // Apply pendente: após copy do staging para plugins/, executar Plugin::install na nova requisição.
+   // Fast-path via flag-file (evita SELECT em glpi_configs a cada request).
+   // Flag criada por PluginNextoolCoreUpdater::applyByCopyAndReload (espelhada com Config).
+   $pendingApplyFlag = (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR))
+      ? GLPI_CACHE_DIR . '/nextool_pending_apply'
+      : null;
+   if ($pendingApplyFlag !== null && is_file($pendingApplyFlag)) {
       $plugin = new Plugin();
       if ($plugin->getFromDBbyDir('nextool')) {
          $plugin->install($plugin->fields['id']);
@@ -138,6 +141,7 @@ function plugin_init_nextool() {
             'staged_source' => null,
             'staged_at' => null,
          ]);
+         @unlink($pendingApplyFlag);
       }
    }
 
@@ -241,7 +245,26 @@ function plugin_init_nextool() {
                   PluginNextoolHookProvidersDispatcher::registerClasses();
                }
             }
-            PluginNextoolPermissionManager::syncModuleRights();
+            // HI-07: sync de rights apenas quando a versão muda (file-flag versionada).
+            // Antes: 31+ queries em glpi_profilerights em todo init universal.
+            // Agora: zero queries quando flag da versão atual existe.
+            // Eventos que mudam permissões (install, upgrade, mudança de catálogo,
+            // criação de perfil) continuam chamando syncModuleRights diretamente.
+            $rightsSyncFlag = (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR))
+               ? GLPI_CACHE_DIR . '/nextool_rights_synced_v' . PLUGIN_NEXTOOL_VERSION
+               : null;
+            if ($rightsSyncFlag === null || !is_file($rightsSyncFlag)) {
+               PluginNextoolPermissionManager::syncModuleRights();
+               if ($rightsSyncFlag !== null) {
+                  // Remove flags de versões anteriores antes de marcar a atual
+                  foreach (glob(GLPI_CACHE_DIR . '/nextool_rights_synced_v*') ?: [] as $oldFlag) {
+                     if ($oldFlag !== $rightsSyncFlag) {
+                        @unlink($oldFlag);
+                     }
+                  }
+                  @touch($rightsSyncFlag);
+               }
+            }
 
             // Registra classes Config de módulos standalone instalados (inclusive desativados)
             // para que as páginas de configuração funcionem via AJAX (common.tabs.php)
@@ -302,15 +325,19 @@ function plugin_init_nextool() {
                   'PluginNextoolHookDispatcher',
                   'dispatchItemUpdateTicketTask'
                ];
+               $PLUGIN_HOOKS['item_add']['nextool']['ITILFollowup'] = [
+                  'PluginNextoolHookDispatcher',
+                  'dispatchItemAddITILFollowup'
+               ];
+               $PLUGIN_HOOKS['item_add']['nextool']['ITILSolution'] = [
+                  'PluginNextoolHookDispatcher',
+                  'dispatchItemAddITILSolution'
+               ];
 
-               // post_show_item: timeline separator e outros hooks visuais
-               // Nota: nao pode usar HookManager para este hook (limitacao do core GLPI 11)
-               $PLUGIN_HOOKS['post_show_item']['nextool'] = function(array $params) {
-                  $item = $params['options']['item'] ?? $params['item'] ?? null;
-                  if ($item instanceof CommonGLPI) {
-                     PluginNextoolHookDispatcher::dispatchPostShowItem($item::getType(), $params);
-                  }
-               };
+               // post_show_item: timeline separator e outros hooks visuais.
+               // Nota: nao pode usar HookManager para este hook (limitacao do core GLPI 11).
+               // Callable estatico substituiu closure (LO-09 do audit-deep).
+               $PLUGIN_HOOKS['post_show_item']['nextool'] = [PluginNextoolHookDispatcher::class, 'dispatchPostShowItemHook'];
             }
 
             // Registra menus de módulos ativos via getMenuRegistration()

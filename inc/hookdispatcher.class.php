@@ -19,6 +19,8 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
+require_once __DIR__ . '/validationexception.class.php';
+
 class PluginNextoolHookDispatcher {
 
    /** @var array[] preItemAdd[itemType] = [ [class, method], ... ] */
@@ -84,6 +86,10 @@ class PluginNextoolHookDispatcher {
             if ($ret !== null) {
                $out = $ret;
             }
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (pre_item_add do GLPI usa este sinal
+            // para impedir a criação/atualização do item). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] pre_item_add Ticket: %s - %s',
@@ -96,22 +102,25 @@ class PluginNextoolHookDispatcher {
    }
 
    /**
-    * Dispatcher para item_add['nextool']['Ticket'].
-    * GLPI chama com $item (CommonDBTM). Repassa a todos os handlers registrados.
+    * Dispatcher genérico para item_add[itemType]. Itera handlers registrados,
+    * captura exceptions individuais (exceto PluginNextoolValidationException,
+    * que é rethrown para abortar a operação no GLPI core).
     *
-    * @param CommonDBTM $item
-    * @return CommonDBTM
+    * Os métodos dispatchItemAdd<Type>() abaixo são wrappers desta função.
     */
-   public static function dispatchItemAddTicket(CommonDBTM $item) {
-      foreach (self::$itemAdd['Ticket'] ?? [] as $cb) {
+   public static function dispatchItemAdd(string $itemType, CommonDBTM $item): CommonDBTM {
+      foreach (self::$itemAdd[$itemType] ?? [] as $cb) {
          try {
             $ret = call_user_func($cb, $item);
             if ($ret instanceof CommonDBTM) {
                $item = $ret;
             }
+         } catch (PluginNextoolValidationException $e) {
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
-               '[HookDispatcher] item_add Ticket: %s - %s',
+               '[HookDispatcher] item_add %s: %s - %s',
+               $itemType,
                $e->getMessage(),
                $e->getTraceAsString()
             ));
@@ -121,93 +130,61 @@ class PluginNextoolHookDispatcher {
    }
 
    /**
-    * Dispatcher para item_update['nextool']['Ticket'].
+    * Dispatcher genérico para item_update[itemType]. Mesma semântica de
+    * dispatchItemAdd. Os métodos dispatchItemUpdate<Type>() abaixo são wrappers.
     */
+   public static function dispatchItemUpdate(string $itemType, CommonDBTM $item): CommonDBTM {
+      foreach (self::$itemUpdate[$itemType] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            throw $e;
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_update %s: %s - %s',
+               $itemType,
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
+   // ========================================
+   // Wrappers nomeados (compat com callers $PLUGIN_HOOKS em setup.php)
+   // ========================================
+
+   public static function dispatchItemAddTicket(CommonDBTM $item) {
+      return self::dispatchItemAdd('Ticket', $item);
+   }
+
    public static function dispatchItemUpdateTicket(CommonDBTM $item) {
-      foreach (self::$itemUpdate['Ticket'] ?? [] as $cb) {
-         try {
-            call_user_func($cb, $item);
-         } catch (Throwable $e) {
-            Toolbox::logInFile('plugin_nextool', sprintf(
-               '[HookDispatcher] item_update Ticket: %s - %s',
-               $e->getMessage(),
-               $e->getTraceAsString()
-            ));
-         }
-      }
-      return $item;
+      return self::dispatchItemUpdate('Ticket', $item);
    }
 
-   /**
-    * Dispatcher para item_add['nextool']['TicketValidation'].
-    */
    public static function dispatchItemAddTicketValidation(CommonDBTM $item) {
-      foreach (self::$itemAdd['TicketValidation'] ?? [] as $cb) {
-         try {
-            call_user_func($cb, $item);
-         } catch (Throwable $e) {
-            Toolbox::logInFile('plugin_nextool', sprintf(
-               '[HookDispatcher] item_add TicketValidation: %s - %s',
-               $e->getMessage(),
-               $e->getTraceAsString()
-            ));
-         }
-      }
-      return $item;
+      return self::dispatchItemAdd('TicketValidation', $item);
    }
 
-   /**
-    * Dispatcher para item_update['nextool']['TicketValidation'].
-    */
    public static function dispatchItemUpdateTicketValidation(CommonDBTM $item) {
-      foreach (self::$itemUpdate['TicketValidation'] ?? [] as $cb) {
-         try {
-            call_user_func($cb, $item);
-         } catch (Throwable $e) {
-            Toolbox::logInFile('plugin_nextool', sprintf(
-               '[HookDispatcher] item_update TicketValidation: %s - %s',
-               $e->getMessage(),
-               $e->getTraceAsString()
-            ));
-         }
-      }
-      return $item;
+      return self::dispatchItemUpdate('TicketValidation', $item);
    }
 
-   /**
-    * Dispatcher para item_add['nextool']['TicketTask'].
-    */
    public static function dispatchItemAddTicketTask(CommonDBTM $item) {
-      foreach (self::$itemAdd['TicketTask'] ?? [] as $cb) {
-         try {
-            call_user_func($cb, $item);
-         } catch (Throwable $e) {
-            Toolbox::logInFile('plugin_nextool', sprintf(
-               '[HookDispatcher] item_add TicketTask: %s - %s',
-               $e->getMessage(),
-               $e->getTraceAsString()
-            ));
-         }
-      }
-      return $item;
+      return self::dispatchItemAdd('TicketTask', $item);
    }
 
-   /**
-    * Dispatcher para item_update['nextool']['TicketTask'].
-    */
    public static function dispatchItemUpdateTicketTask(CommonDBTM $item) {
-      foreach (self::$itemUpdate['TicketTask'] ?? [] as $cb) {
-         try {
-            call_user_func($cb, $item);
-         } catch (Throwable $e) {
-            Toolbox::logInFile('plugin_nextool', sprintf(
-               '[HookDispatcher] item_update TicketTask: %s - %s',
-               $e->getMessage(),
-               $e->getTraceAsString()
-            ));
-         }
-      }
-      return $item;
+      return self::dispatchItemUpdate('TicketTask', $item);
+   }
+
+   public static function dispatchItemAddITILFollowup(CommonDBTM $item) {
+      return self::dispatchItemAdd('ITILFollowup', $item);
+   }
+
+   public static function dispatchItemAddITILSolution(CommonDBTM $item) {
+      return self::dispatchItemAdd('ITILSolution', $item);
    }
 
    // ========================================
@@ -234,10 +211,27 @@ class PluginNextoolHookDispatcher {
     * @param string $itemType Ex.: 'Ticket'
     * @param array  $params   Parametros do hook GLPI
     */
+   /**
+    * Adaptador chamado diretamente pelo hook `post_show_item` do GLPI (LO-09).
+    * Resolve $item a partir do payload e delega para dispatchPostShowItem.
+    * Substitui a closure que vivia em setup.php — método estático é serializável,
+    * mais fácil de testar e não retém escopo.
+    */
+   public static function dispatchPostShowItemHook(array $params): void {
+      $item = $params['options']['item'] ?? $params['item'] ?? null;
+      if ($item instanceof CommonGLPI) {
+         self::dispatchPostShowItem($item::getType(), $params);
+      }
+   }
+
    public static function dispatchPostShowItem(string $itemType, array $params): void {
       foreach (self::$postShowItem[$itemType] ?? [] as $cb) {
          try {
             call_user_func($cb, $params);
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (pre_item_add do GLPI usa este sinal
+            // para impedir a criação/atualização do item). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] post_show_item %s: %s',

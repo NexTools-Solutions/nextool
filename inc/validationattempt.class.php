@@ -30,9 +30,10 @@ if (!defined('GLPI_ROOT')) {
 
 use Glpi\Search\DefaultSearchRequestInterface;
 
-class PluginNextoolValidationAttempt extends CommonDBTM implements DefaultSearchRequestInterface {
+require_once __DIR__ . '/baseauditlog.class.php';
 
-   public static $rightname = 'config';
+class PluginNextoolValidationAttempt extends PluginNextoolBaseAuditLog implements DefaultSearchRequestInterface {
+
    public $dont_pass_handled = true;
 
    /**
@@ -280,21 +281,16 @@ class PluginNextoolValidationAttempt extends CommonDBTM implements DefaultSearch
 
       $attempt = new self();
 
-      $requestedModules = $data['requested_modules'] ?? null;
-      if (is_array($requestedModules)) {
-         $requestedModules = json_encode(array_values($requestedModules));
-      }
-
       $input = [
          'result'           => !empty($data['result']) ? 1 : 0,
          'message'          => $data['message'] ?? null,
          'http_code'        => isset($data['http_code']) ? (int)$data['http_code'] : null,
          'response_time_ms' => isset($data['response_time_ms']) ? (int)$data['response_time_ms'] : null,
-         'origin'           => isset($data['origin']) ? substr((string)$data['origin'], 0, 64) : null,
-         'requested_modules'=> $requestedModules,
+         'origin'           => self::truncate($data['origin'] ?? null, 64),
+         'requested_modules'=> self::jsonEncodeIfArray($data['requested_modules'] ?? null),
          'client_identifier'=> $data['client_identifier'] ?? null,
-         'license_status'   => isset($data['license_status']) ? substr((string)$data['license_status'], 0, 32) : null,
-         'plan'             => isset($data['plan']) ? substr((string)$data['plan'], 0, 32) : null,
+         'license_status'   => self::truncate($data['license_status'] ?? null, 32),
+         'plan'             => self::truncate($data['plan'] ?? null, 32),
          'allowed_modules'  => isset($data['allowed_modules']) ? (string)$data['allowed_modules'] : null,
          'force_refresh'    => !empty($data['force_refresh']) ? 1 : 0,
          'cache_hit'        => !empty($data['cache_hit']) ? 1 : 0,

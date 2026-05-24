@@ -17,8 +17,8 @@ declare(strict_types=1);
 include ('../../../inc/includes.php');
 
 // O endpoint atende ações de leitura (validate_license) e escrita;
-// permissões específicas são reforçadas abaixo por ação.
-Session::checkRight("config", READ);
+// permissões específicas são reforçadas abaixo por ação (assertCanAccessAdminTabs / assertCanManageAdminTabs).
+Session::checkLoginUser();
 
 /**
  * Redireciona para a aba do Nextool quando o forcetab vier no POST.
@@ -74,7 +74,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
    $needsBootstrap = $baseUrl !== '' && $clientIdentifier !== '' && empty($distributionSettings['client_secret']);
 
    if (!$needsBootstrap) {
-      Toolbox::logInFile('plugin_nextool', "[DEBUG] [ConfigSave] bootstrap_hmac_if_needed: não necessário (secret já existe ou config incompleta)\n");
+      PluginNextoolConfig::debugLog("[DEBUG] [ConfigSave] bootstrap_hmac_if_needed: não necessário (secret já existe ou config incompleta)\n");
       return [
          'attempted'         => false,
          'success'           => true,

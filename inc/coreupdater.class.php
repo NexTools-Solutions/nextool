@@ -398,7 +398,7 @@ class PluginNextoolCoreUpdater {
 
    public function prepare(string $channel = self::DEFAULT_CHANNEL, string $source = 'manual'): array {
       $channel = $this->sanitizeChannel($channel);
-      Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdater] prepare() iniciado: channel=%s source=%s\n", $channel, $source));
+      PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdater] prepare() iniciado: channel=%s source=%s\n", $channel, $source));
 
       // Auto-create runtime directories if they don't exist
       $this->ensureRuntimeDirs();
@@ -407,7 +407,7 @@ class PluginNextoolCoreUpdater {
          $started = microtime(true);
          $currentVersion = $this->getInstalledCoreVersion();
 
-         Toolbox::logInFile('plugin_nextool', "[DEBUG] [CoreUpdater] prepare() lock adquirido, solicitando manifesto.\n");
+         PluginNextoolConfig::debugLog("[DEBUG] [CoreUpdater] prepare() lock adquirido, solicitando manifesto.\n");
          $manifest = $this->client->requestManifest($channel, 'core_update_prepare_' . $source);
          $preflight = $this->preflight($manifest, 'prepare', ['skip_lock_check' => true]);
          Toolbox::logInFile('plugin_nextool', sprintf(
@@ -494,7 +494,7 @@ class PluginNextoolCoreUpdater {
             $downloadPath
          ));
          $this->client->downloadPackage((string)$manifest['download_url'], $downloadPath);
-         Toolbox::logInFile('plugin_nextool', "[DEBUG] [CoreUpdater] prepare() validando hash e assinatura.\n");
+         PluginNextoolConfig::debugLog("[DEBUG] [CoreUpdater] prepare() validando hash e assinatura.\n");
          $this->assertHashMatches($downloadPath, (string)$manifest['hash_sha256']);
          $this->assertManifestSignatureValid($manifest);
 
@@ -560,7 +560,7 @@ class PluginNextoolCoreUpdater {
    }
 
    public function apply(string $source = 'manual'): array {
-      Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdater] apply() iniciado: source=%s\n", $source));
+      PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdater] apply() iniciado: source=%s\n", $source));
       return $this->withLock(function () use ($source) {
          $started = microtime(true);
          $manifest = $this->readStagedManifest();
@@ -639,7 +639,7 @@ class PluginNextoolCoreUpdater {
    }
 
    public function cancelStaging(string $source = 'manual'): array {
-      Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdater] cancelStaging() iniciado: source=%s\n", $source));
+      PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdater] cancelStaging() iniciado: source=%s\n", $source));
       return $this->withLock(function () use ($source) {
          $started = microtime(true);
          $state = self::getState();
@@ -706,7 +706,7 @@ class PluginNextoolCoreUpdater {
    }
 
    public function restore(string $backupId, string $source = 'manual'): array {
-      Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdater] restore() iniciado: backup_id=%s source=%s\n", $backupId, $source));
+      PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdater] restore() iniciado: backup_id=%s source=%s\n", $backupId, $source));
       return $this->withLock(function () use ($backupId, $source) {
          $started = microtime(true);
 
@@ -845,7 +845,7 @@ class PluginNextoolCoreUpdater {
 
       $handle = @fopen($lockPath, 'c');
       if ($handle === false) {
-         Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdater] withLock() falhou ao criar handle: %s\n", $lockPath));
+         PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdater] withLock() falhou ao criar handle: %s\n", $lockPath));
          return [
             'success' => false,
             'message' => __('Não foi possível criar lock de atualização de core.', 'nextool'),
@@ -854,14 +854,14 @@ class PluginNextoolCoreUpdater {
 
       if (!@flock($handle, LOCK_EX | LOCK_NB)) {
          fclose($handle);
-         Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdater] withLock() lock ocupado, rejeitando action=%s\n", $action));
+         PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdater] withLock() lock ocupado, rejeitando action=%s\n", $action));
          return [
             'success' => false,
             'message' => __('Já existe uma operação de atualização de core em execução.', 'nextool'),
          ];
       }
 
-      Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdater] withLock() lock adquirido: action=%s source=%s\n", $action, $source));
+      PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdater] withLock() lock adquirido: action=%s source=%s\n", $action, $source));
       try {
          return $callback();
       } catch (Throwable $e) {
@@ -882,7 +882,7 @@ class PluginNextoolCoreUpdater {
       } finally {
          @flock($handle, LOCK_UN);
          fclose($handle);
-         Toolbox::logInFile('plugin_nextool', sprintf("[DEBUG] [CoreUpdater] withLock() lock liberado: action=%s\n", $action));
+         PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdater] withLock() lock liberado: action=%s\n", $action));
       }
    }
 
@@ -1179,6 +1179,8 @@ class PluginNextoolCoreUpdater {
          // PharData — formato preferencial (built-in, sem dependência externa)
          try {
             $phar = new PharData($packagePath);
+            require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+            PluginNextoolFileHelper::assertSecureArchiveEntries($phar, 'pacote de core');
             $phar->extractTo($extractRoot, null, true);
          } catch (Throwable $e) {
             throw new RuntimeException(sprintf(
@@ -1276,21 +1278,8 @@ class PluginNextoolCoreUpdater {
    }
 
    private function clearDirectoryContents(string $dir): void {
-      if (!is_dir($dir)) {
-         return;
-      }
-      $iterator = new RecursiveIteratorIterator(
-         new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
-         RecursiveIteratorIterator::CHILD_FIRST
-      );
-      foreach ($iterator as $item) {
-         $path = $item->getRealPath();
-         if ($item->isDir()) {
-            @rmdir($path);
-         } else {
-            @unlink($path);
-         }
-      }
+      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      PluginNextoolFileHelper::deleteDirectory($dir, false);
    }
 
    private function recursiveCopy(string $source, string $dest): void {
@@ -1342,14 +1331,15 @@ class PluginNextoolCoreUpdater {
       // 1. Pre-update: force NOTUPDATED to prevent "version changed" deactivation (marketplace pattern)
       $this->preUpdatePluginState();
 
-      // 2. Versioned Backup
-      $backupMeta = $this->createVersionedBackup($targetPath);
-      $backupFilesPath = $this->getBackupsRoot() . '/' . $backupMeta['backup_id'] . '/files';
-
-      // 3. Maintenance flag
-      $this->setMaintenanceFlag();
-
+      $backupFilesPath = null;
       try {
+         // 2. Versioned Backup (pode falhar se mkdir/permissão)
+         $backupMeta = $this->createVersionedBackup($targetPath);
+         $backupFilesPath = $this->getBackupsRoot() . '/' . $backupMeta['backup_id'] . '/files';
+
+         // 3. Maintenance flag
+         $this->setMaintenanceFlag();
+
          // 4. Per-file atomic overwrite
          $this->overwriteFilesFromStaging($stagedPath, $targetPath);
 
@@ -1364,56 +1354,64 @@ class PluginNextoolCoreUpdater {
                $integrityResult['message'] ?? 'unknown'
             ));
          }
+
+         // 6. Reset opcache BEFORE activation so any file reads get fresh content
+         $this->resetOpcache();
+
+         // 7. Post-update: set version + activate directly in DB
+         $this->postUpdatePluginActivation($targetVersion);
+
+         // 7b. Verify state — GLPI's own boot hooks may override during concurrent requests
+         $this->verifyAndForceActivated();
+
+         // 8. Success metadata
+         $this->persistState(['pending_apply_version' => $targetVersion]);
+
+         // Flag-file fast-path para setup.php (evita SELECT em glpi_configs todo init)
+         if (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR)) {
+            @file_put_contents(GLPI_CACHE_DIR . '/nextool_pending_apply', $targetVersion);
+         }
+
+         global $CFG_GLPI;
+         $rootDoc = $CFG_GLPI['root_doc'] ?? '';
+
+         return [
+            'success' => true,
+            'message' => __('Atualização concluída com sucesso. Redirecionando...', 'nextool'),
+            'data' => [
+               'previous_version' => $this->getInstalledCoreVersion(),
+               'target_version' => $targetVersion,
+               'current_version' => $targetVersion,
+               'final_state' => 'completed',
+               'needs_reload' => true,
+               'redirect_url' => $rootDoc . '/front/plugin.php',
+            ],
+         ];
       } catch (Throwable $e) {
-         // Rollback
          Toolbox::logInFile('plugin_nextool', sprintf(
             "[ERROR] [CoreUpdater] apply falhou, iniciando rollback: %s\n",
             $e->getMessage()
          ));
-         try {
-            $this->rollbackFromBackup($backupFilesPath, $targetPath);
-         } catch (Throwable $rollbackEx) {
-            Toolbox::logInFile('plugin_nextool', sprintf(
-               "[CRITICAL] [CoreUpdater] rollback também falhou: %s\n",
-               $rollbackEx->getMessage()
-            ));
+         // Só faz rollback se já houver backup (falha antes do backup deixa fs intacto)
+         if ($backupFilesPath !== null) {
+            try {
+               $this->rollbackFromBackup($backupFilesPath, $targetPath);
+            } catch (Throwable $rollbackEx) {
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  "[CRITICAL] [CoreUpdater] rollback também falhou: %s\n",
+                  $rollbackEx->getMessage()
+               ));
+            }
          }
-         $this->clearMaintenanceFlag();
-         $this->resetOpcache();
          return [
             'success' => false,
             'message' => sprintf(__('Apply falhou com rollback: %s', 'nextool'), $e->getMessage()),
          ];
+      } finally {
+         // Garante limpeza mesmo em falha precoce (createVersionedBackup ou setMaintenanceFlag)
+         $this->clearMaintenanceFlag();
+         $this->resetOpcache();
       }
-
-      // 6. Reset opcache BEFORE activation so any file reads get fresh content
-      $this->resetOpcache();
-
-      // 7. Post-update: set version + activate directly in DB
-      $this->postUpdatePluginActivation($targetVersion);
-
-      // 7b. Verify state — GLPI's own boot hooks may override during concurrent requests
-      $this->verifyAndForceActivated();
-
-      // 8. Success
-      $this->clearMaintenanceFlag();
-      $this->persistState(['pending_apply_version' => $targetVersion]);
-
-      global $CFG_GLPI;
-      $rootDoc = $CFG_GLPI['root_doc'] ?? '';
-
-      return [
-         'success' => true,
-         'message' => __('Atualização concluída com sucesso. Redirecionando...', 'nextool'),
-         'data' => [
-            'previous_version' => $this->getInstalledCoreVersion(),
-            'target_version' => $targetVersion,
-            'current_version' => $targetVersion,
-            'final_state' => 'completed',
-            'needs_reload' => true,
-            'redirect_url' => $rootDoc . '/front/plugin.php',
-         ],
-      ];
    }
 
    private function createVersionedBackup(string $pluginPath): array {

@@ -45,6 +45,18 @@ class PluginNextoolPermissionManager {
       return (bool) Session::haveRight('config', UPDATE);
    }
 
+   /**
+    * Indica se o perfil ativo é da interface helpdesk (Self-Service).
+    *
+    * Perfis helpdesk não recebem acesso via macros plugin_nextool_modules e
+    * plugin_nextool_admin -- precisam de permissão granular por módulo
+    * (plugin_nextool_module_<key>). Evita que usuário final veja abas
+    * administrativas e módulos não autorizados em tickets.
+    */
+   private static function isHelpdeskProfile(): bool {
+      return ($_SESSION['glpiactiveprofile']['interface'] ?? 'central') === 'helpdesk';
+   }
+
    public static function installRights(): void {
       $versionInfo = plugin_version_nextool();
       $migration = new Migration($versionInfo['version'] ?? '1.0.0');
@@ -67,25 +79,34 @@ class PluginNextoolPermissionManager {
    }
 
    public static function canViewModules(): bool {
-      return self::haveRight(self::RIGHT_MODULES, READ) || self::hasGlobalAdminAccess();
+      if (self::hasGlobalAdminAccess()) return true;
+      if (self::isHelpdeskProfile()) return false;
+      return self::haveRight(self::RIGHT_MODULES, READ);
    }
 
    public static function canManageModules(): bool {
-      return self::haveRight(self::RIGHT_MODULES, UPDATE) || self::hasGlobalAdminAccess();
+      if (self::hasGlobalAdminAccess()) return true;
+      if (self::isHelpdeskProfile()) return false;
+      return self::haveRight(self::RIGHT_MODULES, UPDATE);
    }
 
    public static function canPurgeModuleData(): bool {
+      if (self::hasGlobalAdminAccess()) return true;
+      if (self::isHelpdeskProfile()) return false;
       return self::haveRight(self::RIGHT_MODULES, DELETE)
-         || self::haveRight(self::RIGHT_MODULES, PURGE)
-         || self::hasGlobalAdminAccess();
+         || self::haveRight(self::RIGHT_MODULES, PURGE);
    }
 
    public static function canAccessAdminTabs(): bool {
-      return self::haveRight(self::RIGHT_ADMIN_TABS, READ) || self::hasGlobalAdminAccess();
+      if (self::hasGlobalAdminAccess()) return true;
+      if (self::isHelpdeskProfile()) return false;
+      return self::haveRight(self::RIGHT_ADMIN_TABS, READ);
    }
 
    public static function canManageAdminTabs(): bool {
-      return self::haveRight(self::RIGHT_ADMIN_TABS, UPDATE) || self::hasGlobalAdminAccess();
+      if (self::hasGlobalAdminAccess()) return true;
+      if (self::isHelpdeskProfile()) return false;
+      return self::haveRight(self::RIGHT_ADMIN_TABS, UPDATE);
    }
 
    public static function assertCanAccessAdminTabs(): void {

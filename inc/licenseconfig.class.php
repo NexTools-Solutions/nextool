@@ -124,6 +124,13 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
    }
 
    /**
+    * Memoriza se ensureSchema() já rodou neste request. Evita 5 fieldExists()
+    * redundantes em chamadas subsequentes (getDefaultConfig + resetCache no
+    * mesmo fluxo de validate license, por exemplo).
+    */
+   private static bool $schemaEnsuredThisRequest = false;
+
+   /**
     * Garante que a tabela possua os campos mais recentes usados pelo snapshot de licença.
     *
     * Executa migrações em runtime caso o administrador tenha atualizado o plugin
@@ -132,8 +139,13 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
    protected static function ensureSchema(): void {
       global $DB;
 
+      if (self::$schemaEnsuredThisRequest) {
+         return;
+      }
+
       $table = self::getTable();
       if (!$DB->tableExists($table)) {
+         self::$schemaEnsuredThisRequest = true;
          return;
       }
 
@@ -213,6 +225,8 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
       if ($schemaUpdated) {
          $migration->executeMigration();
       }
+
+      self::$schemaEnsuredThisRequest = true;
    }
 
    /**

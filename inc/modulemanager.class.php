@@ -72,6 +72,20 @@ class PluginNextoolModuleManager {
    private $moduleDataTablesCache = [];
 
    /**
+    * Cache per-request das linhas de glpi_plugin_nextool_main_modules.
+    * Evita queries repetidas em isInstalled/isEnabled/getBillingTier no mesmo request.
+    * Invalidado em clearCache() e em rotas que mutam o estado de módulos.
+    * @var array<string, ?array>
+    */
+   private array $moduleRowCache = [];
+
+   /**
+    * Indica se o moduleRowCache foi pré-carregado em bulk via preloadModuleRowCache().
+    * Quando true, getModuleRow() pode responder null para keys ausentes sem ir ao banco.
+    */
+   private bool $rowMapPreloaded = false;
+
+   /**
     * Construtor privado (padrão Singleton)
     */
    private function __construct() {
@@ -173,6 +187,11 @@ class PluginNextoolModuleManager {
           }
       }
 
+      // Sincronizar banco.version com disco quando divergente (módulos instalados).
+      // Evita botão "Atualizar" visível em estado coerente onde o disco já está na
+      // versão alvo mas o banco ficou desatualizado (redeploy, FTP, install manual).
+      $this->syncInstalledVersionsFromDisk();
+
       // Salva no cache
       $this->saveCache();
 
@@ -189,8 +208,6 @@ class PluginNextoolModuleManager {
     * @return array Módulos carregados
     */
    public function loadActiveModules() {
-      global $DB;
-
       $this->loadedModules = [];
 
       // Descobrir módulos disponíveis
@@ -198,25 +215,27 @@ class PluginNextoolModuleManager {
          $this->discoverModules();
       }
 
-      // Buscar módulos ativos no banco
-      $iterator = $DB->request([
-         'FROM'  => 'glpi_plugin_nextool_main_modules',
-         'WHERE' => ['is_enabled' => 1]
-      ]);
+      // Pré-carrega cache em bulk -- mesma query que seria necessária para listar
+      // módulos ativos, mas serve também para isInstalled/isEnabled em cascata
+      // (hook redefine_menus, profile, etc.) sem novas queries no mesmo request.
+      $this->preloadModuleRowCache();
 
-      foreach ($iterator as $row) {
-         $moduleKey = $row['module_key'];
-         
-         if (isset($this->modules[$moduleKey])) {
-            $module = $this->modules[$moduleKey];
-            
-            // Verifica dependências
-            if ($this->checkDependencies($module)) {
-               // Registra domínio de tradução e inicializa módulo
-               $module->loadModuleLang();
-               $module->onInit();
-               $this->loadedModules[$moduleKey] = $module;
-            }
+      foreach ($this->moduleRowCache as $moduleKey => $row) {
+         if ($row === null) {
+            continue;
+         }
+         if (((int)($row['is_enabled'] ?? 0)) !== 1) {
+            continue;
+         }
+         if (!isset($this->modules[$moduleKey])) {
+            continue;
+         }
+
+         $module = $this->modules[$moduleKey];
+         if ($this->checkDependencies($module)) {
+            $module->loadModuleLang();
+            $module->onInit();
+            $this->loadedModules[$moduleKey] = $module;
          }
       }
 
@@ -316,8 +335,8 @@ class PluginNextoolModuleManager {
          'LIMIT' => 1
       ]);
 
-      if (count($existing)) {
-         $row = $existing->current();
+      $row = $existing->current();
+      if ($row !== null) {
          $updateData = [
             'name'               => $module->getName(),
             'version'            => $module->getVersion(),
@@ -441,135 +460,105 @@ class PluginNextoolModuleManager {
     * @return array ['success' => bool, 'message' => string]
     */
    public function enableModule($moduleKey) {
-      global $DB;
-
-      $module = $this->getModule($moduleKey);
-      $action = 'enable';
-      $baseContext = [
-         'origin'            => 'module_enable',
-         'requested_modules' => [$moduleKey],
-      ];
-      
-      if (!$module) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não encontrado', 'nextool'), $baseContext);
-      }
-
-      // Verifica se está instalado
-      if (!$module->isInstalled()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo precisa ser instalado primeiro', 'nextool'), $baseContext);
-      }
-
-      // Verifica se já está ativo
-      if ($module->isEnabled()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo já está ativo', 'nextool'), $baseContext);
-      }
-
-      // Verifica dependências
-      if (!$this->checkDependencies($module)) {
-         $deps = implode(', ', $module->getDependencies());
-         return [
-            'success' => false,
-            'message' => sprintf(__('Dependências não atendidas: %s', 'nextool'), $deps)
-         ];
-      }
-
-      // Verifica licença para módulos pagos
-      $billingTier = $this->getBillingTier($moduleKey);
-      if ($billingTier !== 'FREE') {
-         if (!$this->hasLicenseForModule($moduleKey)) {
-            return $this->buildModuleActionResult(
-               $moduleKey, $action, false,
-               __('Este módulo requer uma licença. Nenhuma licença encontrada que inclua este módulo.', 'nextool'),
-               $baseContext
-            );
-         }
-      }
-
-      // Ativa módulo
-      $result = $DB->update(
-         'glpi_plugin_nextool_main_modules',
-         [
-            'is_enabled' => 1,
-            'date_mod'   => date('Y-m-d H:i:s')
-         ],
-         ['module_key' => $moduleKey]
-      );
-
-      if ($result) {
-         // Limpa cache de memória para forçar recarregamento
-         // Cache de arquivo permanece (módulos não mudaram)
-         $this->modules = [];
-
-         $module->onEnable();
-         
-         return $this->buildModuleActionResult(
-            $moduleKey,
-            $action,
-            true,
-            __('Módulo ativado com sucesso', 'nextool'),
-            $baseContext
-         );
-      }
-
-      return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao ativar módulo', 'nextool'), $baseContext);
+      return $this->setEnabledState($moduleKey, 'enable');
    }
 
    /**
     * Desativa um módulo
-    * 
+    *
     * @param string $moduleKey Chave do módulo
     * @return array ['success' => bool, 'message' => string]
     */
    public function disableModule($moduleKey) {
+      return $this->setEnabledState($moduleKey, 'disable');
+   }
+
+   /**
+    * Helper central para enable/disable (ME-15 do audit-deep).
+    * Unifica: getModule + pre-flight + license check + DB update + cleanup de cache +
+    * cron disable (no path de disable) + hook onEnable/onDisable + audit.
+    * Corrige bug pre-existente: early-return de "dependências não atendidas" não chamava
+    * buildModuleActionResult, pulava audit.
+    *
+    * @param string $moduleKey Chave do módulo
+    * @param 'enable'|'disable' $action
+    * @return array ['success' => bool, 'message' => string]
+    */
+   private function setEnabledState(string $moduleKey, string $action): array {
       global $DB;
 
+      $enabled = $action === 'enable';
       $module = $this->getModule($moduleKey);
-      $action = 'disable';
       $baseContext = [
-         'origin'            => 'module_disable',
+         'origin'            => $enabled ? 'module_enable' : 'module_disable',
          'requested_modules' => [$moduleKey],
       ];
-      
+
       if (!$module) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não encontrado', 'nextool'), $baseContext);
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            __('Módulo não encontrado', 'nextool'), $baseContext);
       }
 
-      // Verifica se está ativo
-      if (!$module->isEnabled()) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo já está inativo', 'nextool'), $baseContext);
-      }
-
-      // Verifica licença para módulos pagos
-      $billingTier = $this->getBillingTier($moduleKey);
-      if ($billingTier !== 'FREE') {
-         if (!$this->hasLicenseForModule($moduleKey)) {
-            return $this->buildModuleActionResult(
-               $moduleKey, $action, false,
-               __('Este módulo requer uma licença. Nenhuma licença encontrada que inclua este módulo.', 'nextool'),
-               $baseContext
-            );
+      // Pre-flight específico de enable/disable
+      if ($enabled) {
+         if (!$module->isInstalled()) {
+            return $this->buildModuleActionResult($moduleKey, $action, false,
+               __('Módulo precisa ser instalado primeiro', 'nextool'), $baseContext);
+         }
+         if ($module->isEnabled()) {
+            return $this->buildModuleActionResult($moduleKey, $action, false,
+               __('Módulo já está ativo', 'nextool'), $baseContext);
+         }
+         if (!$this->checkDependencies($module)) {
+            $deps = implode(', ', $module->getDependencies());
+            return $this->buildModuleActionResult($moduleKey, $action, false,
+               sprintf(__('Dependências não atendidas: %s', 'nextool'), $deps),
+               $baseContext);
+         }
+      } else {
+         if (!$module->isEnabled()) {
+            return $this->buildModuleActionResult($moduleKey, $action, false,
+               __('Módulo já está inativo', 'nextool'), $baseContext);
          }
       }
 
-      // Desativa módulo
+      // Licença para módulos pagos (mesma check em ambos os caminhos)
+      $billingTier = $this->getBillingTier($moduleKey);
+      if ($billingTier !== 'FREE' && !$this->hasLicenseForModule($moduleKey)) {
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            __('Este módulo requer uma licença. Nenhuma licença encontrada que inclua este módulo.', 'nextool'),
+            $baseContext);
+      }
+
+      // DB update
       $result = $DB->update(
          'glpi_plugin_nextool_main_modules',
          [
-            'is_enabled' => 0,
-            'date_mod'   => date('Y-m-d H:i:s')
+            'is_enabled' => $enabled ? 1 : 0,
+            'date_mod'   => date('Y-m-d H:i:s'),
          ],
          ['module_key' => $moduleKey]
       );
 
-      if ($result) {
-         // Remove dos módulos carregados
+      if (!$result) {
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            $enabled ? __('Falha ao ativar módulo', 'nextool')
+                     : __('Falha ao desativar módulo', 'nextool'),
+            $baseContext);
+      }
+
+      // Cleanup de cache (comum a enable e disable)
+      if (!$enabled) {
          unset($this->loadedModules[$moduleKey]);
+      }
+      $this->modules = [];
+      $this->moduleRowCache = [];
+      if (class_exists('PluginNextoolMainConfig')) {
+         PluginNextoolMainConfig::clearModuleConfigTabsCache();
+      }
 
-         // Limpa cache de memória para forçar recarregamento
-         // Cache de arquivo permanece (módulos não mudaram)
-         $this->modules = [];
-
-         // Desabilitar cron tasks do módulo para evitar "função indefinida"
+      // Disable de cron tasks só no path de disable (evita "função indefinida" em cron)
+      if (!$enabled) {
          $cronIterator = $DB->request([
             'FROM'  => 'glpi_crontasks',
             'WHERE' => ['itemtype' => ['LIKE', 'PluginNextool' . ucfirst($moduleKey) . '%']]
@@ -577,13 +566,19 @@ class PluginNextoolModuleManager {
          foreach ($cronIterator as $cronRow) {
             $DB->update('glpi_crontasks', ['state' => 0], ['id' => $cronRow['id']]);
          }
-
-         $module->onDisable();
-
-         return $this->buildModuleActionResult($moduleKey, $action, true, __('Módulo desativado com sucesso', 'nextool'), $baseContext);
       }
 
-      return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao desativar módulo', 'nextool'), $baseContext);
+      // Hook do módulo
+      if ($enabled) {
+         $module->onEnable();
+      } else {
+         $module->onDisable();
+      }
+
+      return $this->buildModuleActionResult($moduleKey, $action, true,
+         $enabled ? __('Módulo ativado com sucesso', 'nextool')
+                  : __('Módulo desativado com sucesso', 'nextool'),
+         $baseContext);
    }
 
    /**
@@ -789,6 +784,7 @@ class PluginNextoolModuleManager {
       $baseContext = ['origin' => 'remote_distribution'];
 
       // Em modo FREE ou SUSPENDED, não permitir download de módulos pagos.
+      $billingTier = null;
       if (class_exists('PluginNextoolLicenseConfig')) {
          $config = PluginNextoolLicenseConfig::getDefaultConfig();
          $plan = isset($config['plan']) && $config['plan'] !== '' && $config['plan'] !== null
@@ -1003,6 +999,7 @@ class PluginNextoolModuleManager {
       }
 
       // Em modo FREE ou SUSPENDED, não permitir atualização de módulos pagos.
+      $billingTier = null;
       if (class_exists('PluginNextoolLicenseConfig')) {
          $config = PluginNextoolLicenseConfig::getDefaultConfig();
          $plan = isset($config['plan']) && $config['plan'] !== '' && $config['plan'] !== null
@@ -1136,6 +1133,16 @@ class PluginNextoolModuleManager {
    private function getModuleRow(string $moduleKey): ?array {
       global $DB;
 
+      if (array_key_exists($moduleKey, $this->moduleRowCache)) {
+         return $this->moduleRowCache[$moduleKey];
+      }
+
+      // Fast-path: se o map foi pré-carregado em bulk e a key não está cacheada,
+      // significa que o módulo não existe no banco -- responde sem nova query.
+      if ($this->rowMapPreloaded) {
+         return null;
+      }
+
       if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
          return null;
       }
@@ -1146,11 +1153,63 @@ class PluginNextoolModuleManager {
          'LIMIT' => 1,
       ]);
 
-      if (count($iterator)) {
-         return $iterator->current();
+      $row = count($iterator) ? $iterator->current() : null;
+      $this->moduleRowCache[$moduleKey] = $row;
+      return $row;
+   }
+
+   /**
+    * Pré-carrega TODAS as linhas de glpi_plugin_nextool_main_modules em uma única query.
+    * Após esta chamada, getModuleRow() responde inteiramente da memória --
+    * útil em hot-paths que vão consultar muitos módulos (redefine_menus, profile).
+    */
+   private function preloadModuleRowCache(): void {
+      global $DB;
+
+      if ($this->rowMapPreloaded) {
+         return;
       }
 
-      return null;
+      if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
+         $this->rowMapPreloaded = true;
+         return;
+      }
+
+      $iterator = $DB->request([
+         'FROM' => 'glpi_plugin_nextool_main_modules',
+      ]);
+
+      foreach ($iterator as $row) {
+         $key = $row['module_key'] ?? '';
+         if ($key !== '') {
+            $this->moduleRowCache[$key] = $row;
+         }
+      }
+
+      $this->rowMapPreloaded = true;
+   }
+
+   /**
+    * Retorna o estado (installed/enabled) de TODOS os módulos em uma única consulta.
+    * Os callers que iteram sobre muitos módulos (menu, profile, hook redefine_menus)
+    * devem usar este map em vez de chamar isInstalled()/isEnabled() em loop.
+    *
+    * @return array<string, array{installed: bool, enabled: bool}>
+    */
+   public function getModulesStateMap(): array {
+      $this->preloadModuleRowCache();
+
+      $map = [];
+      foreach ($this->moduleRowCache as $key => $row) {
+         if ($row === null) {
+            continue;
+         }
+         $map[$key] = [
+            'installed' => ((int)($row['is_installed'] ?? 0)) === 1,
+            'enabled'   => ((int)($row['is_enabled'] ?? 0)) === 1,
+         ];
+      }
+      return $map;
    }
 
    public function getBillingTier(string $moduleKey): string {
@@ -1206,6 +1265,59 @@ class PluginNextoolModuleManager {
          ],
          ['module_key' => $moduleKey]
       );
+   }
+
+   /**
+    * Sincroniza banco.version com $module->getVersion() (disco) para módulos instalados.
+    * Disco é a fonte de verdade do que está realmente carregado pelo plugin. Quando
+    * o registro do banco fica defasado (redeploy, FTP, install manual fora do UI), o
+    * UI mostra "Atualizar" e o backend rejeita por já estar na versão alvo. Esta
+    * sincronização lazy evita essa incoerência.
+    */
+   private function syncInstalledVersionsFromDisk(): void {
+      global $DB;
+
+      if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
+         return;
+      }
+
+      foreach ($this->modules as $moduleKey => $module) {
+         $diskVersion = $module->getVersion();
+         if ($diskVersion === null || $diskVersion === '') {
+            continue;
+         }
+
+         $iterator = $DB->request([
+            'FROM'  => 'glpi_plugin_nextool_main_modules',
+            'WHERE' => ['module_key' => $moduleKey, 'is_installed' => 1],
+            'LIMIT' => 1,
+         ]);
+         if (!count($iterator)) {
+            continue;
+         }
+         $row = $iterator->current();
+
+         $dbVersion = $row['version'] ?? null;
+         if ($dbVersion === $diskVersion) {
+            continue;
+         }
+
+         $DB->update(
+            'glpi_plugin_nextool_main_modules',
+            [
+               'version'  => $diskVersion,
+               'date_mod' => date('Y-m-d H:i:s'),
+            ],
+            ['id' => (int)$row['id']]
+         );
+
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[ModuleManager] syncInstalledVersionsFromDisk: %s banco=%s -> disco=%s\n",
+            $moduleKey,
+            $dbVersion ?? 'null',
+            $diskVersion
+         ));
+      }
    }
 
    public function moduleHasData(string $moduleKey): bool {
@@ -1702,14 +1814,20 @@ class PluginNextoolModuleManager {
     */
    public function clearCache() {
       $cacheFilePath = $this->cachePath . '/' . $this->cacheFile;
-      
+
+      $this->moduleRowCache = [];
+      $this->rowMapPreloaded = false;
+      if (class_exists('PluginNextoolMainConfig')) {
+         PluginNextoolMainConfig::clearModuleConfigTabsCache();
+      }
+
       if (file_exists($cacheFilePath)) {
          return @unlink($cacheFilePath);
       }
 
       // Limpa cache da memória também
       $this->modules = [];
-      
+
       return true;
    }
 

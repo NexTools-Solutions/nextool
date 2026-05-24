@@ -19,9 +19,9 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-class PluginNextoolConfigAudit extends CommonDBTM {
+require_once __DIR__ . '/baseauditlog.class.php';
 
-   public static $rightname = 'config';
+class PluginNextoolConfigAudit extends PluginNextoolBaseAuditLog {
 
    public static function getTable($classname = null) {
       return 'glpi_plugin_nextool_main_config_audit';
@@ -34,46 +34,23 @@ class PluginNextoolConfigAudit extends CommonDBTM {
          return false;
       }
 
-      $userId = $data['user_id'] ?? null;
-      if ($userId === null && class_exists('Session')) {
-         $userId = Session::getLoginUserID();
-      }
-
-      $details = $data['details'] ?? null;
-      if (is_array($details)) {
-         $details = json_encode($details, JSON_UNESCAPED_UNICODE);
-      }
-
       $record = [
          'section'    => $data['section'] ?? 'global',
          'action'     => $data['action'] ?? null,
          'result'     => array_key_exists('result', $data) ? ($data['result'] ? 1 : 0) : null,
          'message'    => $data['message'] ?? null,
-         'user_id'    => $userId,
-         'source_ip'  => $data['source_ip'] ?? ($_SERVER['REMOTE_ADDR'] ?? null),
-         'details'    => $details,
+         'user_id'    => self::resolveUserId($data['user_id'] ?? null),
+         'source_ip'  => self::resolveSourceIp($data['source_ip'] ?? null),
+         'details'    => self::jsonEncodeIfArray($data['details'] ?? null),
       ];
 
       $audit = new self();
       $result = $audit->add($record);
 
-      if (class_exists('Log') && method_exists('Log', 'history')) {
-         Log::history(
-            1,
-            'PluginNextoolMainConfig',
-            [
-               0,
-               '',
-               sprintf('[%s] %s — %s',
-                  strtoupper($data['section'] ?? ''),
-                  $data['action'] ?? '',
-                  mb_substr($data['message'] ?? '', 0, 180)
-               )
-            ],
-            '',
-            Log::HISTORY_LOG_SIMPLE_MESSAGE
-         );
-      }
+      self::recordHistory(
+         (string)($data['section'] ?? ''),
+         sprintf('%s — %s', $data['action'] ?? '', $data['message'] ?? '')
+      );
 
       return $result;
    }

@@ -18,7 +18,7 @@ if (!defined('GLPI_ROOT')) {
    include(__DIR__ . '/../../inc/includes.php');
 }
 
-Session::checkRight('config', READ);
+Session::checkLoginUser();
 
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/nextoolmainconfig.class.php';

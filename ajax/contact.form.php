@@ -12,27 +12,15 @@ declare(strict_types=1);
  */
 
 include('../../../inc/includes.php');
-
-header('Content-Type: application/json; charset=UTF-8');
-
+require_once GLPI_ROOT . '/plugins/nextool/inc/ajaxbootstrap.class.php';
 require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-if (!Session::getLoginUserID()) {
-   http_response_code(403);
-   echo json_encode([
-      'success' => false,
-      'message' => __('Sessão inválida.', 'nextool'),
-   ]);
-   exit;
-}
 
-if (!PluginNextoolPermissionManager::canManageAdminTabs()) {
-   http_response_code(403);
-   echo json_encode([
-      'success' => false,
-      'message' => __('Você não tem permissão para enviar este contato.', 'nextool'),
-   ]);
-   exit;
-}
+PluginNextoolAjaxBootstrap::start([
+   'permission_callback' => ['PluginNextoolPermissionManager', 'canManageAdminTabs'],
+   'errors'              => [
+      'forbidden' => __('Você não tem permissão para enviar este contato.', 'nextool'),
+   ],
+]);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
    echo json_encode([
@@ -75,26 +63,9 @@ $modules = array_filter(array_map('trim', (array)($_POST['contact_modules'] ?? [
 });
 $modules = array_values(array_unique($modules));
 
-$allowedSources = [
-   'canais_jmba',
-   'indicacao',
-   'linkedin',
-   'telegram',
-   'outros',
-];
-
-if ($source !== '' && !in_array($source, $allowedSources, true)) {
+if ($source !== '' && !in_array($source, PluginNextoolConfig::CONTACT_SOURCES, true)) {
    $source = 'outros';
 }
-
-$allowedReasons = [
-   'duvidas',
-   'apresentacao',
-   'desenvolvimento',
-   'melhoria',
-   'contratar',
-   'outros'
-];
 
 $errors = [];
 if ($name === '') {
@@ -103,7 +74,7 @@ if ($name === '') {
 if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
    $errors[] = __('Informe um e-mail válido.', 'nextool');
 }
-if ($reason === '' || !in_array($reason, $allowedReasons, true)) {
+if ($reason === '' || !in_array($reason, PluginNextoolConfig::CONTACT_REASONS, true)) {
    $errors[] = __('Selecione o motivo do contato.', 'nextool');
 }
 if ($source === '') {
