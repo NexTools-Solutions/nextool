@@ -175,4 +175,54 @@ class PluginNextoolFileHelper {
       }
       return 'unknown';
    }
+
+   /**
+    * Valida que nenhuma entrada de um archive (PharData ou ZipArchive) escapa
+    * do diretório de extração (path traversal). Lança exceção se encontrar
+    * caminho absoluto, sequência ".." ou byte nulo. Port do hardening do GLPI 11
+    * (LO-04), com a chamada correta de getSubPathName no ITERADOR.
+    *
+    * @param PharData|ZipArchive $archive
+    * @param string $contextLabel Rótulo amigável usado na mensagem de erro
+    * @throws RuntimeException quando alguma entrada é insegura
+    */
+   public static function assertSecureArchiveEntries($archive, string $contextLabel = 'pacote'): void {
+      $check = static function (string $entryName) use ($contextLabel): void {
+         $normalized = str_replace('\\', '/', $entryName);
+         if ($normalized === '' || str_contains($normalized, "\0")) {
+            throw new RuntimeException(sprintf(
+               __('Entrada inválida no %s (nome vazio ou byte nulo).', 'nextool'),
+               $contextLabel
+            ));
+         }
+         if (str_starts_with($normalized, '/') || preg_match('#(^|/)\.\.(/|$)#', $normalized) === 1) {
+            throw new RuntimeException(sprintf(
+               __('Entrada insegura no %s: %s', 'nextool'),
+               $contextLabel,
+               $entryName
+            ));
+         }
+      };
+
+      if ($archive instanceof PharData) {
+         // PharData estende RecursiveDirectoryIterator, então o nome relativo
+         // da entrada vem de getSubPathName() chamado no ITERADOR. Cada item
+         // iterado é um PharFileInfo (extends SplFileInfo), que NÃO possui
+         // esse método -- por isso a chamada precisa ser no $iterator.
+         $iterator = new RecursiveIteratorIterator($archive);
+         foreach ($iterator as $entry) {
+            $check((string)$iterator->getSubPathName());
+         }
+         return;
+      }
+
+      if ($archive instanceof ZipArchive) {
+         for ($i = 0; $i < $archive->numFiles; $i++) {
+            $check((string)$archive->getNameIndex($i));
+         }
+         return;
+      }
+
+      throw new InvalidArgumentException('assertSecureArchiveEntries: tipo de archive não suportado.');
+   }
 }

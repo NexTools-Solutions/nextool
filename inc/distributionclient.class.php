@@ -333,6 +333,10 @@ class PluginNextoolDistributionClient {
          // Formato preferencial — PharData (built-in, sem dependência externa)
          try {
             $phar = new PharData($filePath);
+            PluginNextoolFileHelper::assertSecureArchiveEntries(
+               $phar,
+               sprintf('pacote do módulo %s', $moduleKey)
+            );
             $phar->extractTo($tmpExtract, null, true);
          } catch (Throwable $e) {
             @unlink($filePath);
@@ -354,6 +358,16 @@ class PluginNextoolDistributionClient {
          if ($zip->open($filePath) !== true) {
             @unlink($filePath);
             throw new RuntimeException(__('Não foi possível abrir o pacote do módulo.', 'nextool'));
+         }
+         try {
+            PluginNextoolFileHelper::assertSecureArchiveEntries(
+               $zip,
+               sprintf('pacote do módulo %s', $moduleKey)
+            );
+         } catch (Throwable $e) {
+            $zip->close();
+            @unlink($filePath);
+            throw $e;
          }
          if (!$zip->extractTo($tmpExtract)) {
             $zip->close();

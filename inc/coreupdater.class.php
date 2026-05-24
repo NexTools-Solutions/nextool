@@ -1179,6 +1179,7 @@ class PluginNextoolCoreUpdater {
          // PharData — formato preferencial (built-in, sem dependência externa)
          try {
             $phar = new PharData($packagePath);
+            PluginNextoolFileHelper::assertSecureArchiveEntries($phar, 'pacote de core');
             $phar->extractTo($extractRoot, null, true);
          } catch (Throwable $e) {
             throw new RuntimeException(sprintf(
