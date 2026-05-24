@@ -209,10 +209,13 @@ class PluginNextoolFileHelper {
       };
 
       if ($archive instanceof PharData) {
-         // PharData é Iterator de SplFileInfo cujo getFilename / getPathname
-         // retornam o nome relativo da entrada.
-         foreach (new RecursiveIteratorIterator($archive) as $entry) {
-            $check((string)$entry->getSubPathname());
+         // PharData estende RecursiveDirectoryIterator, então o nome relativo
+         // da entrada vem de getSubPathName() chamado no ITERADOR. Cada item
+         // iterado é um PharFileInfo (extends SplFileInfo), que NÃO possui
+         // esse método -- por isso a chamada precisa ser no $iterator.
+         $iterator = new RecursiveIteratorIterator($archive);
+         foreach ($iterator as $entry) {
+            $check((string)$iterator->getSubPathName());
          }
          return;
       }
