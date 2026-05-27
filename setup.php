@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.1.1');
+define('PLUGIN_NEXTOOL_VERSION', '4.1.2');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -353,12 +353,22 @@ function plugin_init_nextool() {
                            Plugin::registerClass($reg['class']);
                         }
                      }
-                     // Registra no hook menu_toadd (exceto módulos que usam redefine_menus)
+                     // Registra no hook menu_toadd (exceto módulos que usam redefine_menus).
+                     // Acumula em array por seção: vários módulos podem registrar na mesma
+                     // seção (ex.: 'management' — digitalsignature + autentique). O core
+                     // (Html.php) aceita array de classes por seção do menu_toadd.
                      if (empty($reg['uses_redefine_menus'])) {
                         if (!isset($PLUGIN_HOOKS['menu_toadd']['nextool'])) {
                            $PLUGIN_HOOKS['menu_toadd']['nextool'] = [];
                         }
-                        $PLUGIN_HOOKS['menu_toadd']['nextool'][$reg['key']] = $reg['class'];
+                        $existing = $PLUGIN_HOOKS['menu_toadd']['nextool'][$reg['key']] ?? [];
+                        if (!is_array($existing)) {
+                           $existing = [$existing];
+                        }
+                        if (!in_array($reg['class'], $existing, true)) {
+                           $existing[] = $reg['class'];
+                        }
+                        $PLUGIN_HOOKS['menu_toadd']['nextool'][$reg['key']] = $existing;
                      }
                   }
                }

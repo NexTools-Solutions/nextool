@@ -1180,7 +1180,7 @@ class PluginNextoolCoreUpdater {
          try {
             $phar = new PharData($packagePath);
             require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
-            PluginNextoolFileHelper::assertSecureArchiveEntries($phar, 'pacote de core');
+            PluginNextoolFileHelper::assertSecureArchiveEntries($phar, 'pacote de core', $packagePath);
             $phar->extractTo($extractRoot, null, true);
          } catch (Throwable $e) {
             throw new RuntimeException(sprintf(

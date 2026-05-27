@@ -345,7 +345,8 @@ class PluginNextoolDistributionClient {
             $phar = new PharData($filePath);
             PluginNextoolFileHelper::assertSecureArchiveEntries(
                $phar,
-               sprintf('pacote do módulo %s', $moduleKey)
+               sprintf('pacote do módulo %s', $moduleKey),
+               $filePath
             );
             $phar->extractTo($tmpExtract, null, true);
          } catch (Throwable $e) {

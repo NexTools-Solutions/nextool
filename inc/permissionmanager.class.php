@@ -211,6 +211,12 @@ class PluginNextoolPermissionManager {
       }
    }
 
+   public static function assertCanCreateInModule(string $moduleKey): void {
+      if (!self::canCreateInModule($moduleKey)) {
+         self::deny(__('Você não tem permissão para criar registros neste módulo.', 'nextool'));
+      }
+   }
+
    public static function syncModuleRights(?array $moduleKeys = null): void {
       $moduleKeys = $moduleKeys ?? self::getModuleKeysFromDatabase();
       if (empty($moduleKeys)) {
