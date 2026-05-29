@@ -33,7 +33,7 @@ function plugin_nextool_install() {
       @mkdir(NEXTOOL_DOC_DIR, 0755, true);
    }
    if (!defined('NEXTOOL_MODULES_BASE')) {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
    }
    if (!is_dir(NEXTOOL_MODULES_BASE)) {
       @mkdir(NEXTOOL_MODULES_BASE, 0755, true);
@@ -60,7 +60,7 @@ function plugin_nextool_install() {
       );
    }
 
-   $sqlfile = GLPI_ROOT . '/plugins/nextool/sql/install.sql';
+   $sqlfile = NEXTOOL_PHP_DIR . '/sql/install.sql';
    if (file_exists($sqlfile)) {
       $DB->runFile($sqlfile);
    }
@@ -73,7 +73,7 @@ function plugin_nextool_install() {
    }
    $migration->executeMigration();
 
-   $configfile = GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+   $configfile = NEXTOOL_PHP_DIR . '/inc/config.class.php';
    if (file_exists($configfile)) {
       require_once $configfile;
       if (class_exists('PluginNextoolConfig')) {
@@ -109,7 +109,7 @@ function plugin_nextool_upgrade($old_version) {
 
    // Migração 3.7.0: remover coluna legada contract_active de 3 tabelas
    if (version_compare($old_version, '3.7.0', '<')) {
-      $migFile = GLPI_ROOT . '/plugins/nextool/sql/migration_remove_contract_active.sql';
+      $migFile = NEXTOOL_PHP_DIR . '/sql/migration_remove_contract_active.sql';
       if (file_exists($migFile)) {
          $DB->runFile($migFile);
          Toolbox::logInFile('plugin_nextool', "Upgrade {$old_version} → 3.7.0: migração contract_active executada.");
@@ -147,7 +147,7 @@ function plugin_nextool_uninstall() {
       }
    }
 
-   $sqlfile = GLPI_ROOT . '/plugins/nextool/sql/uninstall.sql';
+   $sqlfile = NEXTOOL_PHP_DIR . '/sql/uninstall.sql';
    if (file_exists($sqlfile)) {
       $DB->runFile($sqlfile);
    }
@@ -440,6 +440,6 @@ function _plugin_nextool_build_menus($menu) {
 }
 
 function nextool_delete_dir(string $dir): void {
-   require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+   require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
    PluginNextoolFileHelper::deleteDirectory($dir, false);
 }

@@ -20,8 +20,8 @@ if (!defined('GLPI_ROOT')) {
 
 Session::checkLoginUser();
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/nextoolmainconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/nextoolmainconfig.class.php';
 
 if (!PluginNextoolPermissionManager::canViewAnyModule() && !PluginNextoolPermissionManager::canAccessAdminTabs()) {
    Session::addMessageAfterRedirect(__('Você não tem permissão para acessar a configuração do NexTool.', 'nextool'), false, ERROR);
@@ -66,7 +66,7 @@ if (isset($_GET['forcetab']) && in_array($_GET['forcetab'], $validTabs, true)) {
 // Garante que nextoolValidateLicense e funções relacionadas existam na página principal.
 // Necessário porque o conteúdo das abas pode ser carregado via AJAX e scripts injetados
 // por innerHTML não executam; incluir aqui garante disponibilidade global.
-require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
 $licenseConfig = PluginNextoolLicenseConfig::getDefaultConfig();
 $policiesAcceptedAt = $licenseConfig['policies_accepted_at'] ?? null;
 $hasAcceptedPolicies = !empty($policiesAcceptedAt);
@@ -80,7 +80,7 @@ if (function_exists('plugin_version_nextool')) {
 }
 $_nxTargetVersion = '';
 if (PluginNextoolPermissionManager::canAccessAdminTabs()) {
-   require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+   require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
    $_nxCoreState = PluginNextoolCoreUpdater::getState();
    // Use staged version if available, otherwise fall back to latest known version
    $_nxTargetVersion = trim((string) ($_nxCoreState['staged_target_version'] ?? ''));
@@ -91,7 +91,7 @@ if (PluginNextoolPermissionManager::canAccessAdminTabs()) {
 echo '<script>window._nextoolCurrentVersion=' . json_encode($_nxCurrentVersion) . ';';
 echo 'window._nextoolTargetVersion=' . json_encode($_nxTargetVersion) . ';</script>';
 
-include GLPI_ROOT . '/plugins/nextool/front/config.form.scripts.inc.php';
+include NEXTOOL_PHP_DIR . '/front/config.form.scripts.inc.php';
 
 // Formulário fallback para o botão Sincronizar na aba Módulos (onde o hero não está dentro de form).
 $configSaveUrl = Plugin::getWebDir('nextool') . '/front/config.save.php';

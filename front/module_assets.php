@@ -76,7 +76,7 @@ require_once GLPI_ROOT . '/inc/includes.php';
 Session::checkLoginUser();
 
 // Verifica se módulo existe
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
 $modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
 $filePath = $modulePath . '/front/' . $filename;
 

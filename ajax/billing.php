@@ -11,8 +11,8 @@ declare(strict_types=1);
  */
 
 include('../../../inc/includes.php');
-require_once GLPI_ROOT . '/plugins/nextool/inc/ajaxbootstrap.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/ajaxbootstrap.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 
 PluginNextoolAjaxBootstrap::start([
    'login_mode'          => 'redirect',
@@ -38,7 +38,7 @@ if (!in_array($paymentMethod, ['card', 'pix', 'boleto'], true)) {
    $paymentMethod = 'card';
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
 
 $result = PluginNextoolDistributionClient::createCheckoutSession($moduleKey, $paymentMethod);
 

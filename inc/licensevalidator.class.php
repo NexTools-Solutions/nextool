@@ -26,10 +26,10 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/logmaintenance.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/validationattempt.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/hmacsignaturetrait.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/logmaintenance.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/validationattempt.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/hmacsignaturetrait.class.php';
 
 class PluginNextoolLicenseValidator {
 
@@ -940,7 +940,7 @@ class PluginNextoolLicenseValidator {
          self::buildHmacHeadersV2($clientIdentifier, '/api/licensing/validate', $body, $clientSecret)
       );
       if (!isset($GLOBALS['nextool_request_group_id'])) {
-         require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+         require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
       }
       $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
@@ -1472,7 +1472,7 @@ class PluginNextoolLicenseValidator {
          return;
       }
 
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       PluginNextoolFileHelper::deleteDirectory($path, false);
 
       @rmdir($path);

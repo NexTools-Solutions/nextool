@@ -13,11 +13,11 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdateclient.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdatelog.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
+require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/coreupdateclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/coreupdatelog.class.php';
 
 class PluginNextoolCoreUpdater {
 
@@ -1179,7 +1179,7 @@ class PluginNextoolCoreUpdater {
          // PharData — formato preferencial (built-in, sem dependência externa)
          try {
             $phar = new PharData($packagePath);
-            require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+            require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
             PluginNextoolFileHelper::assertSecureArchiveEntries($phar, 'pacote de core', $packagePath);
             $phar->extractTo($extractRoot, null, true);
          } catch (Throwable $e) {
@@ -1278,12 +1278,12 @@ class PluginNextoolCoreUpdater {
    }
 
    private function clearDirectoryContents(string $dir): void {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       PluginNextoolFileHelper::deleteDirectory($dir, false);
    }
 
    private function recursiveCopy(string $source, string $dest): void {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       PluginNextoolFileHelper::recursiveCopy($source, $dest);
    }
 

@@ -2,15 +2,15 @@
 declare(strict_types=1);
 
 include('../../../inc/includes.php');
-require_once GLPI_ROOT . '/plugins/nextool/inc/ajaxbootstrap.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/ajaxbootstrap.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 
 PluginNextoolAjaxBootstrap::start([
    'login_mode'          => 'redirect',
    'permission_callback' => ['PluginNextoolPermissionManager', 'canAccessAdminTabs'],
 ]);
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/alertmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
 
 $action = trim((string)($_POST['action'] ?? ''));
 

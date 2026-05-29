@@ -31,9 +31,9 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/moduleaudit.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulecatalog.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/moduleaudit.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
 
 class PluginNextoolModuleManager {
 
@@ -89,7 +89,7 @@ class PluginNextoolModuleManager {
     * Construtor privado (padrão Singleton)
     */
    private function __construct() {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
       // Nova estrutura: modules em GLPI_PLUGIN_DOC_DIR/nextool/modules (files/_plugins/nextool/modules)
       $this->modulesPath = NEXTOOL_MODULES_BASE;
       
@@ -172,6 +172,19 @@ class PluginNextoolModuleManager {
           }
           if ($manifestCheck['status'] === 'legacy') {
              $this->legacyModules[] = $moduleKey;
+          }
+
+          // Guard de path-resolution: bloqueia módulos com referência hardcoded a /plugins/nextool
+          // quando o plugin nextool vive em marketplace/ (path hardcoded resolve para inexistente
+          // e derruba o boot). Mensagem orienta o usuário a atualizar o módulo.
+          if ($this->moduleHasHardcodedPluginPath($dir)) {
+             $this->blockedModules[$moduleKey] = __(
+                'Módulo desatualizado: contém referência hardcoded a /plugins/nextool. '
+                . 'Atualize o módulo para a versão que utiliza NEXTOOL_PHP_DIR '
+                . '(introduzido em NexTool 4.1.3).',
+                'nextool'
+             );
+             continue;
           }
 
           require_once $classFile;
@@ -693,6 +706,45 @@ class PluginNextoolModuleManager {
       }
 
       return ['status' => 'ok', 'message' => null];
+   }
+
+   /**
+    * Detecta se um módulo contém referência hardcoded a /plugins/nextool.
+    *
+    * Quando o plugin nextool vive em marketplace/, o pattern hardcoded
+    * "GLPI_ROOT . '/plugins/nextool" resolve para path inexistente e
+    * derruba o boot via require_once. Esta verificação é feita ANTES
+    * do require_once em discoverModules, permitindo bloquear o módulo
+    * com mensagem clara em vez de gerar fatal error.
+    *
+    * Otimização: só roda quando o plugin nextool está em marketplace/
+    * (em plugins/ o pattern hardcoded é equivalente a NEXTOOL_PHP_DIR
+    * e não causa problema). Lê apenas o início de cada arquivo PHP
+    * (4KB) -- suficiente para pegar requires no topo.
+    *
+    * @param string $moduleDir Diretório do módulo (NEXTOOL_MODULES_BASE/<key>)
+    * @return bool true se contém hardcoded e deve ser bloqueado
+    */
+   private function moduleHasHardcodedPluginPath(string $moduleDir): bool {
+      // Só relevante se o próprio plugin nextool está em marketplace/
+      if (!defined('NEXTOOL_PHP_DIR') || strpos(NEXTOOL_PHP_DIR, '/marketplace/') === false) {
+         return false;
+      }
+
+      $needle = "GLPI_ROOT . '/plugins/nextool";
+      foreach (['inc', 'ajax', 'front'] as $sub) {
+         $subDir = $moduleDir . '/' . $sub;
+         if (!is_dir($subDir)) {
+            continue;
+         }
+         foreach (glob($subDir . '/*.php') ?: [] as $phpFile) {
+            $head = @file_get_contents($phpFile, false, null, 0, 4096);
+            if ($head !== false && strpos($head, $needle) !== false) {
+               return true;
+            }
+         }
+      }
+      return false;
    }
 
    /**
@@ -1417,7 +1469,7 @@ class PluginNextoolModuleManager {
          return false;
       }
 
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       PluginNextoolFileHelper::deleteDirectory($dir, true);
       return true;
    }
@@ -1845,7 +1897,7 @@ class PluginNextoolModuleManager {
     * antes que o GLPI esteja completamente carregado.
     */
    public function refreshStatelessCache(): void {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/statelessmodules.inc.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/statelessmodules.inc.php';
 
       $statelessMap = [];
       foreach ($this->modules as $moduleKey => $module) {

@@ -53,7 +53,7 @@ $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename(explode('?', $filename)[0]);
 
 // Verifica se módulo existe
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
 $modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
 $filePath = $modulePath . '/front/' . $filename;
 
@@ -80,7 +80,7 @@ if (preg_match('/\.(css|js)\.php$/', $filename)) {
 }
 
 // Arquivos stateless (webhook.php) — usa whitelist do cache stateless
-require_once GLPI_ROOT . '/plugins/nextool/inc/statelessmodules.inc.php';
+require_once NEXTOOL_PHP_DIR . '/inc/statelessmodules.inc.php';
 $statelessFiles = plugin_nextool_stateless_files();
 $isStateless = isset($statelessFiles[$moduleKey]) && in_array($filename, $statelessFiles[$moduleKey], true);
 

@@ -95,7 +95,7 @@ declare(strict_types=1);
             <div class="row g-2" id="nextool-licensing-methods">
                <?php
                // Métodos de pagamento vêm do cache do ContainerAPI (atualizado no Sincronizar)
-               require_once GLPI_ROOT . '/plugins/nextool/inc/licensevalidator.class.php';
+               require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
                $paymentMethods = PluginNextoolLicenseValidator::getPaymentMethods();
                ?>
             </div>
@@ -1591,7 +1591,7 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
 </script>
 
 <?php
-require_once GLPI_ROOT . '/plugins/nextool/inc/alertmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
 $_nextoolUnreadAlerts = PluginNextoolAlertManager::getUnreadAlerts();
 if (!empty($_nextoolUnreadAlerts)):
    $alertsAjaxUrl = Plugin::getWebDir('nextool') . '/ajax/alerts.php';

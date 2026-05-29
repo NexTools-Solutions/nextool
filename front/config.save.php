@@ -43,14 +43,14 @@ function plugin_nextool_redirect_after_action(): void
 // O core valida automaticamente no `inc/includes.php` para qualquer POST.
 
 // Inclui classes adicionais
-require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/licensevalidator.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/configaudit.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/configaudit.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
 
 // UUID v4 para correlacionar todos os eventos desta ação no ContainerAPI
 $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();

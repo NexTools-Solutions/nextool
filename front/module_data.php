@@ -17,7 +17,7 @@ declare(strict_types=1);
 
 include ('../../../inc/includes.php');
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 $moduleKey = isset($_GET['module']) ? preg_replace('/[^a-z0-9_-]/', '', (string)$_GET['module']) : '';
 if ($moduleKey === '') {
    Html::displayErrorAndDie(__('Módulo não informado.', 'nextool'));
@@ -25,8 +25,8 @@ if ($moduleKey === '') {
 
 PluginNextoolPermissionManager::assertCanViewModule($moduleKey);
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulecatalog.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
 
 $catalog = PluginNextoolModuleCatalog::find($moduleKey);
 if ($catalog === null) {

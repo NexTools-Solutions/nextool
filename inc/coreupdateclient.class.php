@@ -12,8 +12,8 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/hmacsignaturetrait.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/hmacsignaturetrait.class.php';
 
 class PluginNextoolCoreUpdateClient {
 
@@ -216,7 +216,7 @@ class PluginNextoolCoreUpdateClient {
     * @throws RuntimeException
     */
    private function performRequest(string $url, array $options = []): array {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       return PluginNextoolFileHelper::performHttpRequest($url, $options);
    }
 

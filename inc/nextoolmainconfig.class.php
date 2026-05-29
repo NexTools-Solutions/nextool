@@ -18,8 +18,8 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 
 class PluginNextoolMainConfig extends CommonDBTM {
 
@@ -244,7 +244,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
       if (isset($tabMap[$tabnum])) {
          $tabKey = $tabMap[$tabnum];
          $GLOBALS['nextool_show_only_tab'] = $tabKey;
-         include GLPI_ROOT . '/plugins/nextool/front/config.form.php';
+         include NEXTOOL_PHP_DIR . '/front/config.form.php';
          unset($GLOBALS['nextool_show_only_tab']);
          return true;
       }
@@ -264,7 +264,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
 
          // Se section=test na URL e o módulo tem página de teste ({moduleKey}.test.php), carrega dentro da aba
          $requestedSection = isset($_GET['section']) ? trim((string) $_GET['section']) : '';
-         require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+         require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
          if ($requestedSection === 'test') {
             $testFilename = $moduleKey . '.test.php';
             $testPath = NEXTOOL_MODULES_BASE . '/' . $moduleKey . '/front/' . $testFilename;

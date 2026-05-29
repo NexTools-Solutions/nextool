@@ -12,6 +12,21 @@ declare(strict_types=1);
  * @license GPLv3+
  */
 
+// Resolve o path absoluto do plugin nextool (funciona tanto em plugins/ quanto em marketplace/).
+// Plugin::getPhpDir() varre todos os PluginDirectories do GLPI; fallback via __DIR__ cobre boot
+// muito cedo (antes da classe Plugin estar autoloaded).
+if (!defined('NEXTOOL_PHP_DIR')) {
+   $nextoolPhpDir = false;
+   if (class_exists('\\Plugin')) {
+      $nextoolPhpDir = \Plugin::getPhpDir('nextool');
+   }
+   if ($nextoolPhpDir === false) {
+      // dirname(__DIR__) -- este arquivo vive em <plugin>/inc/ e dirname resolve <plugin>
+      $nextoolPhpDir = dirname(__DIR__);
+   }
+   define('NEXTOOL_PHP_DIR', $nextoolPhpDir);
+}
+
 if (!defined('GLPI_ROOT') || defined('NEXTOOL_MODULES_DIR')) {
    return;
 }

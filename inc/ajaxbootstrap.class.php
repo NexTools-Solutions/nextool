@@ -12,8 +12,8 @@ declare(strict_types=1);
  * Uso típico:
  *
  *   include('../../../inc/includes.php');
- *   require_once GLPI_ROOT . '/plugins/nextool/inc/ajaxbootstrap.class.php';
- *   require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+ *   require_once NEXTOOL_PHP_DIR . '/inc/ajaxbootstrap.class.php';
+ *   require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
  *
  *   PluginNextoolAjaxBootstrap::start([
  *      'login_mode'          => 'redirect',

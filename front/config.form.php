@@ -20,8 +20,8 @@ declare(strict_types=1);
 
 global $DB;
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 
 $canViewModules     = PluginNextoolPermissionManager::canViewModules();
 $canManageModules   = PluginNextoolPermissionManager::canManageModules();
@@ -32,7 +32,7 @@ $canViewAnyModule   = PluginNextoolPermissionManager::canViewAnyModule();
 
 $coreUpdateAvailable = false;
 if ($canViewAdminTabs) {
-   require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+   require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
    $coreUpdateState = PluginNextoolCoreUpdater::getState();
    $coreUpdateAvailable = !empty($coreUpdateState['update_available'])
       || trim((string) ($coreUpdateState['staged_target_version'] ?? '')) !== ''
@@ -46,7 +46,7 @@ $distributionBaseUrl  = $distributionSettings['base_url'] ?? '';
 $distributionClientIdentifier = $distributionSettings['client_identifier'] ?? ($config['client_identifier'] ?? '');
 $distributionClientSecret = $distributionSettings['client_secret'] ?? '';
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
 // Segredo HMAC: não exibir em HTML, não registrar em logs (regra global de segurança).
 $hmacSecretRow = null;
 if ($distributionClientIdentifier !== '') {
@@ -59,9 +59,9 @@ if ($distributionClientIdentifier !== '') {
 $distributionConfigured = $distributionBaseUrl !== '' && $distributionClientIdentifier !== '' && $distributionClientSecret !== '';
 
 // Configuração de licença (tabela específica)
-require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/logmaintenance.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/configviewstate.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/logmaintenance.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/configviewstate.class.php';
 PluginNextoolLogMaintenance::maybeRun();
 $licenseConfig = PluginNextoolLicenseConfig::getDefaultConfig();
 $modulesEntitlement = PluginNextoolLicenseValidator::getModulesEntitlement();
@@ -83,11 +83,11 @@ $hasAcceptedPolicies = $licenseViewState['hasAcceptedPolicies'];
 $requiresPolicyAcceptance = $licenseViewState['requiresPolicyAcceptance'];
 
 // Carrega ModuleManager para listar módulos
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/basemodule.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/validationattempt.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulecatalog.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulecardhelper.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/basemodule.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/validationattempt.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulecardhelper.class.php';
 
 $manager = PluginNextoolModuleManager::getInstance();
 $loadedModules = $manager->getAllModules();
@@ -414,7 +414,7 @@ usort($modulesState, static function ($a, $b) {
 
 $stats['disabled'] = $stats['installed'] - $stats['enabled'];
 
-include GLPI_ROOT . '/plugins/nextool/front/css/config.form.styles.inc.php';
+include NEXTOOL_PHP_DIR . '/front/css/config.form.styles.inc.php';
 
 $nextool_show_only_tab = $GLOBALS['nextool_show_only_tab'] ?? null;
 $nextool_is_standalone = ($nextool_show_only_tab !== null);
@@ -489,7 +489,7 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
       'logs'    => 'PluginNextoolMainConfig$5',
    ];
    $nextoolHeroForcetab = $nextoolHeroForcetabMap[$nextool_standalone_output_tab] ?? 'PluginNextoolMainConfig$1';
-   include GLPI_ROOT . '/plugins/nextool/front/tabs/config.hero.inc.php';
+   include NEXTOOL_PHP_DIR . '/front/tabs/config.hero.inc.php';
    $nextool_hero_standalone = ob_get_clean();
 }
 ?>
@@ -531,21 +531,21 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
          $nextoolHeroShowCoreUpdate = $coreUpdateAvailable && $canManageAdminTabs;
          // Em modo não-standalone, o JS resolve a aba ativa dinamicamente.
          $nextoolHeroForcetab = '';
-         include GLPI_ROOT . '/plugins/nextool/front/tabs/config.hero.inc.php';
+         include NEXTOOL_PHP_DIR . '/front/tabs/config.hero.inc.php';
       ?>
 <?php endif; ?>
 
       <?php if (!$nextool_is_standalone): ?><div class="tab-content mt-4" id="nextool-config-tabs-content"><?php endif; ?>
 
-        <?php include GLPI_ROOT . '/plugins/nextool/front/tabs/config.modules.tab.inc.php'; ?>
+        <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.modules.tab.inc.php'; ?>
 
-        <?php include GLPI_ROOT . '/plugins/nextool/front/tabs/config.licenca.tab.inc.php'; ?>
+        <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.licenca.tab.inc.php'; ?>
 
-        <?php include GLPI_ROOT . '/plugins/nextool/front/tabs/config.logs.tab.inc.php'; ?>
+        <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.logs.tab.inc.php'; ?>
 
-        <?php include GLPI_ROOT . '/plugins/nextool/front/tabs/config.contato.tab.inc.php'; ?>
+        <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.contato.tab.inc.php'; ?>
 
-        <?php include GLPI_ROOT . '/plugins/nextool/front/tabs/config.alertas.tab.inc.php'; ?>
+        <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.alertas.tab.inc.php'; ?>
 
       <?php if (!$nextool_is_standalone): ?></div></div><?php endif; ?>
 
