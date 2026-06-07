@@ -399,13 +399,20 @@ abstract class PluginNextoolBaseModule {
          'LIMIT' => 1
       ]);
 
+      $defaults = $this->getDefaultConfig();
+
       if (count($iterator)) {
          $data = $iterator->current();
          $config = json_decode($data['config'] ?? '{}', true);
-         return $config ?: [];
+         // Mescla os defaults POR BAIXO do config persistido: chaves novas do
+         // getDefaultConfig() (ex.: poll_enabled/sync_status adicionadas depois do
+         // primeiro save) passam a valer o default em vez de ficarem silenciosamente
+         // OFF. O config salvo continua sobrescrevendo os defaults (inclusive um 0
+         // explicito, que o usuario setou de proposito, prevalece).
+         return array_merge($defaults, is_array($config) ? $config : []);
       }
 
-      return $this->getDefaultConfig();
+      return $defaults;
    }
 
    /**
@@ -547,7 +554,7 @@ abstract class PluginNextoolBaseModule {
       // Usa roteador genérico module_assets.php
       // Formato: front/module_assets.php?module=[key]&file=[filename]
       // O roteador serve o arquivo CSS do módulo sem passar pelo roteamento do Symfony
-      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename);
+      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename) . '&fv=' . $this->getAssetFv($filename);
    }
 
    /**
@@ -568,7 +575,23 @@ abstract class PluginNextoolBaseModule {
       // Usa roteador genérico module_assets.php
       // Formato: front/module_assets.php?module=[key]&file=[filename]
       // O roteador serve o arquivo JS do módulo sem passar pelo roteamento do Symfony
-      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename);
+      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename) . '&fv=' . $this->getAssetFv($filename);
+   }
+
+   /**
+    * Stamp de cache-busting (`fv`) por filemtime do asset (em front/). Necessário porque o `v` que o
+    * GLPI anexa às URLs de JS/CSS é a versão do PLUGIN -- NÃO muda em edição de runtime (dev) nem em
+    * hotfix sem bump, então o browser/proxy/CDN serve a versão velha. O `fv` (mtime do arquivo) muda a
+    * CADA edição do asset, então um deploy chega ao usuário no próximo carregamento de página, SEM
+    * precisar de hard reload. Vale p/ todos os módulos (este helper é do BaseModule).
+    *
+    * @param string $filename Nome do arquivo (ex: '[module_key].js.php')
+    * @return string stamp curto (12 hex)
+    */
+   protected function getAssetFv($filename) {
+      $path = $this->getModulePath() . '/front/' . $filename;
+      $ver  = method_exists($this, 'getVersion') ? (string) $this->getVersion() : '';
+      return substr(md5($ver . '|' . (@filemtime($path) ?: '0')), 0, 12);
    }
 
    /**

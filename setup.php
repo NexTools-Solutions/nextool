@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.1.3');
+define('PLUGIN_NEXTOOL_VERSION', '4.2.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -287,6 +287,20 @@ function plugin_init_nextool() {
                      }
                   } elseif (class_exists($pageConfigClassName)) {
                      Plugin::registerClass($pageConfigClassName);
+                  }
+               }
+            }
+
+            // Mapeamento reverso tabela->itemtype para classes searchable de módulo já
+            // carregadas (pelos onInit via require_once, que "furam" o autoloader do NexTool).
+            // getItemTypeForTable() não resolve tabelas custom (ex: ..._log) -> retorna null e o
+            // Search estoura getItemForItemtype(null) ao renderizar a grade. O autoloader mapeia
+            // as classes que ELE carrega; este scan cobre as pré-carregadas pelos onInit.
+            foreach (get_declared_classes() as $ntClass) {
+               if (strncmp($ntClass, 'PluginNextool', 13) === 0 && is_subclass_of($ntClass, 'CommonDBTM')) {
+                  $ntTable = $ntClass::getTable();
+                  if (is_string($ntTable) && $ntTable !== '' && !isset($CFG_GLPI['glpiitemtypetables'][$ntTable])) {
+                     $CFG_GLPI['glpiitemtypetables'][$ntTable] = $ntClass;
                   }
                }
             }

@@ -60,7 +60,11 @@ abstract class PluginNextoolBaseAuditLog extends CommonDBTM {
     */
    protected static function jsonEncodeIfArray(mixed $value): mixed {
       if (is_array($value)) {
-         return json_encode(array_values($value), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+         // array_values() SÓ para listas sequenciais (normaliza chaves esparsas).
+         // Mapas associativos (ex.: 'details' com chaves nomeadas) preservam as
+         // chaves -- senão formatDetails() exibe índices numéricos em vez dos nomes.
+         $encodable = array_is_list($value) ? array_values($value) : $value;
+         return json_encode($encodable, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
       }
       return $value;
    }

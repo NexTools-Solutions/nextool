@@ -103,7 +103,7 @@ global $CFG_GLPI;
 // Verifica se é um arquivo PHP válido
 if ($extension !== 'php') {
    Html::header('Nextool - Erro', $_SERVER['PHP_SELF'], "config", "plugins");
-   echo "<div class='alert alert-danger'>Apenas arquivos PHP são permitidos.</div>";
+   echo "<div class='alert alert-danger'>" . __('Apenas arquivos PHP são permitidos.', 'nextool') . "</div>";
    Html::footer();
    exit;
 }

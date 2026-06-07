@@ -25,6 +25,18 @@ class PluginNextoolConfig extends CommonDBTM {
 
    private const CLIENT_ID_SALT = 'RITEC_SALT_V2';
 
+   /**
+    * Context dedicado para o VÍNCULO DE PROVISIONAMENTO do ambiente
+    * (client_identifier + client_secret HMAC). Diferente de
+    * 'plugin:nextool_distribution' (config do plugin), este context NÃO é
+    * apagado no uninstall: o segredo HMAC é estado do AMBIENTE/máquina, não
+    * config do plugin. Assim, reinstalar no mesmo domínio reusa o segredo
+    * (o client_identifier é determinístico por domínio) e evita o 409 do
+    * bootstrap (identifier_already_provisioned). Ver hook.php (uninstall) e
+    * memória provisioning-survives-uninstall.
+    */
+   const PROVISIONING_CONTEXT = 'plugin:nextool_provisioning';
+
    /** Origens permitidas no formulário de contato (LO-01). Fonte única para validação + template. */
    public const CONTACT_SOURCES = [
       'canais_jmba',
@@ -261,6 +273,54 @@ class PluginNextoolConfig extends CommonDBTM {
     *
     * @return array
     */
+   /**
+    * Lê o vínculo de provisionamento persistido (sobrevive ao uninstall).
+    *
+    * @return array{client_identifier: string, client_secret: string}
+    */
+   public static function getProvisioning(): array {
+      $values = Config::getConfigurationValues(self::PROVISIONING_CONTEXT);
+      return [
+         'client_identifier' => isset($values['client_identifier']) ? trim((string)$values['client_identifier']) : '',
+         'client_secret'     => isset($values['client_secret']) ? trim((string)$values['client_secret']) : '',
+      ];
+   }
+
+   /**
+    * Persiste o vínculo de provisionamento (identifier + segredo HMAC) no
+    * context dedicado que NÃO é apagado no uninstall. Só grava valores não
+    * vazios (não sobrescreve um segredo válido por vazio).
+    */
+   public static function setProvisioning(string $clientIdentifier, string $clientSecret): void {
+      $clientIdentifier = trim($clientIdentifier);
+      $clientSecret     = trim($clientSecret);
+      $current = Config::getConfigurationValues(self::PROVISIONING_CONTEXT);
+
+      $payload = [];
+      if ($clientIdentifier !== '') {
+         $payload['client_identifier'] = $clientIdentifier;
+      }
+      if ($clientSecret !== '') {
+         $payload['client_secret'] = $clientSecret;
+      }
+      if ($payload === []) {
+         return;
+      }
+
+      Config::setConfigurationValues(self::PROVISIONING_CONTEXT, array_merge($current, $payload));
+   }
+
+   /**
+    * Remove o vínculo de provisionamento persistido (ação "Desvincular
+    * ambiente" -- reset intencional pelo cliente).
+    */
+   public static function clearProvisioning(): void {
+      global $DB;
+      if ($DB->tableExists('glpi_configs')) {
+         $DB->delete('glpi_configs', ['context' => self::PROVISIONING_CONTEXT]);
+      }
+   }
+
    public static function getDistributionSettings() {
       $values = Config::getConfigurationValues('plugin:nextool_distribution');
       $updated = [];
@@ -288,10 +348,25 @@ class PluginNextoolConfig extends CommonDBTM {
          $values = array_merge($values, $updated);
       }
 
+      $clientSecret = isset($values['client_secret']) ? trim((string)$values['client_secret']) : '';
+
+      // Provisionamento persistido é a FONTE DE VERDADE do segredo HMAC e do
+      // identifier: sobrevive ao uninstall, então reinstalar no mesmo domínio
+      // reusa o segredo (evita o 409 do bootstrap). Sobrescreve os valores do
+      // context 'distribution' quando presentes. Fallback para distribution
+      // mantém compat com ambientes ainda não migrados.
+      $provisioning = self::getProvisioning();
+      if ($provisioning['client_identifier'] !== '') {
+         $clientIdentifier = $provisioning['client_identifier'];
+      }
+      if ($provisioning['client_secret'] !== '') {
+         $clientSecret = $provisioning['client_secret'];
+      }
+
       return [
          'base_url'  => $baseUrl,
          'client_identifier' => $clientIdentifier,
-         'client_secret' => isset($values['client_secret']) ? trim((string)$values['client_secret']) : '',
+         'client_secret' => $clientSecret,
       ];
    }
 }

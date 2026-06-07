@@ -85,6 +85,40 @@ function plugin_nextool_install() {
       }
    }
 
+   // Migração idempotente: garantir que o vínculo de provisionamento (identifier
+   // + segredo HMAC) viva no context resiliente PROVISIONING_CONTEXT, que sobrevive
+   // ao uninstall. Clientes existentes têm o segredo só em
+   // 'plugin:nextool_distribution' (apagado no uninstall) ou na tabela legacy
+   // env_secrets. Roda no install E no upgrade (upgrade chama install). No
+   // reinstall pós-uninstall, o provisioning já está preenchido -> no-op.
+   if (class_exists('PluginNextoolConfig')) {
+      try {
+         $prov = PluginNextoolConfig::getProvisioning();
+         if ($prov['client_secret'] === '') {
+            $dist = Config::getConfigurationValues('plugin:nextool_distribution');
+            $identifier = trim((string) ($dist['client_identifier'] ?? ''));
+            if ($identifier === '') {
+               $gc = PluginNextoolConfig::getConfig();
+               $identifier = trim((string) ($gc['client_identifier'] ?? ''));
+            }
+            $secret = trim((string) ($dist['client_secret'] ?? ''));
+            if ($secret === '' && $identifier !== ''
+               && class_exists('PluginNextoolDistributionClient')) {
+               $row = PluginNextoolDistributionClient::getEnvSecretRow($identifier);
+               if ($row && !empty($row['client_secret'])) {
+                  $secret = trim((string) $row['client_secret']);
+               }
+            }
+            if ($identifier !== '' && $secret !== '') {
+               PluginNextoolConfig::setProvisioning($identifier, $secret);
+               Toolbox::logInFile('plugin_nextool', 'Provisionamento migrado para o context resiliente (plugin:nextool_provisioning).');
+            }
+         }
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'Migração de provisionamento falhou: ' . $e->getMessage());
+      }
+   }
+
    try {
       $manager = PluginNextoolModuleManager::getInstance();
       $manager->refreshModules();
@@ -165,11 +199,18 @@ function plugin_nextool_uninstall() {
       nextool_delete_dir($tmpRemoteDir);
    }
 
-   // Remove configurações do self-updater em glpi_configs
+   // Remove configurações do self-updater e da distribuição em glpi_configs.
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_core_update']);
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_distribution']);
+   // ATENÇÃO: NÃO apagar 'plugin:nextool_provisioning' (PluginNextoolConfig::PROVISIONING_CONTEXT).
+   // O vínculo de provisionamento (client_identifier + segredo HMAC) é estado do
+   // AMBIENTE, não config do plugin. Preservá-lo permite que reinstalar no mesmo
+   // domínio reuse o segredo (o identifier é determinístico por domínio) e evita
+   // o 409 do bootstrap (identifier_already_provisioned). Reset intencional é via
+   // "Desvincular ambiente" (cliente) ou "Resetar provisionamento" (admin), nunca
+   // no uninstall.
 
-   Toolbox::logInFile('plugin_nextool', 'Plugin desinstalado: módulos removidos, caches limpos e diretórios temporários apagados.');
+   Toolbox::logInFile('plugin_nextool', 'Plugin desinstalado: módulos removidos, caches limpos e diretórios temporários apagados. Vínculo de provisionamento preservado.');
 
    PluginNextoolPermissionManager::removeRights();
 
