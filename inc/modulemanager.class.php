@@ -31,9 +31,9 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/moduleaudit.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulecatalog.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/moduleaudit.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
 
 class PluginNextoolModuleManager {
 
@@ -75,7 +75,7 @@ class PluginNextoolModuleManager {
     * Construtor privado (padrão Singleton)
     */
    private function __construct() {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+      require_once __DIR__ . '/modulespath.inc.php';
       // Nova estrutura: modules em GLPI_PLUGIN_DOC_DIR/nextool/modules (files/_plugins/nextool/modules)
       $this->modulesPath = NEXTOOL_MODULES_BASE;
       
@@ -837,7 +837,7 @@ class PluginNextoolModuleManager {
       // a hint de core update é alimentada para esses ambientes.
       if ($result['success']) {
          try {
-            require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+            require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
             $updater = new PluginNextoolCoreUpdater();
             $updater->check('stable', 'post_download_sideeffect');
          } catch (Throwable $e) {
@@ -1373,7 +1373,7 @@ class PluginNextoolModuleManager {
          return false;
       }
 
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       PluginNextoolFileHelper::deleteDirectory($dir, true);
       return true;
    }
@@ -1795,7 +1795,7 @@ class PluginNextoolModuleManager {
     * antes que o GLPI esteja completamente carregado.
     */
    public function refreshStatelessCache(): void {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/statelessmodules.inc.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/statelessmodules.inc.php';
 
       $statelessMap = [];
       foreach ($this->modules as $moduleKey => $module) {

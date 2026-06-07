@@ -23,7 +23,7 @@ if (!Session::getLoginUserID()) {
    exit;
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 if (!PluginNextoolPermissionManager::canManageAdminTabs()) {
    http_response_code(403);
    echo json_encode([

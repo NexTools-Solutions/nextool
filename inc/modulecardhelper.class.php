@@ -38,9 +38,9 @@ class PluginNextoolModuleCardHelper {
          $out = self::renderBadge(__('Permissão de visualização: não é possível gerenciar este módulo.', 'nextool'), 'badge bg-info text-white me-1');
          $secondary = [];
          self::appendDataItems($state, $secondary);
-         if ($state['show_config_button']) {
-            $secondary[] = self::renderDropdownItem(__('Configurações', 'nextool'), 'ti ti-settings', $state['config_url']);
-         }
+         // Não inclui "Configurações" aqui: a página de config exige canManage e bate em erro.
+         // Saiba Mais e Changelogs são informativos e devem aparecer para perfis READ-only.
+         self::appendExternalLinksForCompat($state, $secondary);
          return $out . self::wrapDropdown($secondary);
       }
 
@@ -64,6 +64,7 @@ class PluginNextoolModuleCardHelper {
          $out = self::renderBadge(__('Plano não validado. Solicite a um administrador para realizar este passo.', 'nextool'));
          $secondary = [];
          self::appendDataItems($state, $secondary);
+         self::appendExternalLinksForCompat($state, $secondary);
          return $out . self::wrapDropdown($secondary);
       }
 

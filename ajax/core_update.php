@@ -23,8 +23,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
    exit;
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
 
 $action = isset($_POST['action']) ? trim((string)$_POST['action']) : '';
 $channel = isset($_POST['channel']) ? trim((string)$_POST['channel']) : 'stable';

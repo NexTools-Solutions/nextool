@@ -15,7 +15,7 @@ include('../../../inc/includes.php');
 
 header('Content-Type: application/json; charset=UTF-8');
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 if (!PluginNextoolPermissionManager::canManageModules()) {
    http_response_code(403);
    echo json_encode([
@@ -61,7 +61,7 @@ if (!preg_match('/^[a-z0-9_-]+$/i', $moduleKeyRaw)) {
 $moduleKey = strtolower($moduleKeyRaw);
 
 // UUID v4 para correlacionar todos os eventos desta ação no ContainerAPI
-require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
 $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
 
 $allowedModuleFilters = ['enabled', 'disabled', 'download', 'install', 'update', 'free', 'licensed'];
@@ -100,11 +100,11 @@ if ($action === 'purge_data') {
    }
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/basemodule.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/licensevalidator.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/nextoolmainconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/basemodule.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/nextoolmainconfig.class.php';
 
 $manager = PluginNextoolModuleManager::getInstance();
 

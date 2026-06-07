@@ -23,6 +23,13 @@ class PluginNextoolConfig extends CommonDBTM {
 
    const DEFAULT_CONTAINERAPI_BASE_URL = 'https://containerapi.nextoolsolutions.ai/';
 
+   /**
+    * Context dedicado do vínculo de provisionamento (identifier + segredo HMAC).
+    * NÃO é apagado no uninstall -- é estado do ambiente, não config do plugin.
+    * Evita o 409 (identifier_already_provisioned) ao reinstalar no mesmo domínio.
+    */
+   const PROVISIONING_CONTEXT = 'plugin:nextool_provisioning';
+
    private const CLIENT_ID_SALT = 'RITEC_SALT_V2';
 
    static $rightname = 'config';
@@ -214,6 +221,53 @@ class PluginNextoolConfig extends CommonDBTM {
    }
 
    /**
+    * Lê o vínculo de provisionamento persistido (identifier + segredo HMAC).
+    * @return array{client_identifier: string, client_secret: string}
+    */
+   public static function getProvisioning(): array {
+      $values = Config::getConfigurationValues(self::PROVISIONING_CONTEXT);
+      return [
+         'client_identifier' => isset($values['client_identifier']) ? trim((string)$values['client_identifier']) : '',
+         'client_secret'     => isset($values['client_secret']) ? trim((string)$values['client_secret']) : '',
+      ];
+   }
+
+   /**
+    * Persiste o vínculo de provisionamento no context dedicado que NÃO é
+    * apagado no uninstall. Só grava valores não vazios (não sobrescreve um
+    * segredo válido por vazio).
+    */
+   public static function setProvisioning(string $clientIdentifier, string $clientSecret): void {
+      $clientIdentifier = trim($clientIdentifier);
+      $clientSecret     = trim($clientSecret);
+      $current = Config::getConfigurationValues(self::PROVISIONING_CONTEXT);
+
+      $payload = [];
+      if ($clientIdentifier !== '') {
+         $payload['client_identifier'] = $clientIdentifier;
+      }
+      if ($clientSecret !== '') {
+         $payload['client_secret'] = $clientSecret;
+      }
+      if ($payload === []) {
+         return;
+      }
+
+      Config::setConfigurationValues(self::PROVISIONING_CONTEXT, array_merge($current, $payload));
+   }
+
+   /**
+    * Remove o vínculo de provisionamento persistido (ação "Desvincular
+    * ambiente" -- reset intencional pelo cliente).
+    */
+   public static function clearProvisioning(): void {
+      global $DB;
+      if ($DB->tableExists('glpi_configs')) {
+         $DB->delete('glpi_configs', ['context' => self::PROVISIONING_CONTEXT]);
+      }
+   }
+
+   /**
     * Configuração de distribuição remota (ContainerAPI)
     *
     * @return array
@@ -245,10 +299,24 @@ class PluginNextoolConfig extends CommonDBTM {
          $values = array_merge($values, $updated);
       }
 
+      $clientSecret = isset($values['client_secret']) ? trim((string)$values['client_secret']) : '';
+
+      // Provisionamento persistido é a FONTE DE VERDADE do segredo HMAC e do
+      // identifier: sobrevive ao uninstall, então reinstalar no mesmo domínio
+      // reusa o segredo (evita o 409 do bootstrap). Fallback para distribution
+      // mantém compat com ambientes ainda não migrados.
+      $provisioning = self::getProvisioning();
+      if ($provisioning['client_identifier'] !== '') {
+         $clientIdentifier = $provisioning['client_identifier'];
+      }
+      if ($provisioning['client_secret'] !== '') {
+         $clientSecret = $provisioning['client_secret'];
+      }
+
       return [
          'base_url'  => $baseUrl,
          'client_identifier' => $clientIdentifier,
-         'client_secret' => isset($values['client_secret']) ? trim((string)$values['client_secret']) : '',
+         'client_secret' => $clientSecret,
       ];
    }
 }

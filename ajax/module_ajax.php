@@ -93,7 +93,7 @@ if ($extension !== 'php') {
 }
 
 // Verifica se o arquivo é stateless (não requer sessão/login) via whitelist explícita
-require_once GLPI_ROOT . '/plugins/nextool/inc/statelessmodules.inc.php';
+require_once NEXTOOL_PHP_DIR . '/inc/statelessmodules.inc.php';
 $statelessFiles = plugin_nextool_stateless_files();
 $isStateless = isset($statelessFiles[$moduleKey])
    && in_array($filename, $statelessFiles[$moduleKey], true);

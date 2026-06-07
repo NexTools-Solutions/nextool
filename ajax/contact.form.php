@@ -15,7 +15,7 @@ include('../../../inc/includes.php');
 
 header('Content-Type: application/json; charset=UTF-8');
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 if (!Session::getLoginUserID()) {
    http_response_code(403);
    echo json_encode([
@@ -46,8 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // Não revalidar aqui com Session::checkCSRF()/validateCSRF(), pois essas rotinas
 // podem renderizar HTML de acesso negado e quebrar o contrato JSON do endpoint.
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
 $config = PluginNextoolConfig::getConfig();
 
 $honeypot = trim((string)($_POST['contact_extra_info'] ?? ''));

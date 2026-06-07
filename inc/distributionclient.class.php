@@ -19,9 +19,9 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/hmacsignaturetrait.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/hmacsignaturetrait.class.php';
 
 class PluginNextoolDistributionClient {
 
@@ -209,7 +209,7 @@ class PluginNextoolDistributionClient {
       $this->verifyHash($downloadPath, $hashExpected);
 
       // Detectar formato do artefato e renomear com extensão correta (PharData exige)
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       $format = PluginNextoolFileHelper::detectArchiveFormat($downloadPath);
       if ($format === 'tar.gz') {
          $packagePath = $downloadPath . '.tar.gz';
@@ -224,7 +224,7 @@ class PluginNextoolDistributionClient {
          throw new RuntimeException(__('Falha ao preparar artefato para extração.', 'nextool'));
       }
 
-      require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+      require_once __DIR__ . '/modulespath.inc.php';
       $destination = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
       $this->extractPackage($packagePath, $destination, $moduleKey);
 
@@ -254,7 +254,7 @@ class PluginNextoolDistributionClient {
          self::buildHmacHeadersV2($this->clientIdentifier, '/api/distribution/install-request', $body, $this->clientSecret)
       );
       if (!isset($GLOBALS['nextool_request_group_id'])) {
-         require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+         require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
       }
       $requestHeaders[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
@@ -290,7 +290,7 @@ class PluginNextoolDistributionClient {
          $headers[] = 'X-Client-Identifier: ' . $this->clientIdentifier;
       }
       if (!isset($GLOBALS['nextool_request_group_id'])) {
-         require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+         require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
       }
       $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
@@ -335,7 +335,8 @@ class PluginNextoolDistributionClient {
             $phar = new PharData($filePath);
             PluginNextoolFileHelper::assertSecureArchiveEntries(
                $phar,
-               sprintf('pacote do módulo %s', $moduleKey)
+               sprintf('pacote do módulo %s', $moduleKey),
+               $filePath
             );
             $phar->extractTo($tmpExtract, null, true);
          } catch (Throwable $e) {
@@ -402,7 +403,7 @@ class PluginNextoolDistributionClient {
    }
 
    private function performRequest(string $url, array $options = []): array {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       return PluginNextoolFileHelper::performHttpRequest($url, $options);
    }
 
@@ -549,12 +550,12 @@ class PluginNextoolDistributionClient {
    }
 
    private function deleteDir(string $dir): void {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       PluginNextoolFileHelper::deleteDirectory($dir, true);
    }
 
    private function recursiveCopy(string $source, string $dest): void {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       PluginNextoolFileHelper::recursiveCopy($source, $dest);
    }
 
@@ -674,7 +675,7 @@ class PluginNextoolDistributionClient {
     * @return array|null Resposta com checkout_url ou erro
     */
    public static function createCheckoutSession(string $moduleKey, string $paymentMethod = 'card'): ?array {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
 
       $distributionSettings = PluginNextoolConfig::getDistributionSettings();
       $baseUrl = isset($distributionSettings['base_url']) ? trim((string) $distributionSettings['base_url']) : '';

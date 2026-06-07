@@ -131,6 +131,8 @@ class PluginNextoolFileHelper {
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
       curl_setopt($ch, CURLOPT_TIMEOUT, (int)($options['timeout'] ?? 30));
       curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+      curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+      curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 
       if ($method === 'POST') {
          curl_setopt($ch, CURLOPT_POST, true);
@@ -184,9 +186,10 @@ class PluginNextoolFileHelper {
     *
     * @param PharData|ZipArchive $archive
     * @param string $contextLabel Rótulo amigável usado na mensagem de erro
+    * @param string|null $archivePath Caminho do arquivo no disco (usado p/ PharData via tar)
     * @throws RuntimeException quando alguma entrada é insegura
     */
-   public static function assertSecureArchiveEntries($archive, string $contextLabel = 'pacote'): void {
+   public static function assertSecureArchiveEntries($archive, string $contextLabel = 'pacote', ?string $archivePath = null): void {
       $check = static function (string $entryName) use ($contextLabel): void {
          $normalized = str_replace('\\', '/', $entryName);
          if ($normalized === '' || str_contains($normalized, "\0")) {
@@ -205,13 +208,19 @@ class PluginNextoolFileHelper {
       };
 
       if ($archive instanceof PharData) {
-         // PharData estende RecursiveDirectoryIterator, então o nome relativo
-         // da entrada vem de getSubPathName() chamado no ITERADOR. Cada item
-         // iterado é um PharFileInfo (extends SplFileInfo), que NÃO possui
-         // esse método -- por isso a chamada precisa ser no $iterator.
-         $iterator = new RecursiveIteratorIterator($archive);
-         foreach ($iterator as $entry) {
-            $check((string)$iterator->getSubPathName());
+         // O PharData::extractTo já contém path traversal e caminhos absolutos
+         // nativamente -- esta checagem é defesa em profundidade. NÃO usar
+         // RecursiveIteratorIterator: ele lança "Cannot access phar file entry"
+         // ao acessar entradas com path > 100 chars (ex.: vendor/ de
+         // dependências Composer). Listamos via `tar -tzf`, que lê o formato
+         // PAX/paths longos corretamente. Se exec/tar não estiver disponível,
+         // confiamos na proteção nativa do extractTo (fallback seguro).
+         $path  = $archivePath ?? self::resolvePharFilePath($archive);
+         $names = ($path !== null) ? self::listTarEntries($path) : null;
+         if ($names !== null) {
+            foreach ($names as $name) {
+               $check($name);
+            }
          }
          return;
       }
@@ -224,5 +233,49 @@ class PluginNextoolFileHelper {
       }
 
       throw new InvalidArgumentException('assertSecureArchiveEntries: tipo de archive não suportado.');
+   }
+
+   /**
+    * Lista os nomes das entradas de um .tar.gz via `tar -tzf`. Robusto para
+    * paths > 100 chars (formato PAX), ao contrário do PharData iterado.
+    *
+    * @return string[]|null Lista de nomes, ou null se exec/tar indisponível ou falhar
+    */
+   private static function listTarEntries(string $tarPath): ?array {
+      if (!is_file($tarPath) || !function_exists('exec')) {
+         return null;
+      }
+      $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
+      if (in_array('exec', $disabled, true)) {
+         return null;
+      }
+      $out = [];
+      $rc  = 1;
+      exec('tar -tzf ' . escapeshellarg($tarPath) . ' 2>/dev/null', $out, $rc);
+      if ($rc !== 0) {
+         return null;
+      }
+      return $out;
+   }
+
+   /**
+    * Resolve o caminho do arquivo no disco a partir de um PharData.
+    * getPathname() retorna "phar://<arquivo>/<subpath>"; isolamos o arquivo.
+    *
+    * @return string|null Caminho no disco, ou null se não for resolúvel
+    */
+   private static function resolvePharFilePath(PharData $archive): ?string {
+      $p = $archive->getPathname();
+      if (strpos($p, 'phar://') === 0) {
+         $p = substr($p, strlen('phar://'));
+      }
+      foreach (['.tar.gz', '.tgz', '.tar'] as $ext) {
+         $pos = strpos($p, $ext);
+         if ($pos !== false) {
+            $candidate = substr($p, 0, $pos + strlen($ext));
+            return is_file($candidate) ? $candidate : null;
+         }
+      }
+      return is_file($p) ? $p : null;
    }
 }

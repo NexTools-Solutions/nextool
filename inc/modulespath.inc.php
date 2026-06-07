@@ -12,6 +12,22 @@ declare(strict_types=1);
  * @license GPLv3+
  */
 
+// Resolve o path absoluto do plugin nextool (funciona tanto em plugins/ quanto em
+// marketplace/). Plugin::getPhpDir() varre os PluginDirectories do GLPI; fallback
+// via dirname(__DIR__) cobre boot muito cedo. Definido ANTES do guard de return
+// abaixo para valer mesmo quando NEXTOOL_MODULES_DIR já existe (re-include).
+if (!defined('NEXTOOL_PHP_DIR')) {
+   $nextoolPhpDir = false;
+   if (class_exists('\\Plugin')) {
+      $nextoolPhpDir = \Plugin::getPhpDir('nextool');
+   }
+   if ($nextoolPhpDir === false) {
+      // dirname(__DIR__) -- este arquivo vive em <plugin>/inc/ e dirname resolve <plugin>
+      $nextoolPhpDir = dirname(__DIR__);
+   }
+   define('NEXTOOL_PHP_DIR', $nextoolPhpDir);
+}
+
 if (!defined('GLPI_ROOT') || defined('NEXTOOL_MODULES_DIR')) {
    return;
 }
@@ -89,4 +105,71 @@ if (!defined('NEXTOOL_MODULES_BASE')) {
    define('NEXTOOL_MODULES_BASE', (strpos(NEXTOOL_MODULES_DIR, '/') === 0 || (strlen(NEXTOOL_MODULES_DIR) > 1 && substr(NEXTOOL_MODULES_DIR, 1, 1) === ':'))
       ? rtrim(NEXTOOL_MODULES_DIR, '/')
       : (rtrim(GLPI_ROOT, '/') . '/' . ltrim(NEXTOOL_MODULES_DIR, '/')));
+}
+
+// -------------------------------------------------------------------------
+// Autoloader das classes dos módulos NexTool (modules/<mk>/inc/<x>.class.php).
+// Endpoints genéricos do GLPI que resolvem o itemtype via autoload do "namespace global"
+// -- notadamente /ajax/search.php (Search::show das abas) -- não encontram essas classes
+// (vivem fora de plugins/.../inc) e a busca falha (no GLPI 10 a aba renderiza vazia).
+// Registrar aqui cobre TODOS os módulos, ativos ou não, em qualquer requisição, sem
+// depender de cada módulo registrar a classe manualmente no onInit.
+// Defensivo: só age em PluginNextool*, nunca lança, e revalida class_exists após o require.
+if (!defined('NEXTOOL_MODULE_AUTOLOADER')) {
+   define('NEXTOOL_MODULE_AUTOLOADER', true);
+   spl_autoload_register(static function (string $class): void {
+      if (strncmp($class, 'PluginNextool', 13) !== 0
+          || class_exists($class, false)
+          || interface_exists($class, false)) {
+         return;
+      }
+      if (!defined('NEXTOOL_MODULES_BASE')) {
+         return;
+      }
+      $rest = substr($class, 13);
+      if ($rest === '') {
+         return;
+      }
+      static $modules = null;
+      if ($modules === null) {
+         $modules = [];
+         foreach (glob(NEXTOOL_MODULES_BASE . '/*', GLOB_ONLYDIR) ?: [] as $dir) {
+            $modules[basename($dir)] = $dir;
+         }
+         // Casa o prefixo de módulo mais longo primeiro (evita ambiguidade de prefixos).
+         uksort($modules, static function (string $a, string $b): int {
+            return strlen($b) <=> strlen($a);
+         });
+      }
+      foreach ($modules as $mk => $dir) {
+         $uc = ucfirst($mk);
+         if (strncmp($rest, $uc, strlen($uc)) !== 0) {
+            continue;
+         }
+         $suffix = strtolower(substr($rest, strlen($uc)));
+         if ($suffix === '') {
+            continue;
+         }
+         // Dois padrões de nome observados: <suffix>.class.php e <mk><suffix>.class.php
+         foreach ([$dir . '/inc/' . $suffix . '.class.php', $dir . '/inc/' . $mk . $suffix . '.class.php'] as $file) {
+            if (is_file($file)) {
+               require_once $file;
+               if (class_exists($class, false) || interface_exists($class, false)) {
+                  // Mapeamento reverso tabela->itemtype no cache do GLPI. getItemTypeForTable()
+                  // não resolve tabelas custom de módulo (ex: ..._log, que não seguem a
+                  // pluralização padrão) e retorna null; o Search então estoura
+                  // getItemForItemtype(null) ao renderizar colunas dessas tabelas com dados.
+                  if (is_subclass_of($class, 'CommonDBTM')) {
+                     global $CFG_GLPI;
+                     $tbl = $class::getTable();
+                     if (is_string($tbl) && $tbl !== '' && !isset($CFG_GLPI['glpiitemtypetables'][$tbl])) {
+                        $CFG_GLPI['glpiitemtypetables'][$tbl] = $class;
+                     }
+                  }
+                  return;
+               }
+            }
+         }
+      }
+   });
 }

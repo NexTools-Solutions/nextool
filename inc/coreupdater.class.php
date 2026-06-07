@@ -13,11 +13,11 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdateclient.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdatelog.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+require_once __DIR__ . '/modulespath.inc.php';
+require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/coreupdateclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/coreupdatelog.class.php';
 
 class PluginNextoolCoreUpdater {
 
@@ -1179,7 +1179,7 @@ class PluginNextoolCoreUpdater {
          // PharData — formato preferencial (built-in, sem dependência externa)
          try {
             $phar = new PharData($packagePath);
-            PluginNextoolFileHelper::assertSecureArchiveEntries($phar, 'pacote de core');
+            PluginNextoolFileHelper::assertSecureArchiveEntries($phar, 'pacote de core', $packagePath);
             $phar->extractTo($extractRoot, null, true);
          } catch (Throwable $e) {
             throw new RuntimeException(sprintf(
@@ -1295,7 +1295,7 @@ class PluginNextoolCoreUpdater {
    }
 
    private function recursiveCopy(string $source, string $dest): void {
-      require_once GLPI_ROOT . '/plugins/nextool/inc/filehelper.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
       PluginNextoolFileHelper::recursiveCopy($source, $dest);
    }
 
@@ -1343,14 +1343,15 @@ class PluginNextoolCoreUpdater {
       // 1. Pre-update: force NOTUPDATED to prevent "version changed" deactivation (marketplace pattern)
       $this->preUpdatePluginState();
 
-      // 2. Versioned Backup
-      $backupMeta = $this->createVersionedBackup($targetPath);
-      $backupFilesPath = $this->getBackupsRoot() . '/' . $backupMeta['backup_id'] . '/files';
-
-      // 3. Maintenance flag
-      $this->setMaintenanceFlag();
-
+      $backupFilesPath = null;
       try {
+         // 2. Versioned Backup (pode falhar se mkdir/permissão)
+         $backupMeta = $this->createVersionedBackup($targetPath);
+         $backupFilesPath = $this->getBackupsRoot() . '/' . $backupMeta['backup_id'] . '/files';
+
+         // 3. Maintenance flag
+         $this->setMaintenanceFlag();
+
          // 4. Per-file atomic overwrite
          $this->overwriteFilesFromStaging($stagedPath, $targetPath);
 
@@ -1365,56 +1366,59 @@ class PluginNextoolCoreUpdater {
                $integrityResult['message'] ?? 'unknown'
             ));
          }
+
+         // 6. Reset opcache BEFORE activation so any file reads get fresh content
+         $this->resetOpcache();
+
+         // 7. Post-update: set version + activate directly in DB
+         $this->postUpdatePluginActivation($targetVersion);
+
+         // 7b. Verify state — GLPI's own boot hooks may override during concurrent requests
+         $this->verifyAndForceActivated();
+
+         // 8. Success metadata
+         $this->persistState(['pending_apply_version' => $targetVersion]);
+
+         global $CFG_GLPI;
+         $rootDoc = $CFG_GLPI['root_doc'] ?? '';
+
+         return [
+            'success' => true,
+            'message' => __('Atualização concluída com sucesso. Redirecionando...', 'nextool'),
+            'data' => [
+               'previous_version' => $this->getInstalledCoreVersion(),
+               'target_version' => $targetVersion,
+               'current_version' => $targetVersion,
+               'final_state' => 'completed',
+               'needs_reload' => true,
+               'redirect_url' => $rootDoc . '/front/plugin.php',
+            ],
+         ];
       } catch (Throwable $e) {
-         // Rollback
          Toolbox::logInFile('plugin_nextool', sprintf(
             "[ERROR] [CoreUpdater] apply falhou, iniciando rollback: %s\n",
             $e->getMessage()
          ));
-         try {
-            $this->rollbackFromBackup($backupFilesPath, $targetPath);
-         } catch (Throwable $rollbackEx) {
-            Toolbox::logInFile('plugin_nextool', sprintf(
-               "[CRITICAL] [CoreUpdater] rollback também falhou: %s\n",
-               $rollbackEx->getMessage()
-            ));
+         // Só faz rollback se já houver backup (falha antes do backup deixa fs intacto)
+         if ($backupFilesPath !== null) {
+            try {
+               $this->rollbackFromBackup($backupFilesPath, $targetPath);
+            } catch (Throwable $rollbackEx) {
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  "[CRITICAL] [CoreUpdater] rollback também falhou: %s\n",
+                  $rollbackEx->getMessage()
+               ));
+            }
          }
-         $this->clearMaintenanceFlag();
-         $this->resetOpcache();
          return [
             'success' => false,
             'message' => sprintf(__('Apply falhou com rollback: %s', 'nextool'), $e->getMessage()),
          ];
+      } finally {
+         // Garante limpeza mesmo em falha precoce (createVersionedBackup ou setMaintenanceFlag)
+         $this->clearMaintenanceFlag();
+         $this->resetOpcache();
       }
-
-      // 6. Reset opcache BEFORE activation so any file reads get fresh content
-      $this->resetOpcache();
-
-      // 7. Post-update: set version + activate directly in DB
-      $this->postUpdatePluginActivation($targetVersion);
-
-      // 7b. Verify state — GLPI's own boot hooks may override during concurrent requests
-      $this->verifyAndForceActivated();
-
-      // 8. Success
-      $this->clearMaintenanceFlag();
-      $this->persistState(['pending_apply_version' => $targetVersion]);
-
-      global $CFG_GLPI;
-      $rootDoc = $CFG_GLPI['root_doc'] ?? '';
-
-      return [
-         'success' => true,
-         'message' => __('Atualização concluída com sucesso. Redirecionando...', 'nextool'),
-         'data' => [
-            'previous_version' => $this->getInstalledCoreVersion(),
-            'target_version' => $targetVersion,
-            'current_version' => $targetVersion,
-            'final_state' => 'completed',
-            'needs_reload' => true,
-            'redirect_url' => $rootDoc . '/front/plugin.php',
-         ],
-      ];
    }
 
    private function createVersionedBackup(string $pluginPath): array {

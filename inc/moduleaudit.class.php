@@ -151,9 +151,9 @@ class PluginNextoolModuleAudit extends CommonDBTM {
             echo "<td><span class='badge bg-gray-lt'>" . Html::entities_deep($action) . "</span></td>";
             echo "<td>";
             if ($result === 1) {
-               echo "<span class='badge bg-green'>" . __('Sucesso', 'nextool') . "</span>";
+               echo "<span class='badge bg-green text-white'>" . __('Sucesso', 'nextool') . "</span>";
             } elseif ($result === 0) {
-               echo "<span class='badge bg-red'>" . __('Falhou', 'nextool') . "</span>";
+               echo "<span class='badge bg-red text-white'>" . __('Falhou', 'nextool') . "</span>";
             } else {
                echo "-";
             }

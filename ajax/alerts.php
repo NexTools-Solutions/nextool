@@ -7,7 +7,7 @@ header('Content-Type: application/json; charset=UTF-8');
 
 Session::checkLoginUser();
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 if (!PluginNextoolPermissionManager::canAccessAdminTabs()) {
    http_response_code(403);
    echo json_encode(['success' => false, 'error' => 'forbidden']);
@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
    exit;
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/alertmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
 
 $action = trim((string)($_POST['action'] ?? ''));
 

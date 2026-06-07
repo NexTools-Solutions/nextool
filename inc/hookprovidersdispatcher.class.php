@@ -18,7 +18,7 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/hookproviderinterface.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/hookproviderinterface.class.php';
 
 class PluginNextoolHookProvidersDispatcher {
 
@@ -49,8 +49,8 @@ class PluginNextoolHookProvidersDispatcher {
       self::$providers = [];
 
       if (!class_exists('PluginNextoolModuleManager')) {
-         $mm = GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-         $bm = GLPI_ROOT . '/plugins/nextool/inc/basemodule.class.php';
+         $mm = NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+         $bm = NEXTOOL_PHP_DIR . '/inc/basemodule.class.php';
          if (file_exists($bm)) {
             require_once $bm;
          }

@@ -398,13 +398,20 @@ abstract class PluginNextoolBaseModule {
          'LIMIT' => 1
       ]);
 
+      $defaults = $this->getDefaultConfig();
+
       if (count($iterator)) {
          $data = $iterator->current();
          $config = json_decode($data['config'] ?? '{}', true);
-         return $config ?: [];
+         // Mescla os defaults POR BAIXO do config persistido: chaves novas do
+         // getDefaultConfig() (ex.: poll_enabled/sync_status adicionadas depois do
+         // primeiro save) passam a valer o default em vez de ficarem silenciosamente
+         // OFF. O config salvo continua sobrescrevendo os defaults (inclusive um 0
+         // explicito, que o usuario setou de proposito, prevalece).
+         return array_merge($defaults, is_array($config) ? $config : []);
       }
 
-      return $this->getDefaultConfig();
+      return $defaults;
    }
 
    /**
@@ -572,13 +579,19 @@ abstract class PluginNextoolBaseModule {
     * @param string $filename Nome do arquivo CSS.php (ex: '[module_key].css.php')
     * @return string Caminho web relativo ao plugin para uso em hooks do GLPI
     */
+   protected function getAssetFv($filename) {
+      $path = $this->getModulePath() . '/front/' . $filename;
+      $ver  = method_exists($this, 'getVersion') ? (string) $this->getVersion() : '';
+      return substr(md5($ver . '|' . (@filemtime($path) ?: '0')), 0, 12);
+   }
+
    protected function getCssPath($filename) {
       $moduleKey = $this->getModuleKey();
-      
+
       // Usa roteador genérico module_assets.php
       // Formato: front/module_assets.php?module=[key]&file=[filename]
       // O roteador serve o arquivo CSS do módulo sem passar pelo roteamento do Symfony
-      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename);
+      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename) . '&fv=' . $this->getAssetFv($filename);
    }
 
    /**
@@ -599,7 +612,7 @@ abstract class PluginNextoolBaseModule {
       // Usa roteador genérico module_assets.php
       // Formato: front/module_assets.php?module=[key]&file=[filename]
       // O roteador serve o arquivo JS do módulo sem passar pelo roteamento do Symfony
-      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename);
+      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename) . '&fv=' . $this->getAssetFv($filename);
    }
 
    /**
@@ -617,7 +630,7 @@ abstract class PluginNextoolBaseModule {
          return $modulePath . '/css/' . $filename;
       } else {
          // Estrutura antiga: css/[arquivo]
-         return GLPI_ROOT . '/plugins/nextool/css/' . $filename;
+         return NEXTOOL_PHP_DIR . '/css/' . $filename;
       }
    }
 
@@ -636,7 +649,7 @@ abstract class PluginNextoolBaseModule {
          return $modulePath . '/js/' . $filename;
       } else {
          // Estrutura antiga: js/[arquivo]
-         return GLPI_ROOT . '/plugins/nextool/js/' . $filename;
+         return NEXTOOL_PHP_DIR . '/js/' . $filename;
       }
    }
 

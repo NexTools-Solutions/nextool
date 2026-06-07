@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.1.1');
+define('PLUGIN_NEXTOOL_VERSION', '4.2.0');
 
 /** GLPI mínimo e máximo suportados */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -132,7 +132,7 @@ function plugin_init_nextool() {
    try {
    Plugin::loadLang('nextool');
 
-   $permissionfile = GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+   $permissionfile = NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
    if (file_exists($permissionfile)) {
       require_once $permissionfile;
    }
@@ -152,7 +152,7 @@ function plugin_init_nextool() {
    // Gera e persiste o Identificador do Cliente no momento em que o plugin é carregado (ativado)
    // em vez de depender apenas da primeira leitura preguiçosa da configuração.
    // Isso garante que, após a ativação, o ambiente já tenha um client_identifier estável.
-   $configfile = GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
+   $configfile = NEXTOOL_PHP_DIR . '/inc/config.class.php';
    if (file_exists($configfile)) {
       require_once $configfile;
       if (class_exists('PluginNextoolConfig')) {
@@ -165,19 +165,19 @@ function plugin_init_nextool() {
    }
 
    // Classe de setup mantida para uso interno; abas em Configurar → Geral foram removidas
-   $setupfile = GLPI_ROOT . '/plugins/nextool/inc/setup.class.php';
+   $setupfile = NEXTOOL_PHP_DIR . '/inc/setup.class.php';
    if (file_exists($setupfile)) {
       require_once $setupfile;
    }
 
    // Classe de configuração standalone (página com abas verticais nativas)
-   $mainconfigfile = GLPI_ROOT . '/plugins/nextool/inc/nextoolmainconfig.class.php';
+   $mainconfigfile = NEXTOOL_PHP_DIR . '/inc/nextoolmainconfig.class.php';
    if (file_exists($mainconfigfile)) {
       require_once $mainconfigfile;
       Plugin::registerClass('PluginNextoolMainConfig');
    }
 
-   $validationAttemptFile = GLPI_ROOT . '/plugins/nextool/inc/validationattempt.class.php';
+   $validationAttemptFile = NEXTOOL_PHP_DIR . '/inc/validationattempt.class.php';
    if (file_exists($validationAttemptFile)) {
       require_once $validationAttemptFile;
       Plugin::registerClass('PluginNextoolValidationAttempt');
@@ -186,7 +186,7 @@ function plugin_init_nextool() {
       PluginNextoolValidationAttempt::ensureDisplayPreferences();
    }
 
-   $profilefile = GLPI_ROOT . '/plugins/nextool/inc/profile.class.php';
+   $profilefile = NEXTOOL_PHP_DIR . '/inc/profile.class.php';
    if (file_exists($profilefile)) {
       require_once $profilefile;
       Plugin::registerClass('PluginNextoolProfile', ['addtabon' => ['Profile']]);
@@ -194,13 +194,13 @@ function plugin_init_nextool() {
 
    // Carrega ModuleManager e inicializa módulos ativos
    // Verifica se tabela de módulos existe (plugin já instalado)
-   $managerfile = GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-   $basefile = GLPI_ROOT . '/plugins/nextool/inc/basemodule.class.php';
+   $managerfile = NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+   $basefile = NEXTOOL_PHP_DIR . '/inc/basemodule.class.php';
    
    if (file_exists($managerfile) && file_exists($basefile)) {
       global $DB;
 
-      $hookdispatcherfile = GLPI_ROOT . '/plugins/nextool/inc/hookdispatcher.class.php';
+      $hookdispatcherfile = NEXTOOL_PHP_DIR . '/inc/hookdispatcher.class.php';
       if (file_exists($hookdispatcherfile)) {
          require_once $hookdispatcherfile;
       }
@@ -214,13 +214,13 @@ function plugin_init_nextool() {
             $manager = PluginNextoolModuleManager::getInstance();
             $manager->loadActiveModules();
 
-            $hookfile = GLPI_ROOT . '/plugins/nextool/hook.php';
+            $hookfile = NEXTOOL_PHP_DIR . '/hook.php';
             if (file_exists($hookfile)) {
                require_once $hookfile;
             }
 
             // Registra classes necessárias para Search/MassiveActions via providers dos módulos ativos
-            $dispatcherFile = GLPI_ROOT . '/plugins/nextool/inc/hookprovidersdispatcher.class.php';
+            $dispatcherFile = NEXTOOL_PHP_DIR . '/inc/hookprovidersdispatcher.class.php';
             if (file_exists($dispatcherFile)) {
                require_once $dispatcherFile;
                if (class_exists('PluginNextoolHookProvidersDispatcher')) {
@@ -250,6 +250,20 @@ function plugin_init_nextool() {
                      }
                   } elseif (class_exists($pageConfigClassName)) {
                      Plugin::registerClass($pageConfigClassName);
+                  }
+               }
+            }
+
+            // Mapeamento reverso tabela->itemtype para classes searchable de módulo já
+            // carregadas (pelos onInit via require_once, que "furam" o autoloader do NexTool).
+            // getItemTypeForTable() não resolve tabelas custom (ex: ..._log) -> retorna null e o
+            // Search estoura getItemForItemtype(null) ao renderizar a grade. O autoloader mapeia
+            // as classes que ELE carrega; este scan cobre as pré-carregadas pelos onInit.
+            foreach (get_declared_classes() as $ntClass) {
+               if (strncmp($ntClass, 'PluginNextool', 13) === 0 && is_subclass_of($ntClass, 'CommonDBTM')) {
+                  $ntTable = $ntClass::getTable();
+                  if (is_string($ntTable) && $ntTable !== '' && !isset($CFG_GLPI['glpiitemtypetables'][$ntTable])) {
+                     $CFG_GLPI['glpiitemtypetables'][$ntTable] = $ntClass;
                   }
                }
             }
@@ -319,12 +333,22 @@ function plugin_init_nextool() {
                            Plugin::registerClass($reg['class']);
                         }
                      }
-                     // Registra no hook menu_toadd (exceto módulos que usam redefine_menus)
+                     // Registra no hook menu_toadd (exceto módulos que usam redefine_menus).
+                     // Acumula em array por seção: vários módulos podem registrar na mesma
+                     // seção (ex.: 'management'). O core do GLPI 10 (Html.php) trata
+                     // is_array($val) e aceita array de classes por seção do menu_toadd.
                      if (empty($reg['uses_redefine_menus'])) {
                         if (!isset($PLUGIN_HOOKS['menu_toadd']['nextool'])) {
                            $PLUGIN_HOOKS['menu_toadd']['nextool'] = [];
                         }
-                        $PLUGIN_HOOKS['menu_toadd']['nextool'][$reg['key']] = $reg['class'];
+                        $existing = $PLUGIN_HOOKS['menu_toadd']['nextool'][$reg['key']] ?? [];
+                        if (!is_array($existing)) {
+                           $existing = [$existing];
+                        }
+                        if (!in_array($reg['class'], $existing, true)) {
+                           $existing[] = $reg['class'];
+                        }
+                        $PLUGIN_HOOKS['menu_toadd']['nextool'][$reg['key']] = $existing;
                      }
                   }
                }

@@ -16,7 +16,7 @@ header('Content-Type: application/json; charset=UTF-8');
 // Verificar autenticacao
 Session::checkLoginUser();
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 if (!PluginNextoolPermissionManager::canManageModules()) {
    http_response_code(403);
    echo json_encode([
@@ -46,7 +46,7 @@ if (!in_array($paymentMethod, ['card', 'pix', 'boleto'], true)) {
    $paymentMethod = 'card';
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
 
 $result = PluginNextoolDistributionClient::createCheckoutSession($moduleKey, $paymentMethod);
 

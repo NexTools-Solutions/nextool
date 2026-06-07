@@ -4,7 +4,7 @@ declare(strict_types=1);
  * Aba Alertas do Nextool - historico de alertas recebidos.
  */
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/alertmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
 
 $alertHistory = PluginNextoolAlertManager::getAlertHistory();
 $alertsEndpoint = Plugin::getWebDir('nextool') . '/ajax/alerts.php';

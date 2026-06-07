@@ -182,6 +182,7 @@ declare(strict_types=1);
                      $dlCount = (int)($module['download_count'] ?? 0);
                      $features = $module['features'] ?? [];
                      $moduleCategory = $module['category'] ?? '';
+                     $screenshotUrl = $module['screenshot_url'] ?? '';
                   ?>
                   <div class="col-md-6 nextool-module-card"
                        data-module-name="<?php echo strtolower(Html::entities_deep($module['name'])); ?>"
@@ -194,7 +195,8 @@ declare(strict_types=1);
                        data-module-update="<?php echo $module['update_available'] ? '1' : '0'; ?>"
                        data-module-tier="<?php echo $tier; ?>"
                        data-module-category="<?php echo Html::entities_deep($moduleCategory); ?>"
-                       data-module-downloads="<?php echo $dlCount; ?>">
+                       data-module-downloads="<?php echo $dlCount; ?>"
+                       <?php if ($screenshotUrl !== ''): ?>data-screenshot-url="<?php echo Html::entities_deep($screenshotUrl); ?>"<?php endif; ?>>
                      <div class="card border <?php echo $borderClass; ?> h-100 position-relative">
                         <span class="nextool-badge-ribbon <?php echo $ribbonClass; ?>"><?php echo $ribbonLabel; ?></span>
                         <div class="card-body d-flex flex-column">

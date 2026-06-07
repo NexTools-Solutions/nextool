@@ -35,7 +35,7 @@ class PluginNextoolSetup extends CommonGLPI {
     */
    static function displayTabContentForItem(CommonGLPI $item, $tabnum = 1, $withtemplate = 0) {
       if ($item instanceof Config) {
-         include GLPI_ROOT . '/plugins/nextool/front/config.form.php';
+         include NEXTOOL_PHP_DIR . '/front/config.form.php';
       }
       return true;
    }

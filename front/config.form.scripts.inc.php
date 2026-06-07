@@ -95,7 +95,7 @@ declare(strict_types=1);
             <div class="row g-2" id="nextool-licensing-methods">
                <?php
                // Métodos de pagamento vêm do cache do ContainerAPI (atualizado no Sincronizar)
-               require_once GLPI_ROOT . '/plugins/nextool/inc/licensevalidator.class.php';
+               require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
                $paymentMethods = PluginNextoolLicenseValidator::getPaymentMethods();
                ?>
             </div>
@@ -396,8 +396,29 @@ function nextoolExecuteModuleAction(btn, action, moduleKey, endpoint) {
       }).toString(),
       credentials: 'same-origin'
    })
-      .then(function (r) { return r.json().catch(function () { return {}; }); })
-      .then(function (data) {
+      .then(function (r) {
+         return r.json().catch(function () { return {}; }).then(function (data) {
+            return { ok: r.ok, status: r.status, data: data };
+         });
+      })
+      .then(function (result) {
+         if (!result.ok) {
+            // M8: feedback de erro (ex.: HTTP 500) -- antes a ação falhava em silêncio
+            // e a página só recarregava, sem informar o usuário.
+            var rawMsg = (result.data && result.data.message) ? String(result.data.message) : '';
+            var errMsg = rawMsg ? rawMsg.replace(/[<>]/g, '') : <?php echo json_encode(__('Erro inesperado ao processar a ação.', 'nextool')); ?>;
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+            if (typeof glpi_toast_error === 'function') {
+               glpi_toast_error(errMsg);
+            } else if (typeof glpi_alert === 'function') {
+               glpi_alert({ title: <?php echo json_encode(__('Erro', 'nextool')); ?>, message: errMsg, type: 'error' });
+            } else {
+               alert(errMsg);
+            }
+            return;
+         }
+         var data = result.data;
          if (data && data.redirect_url) {
             window.location.assign(String(data.redirect_url));
             return;
@@ -407,6 +428,12 @@ function nextoolExecuteModuleAction(btn, action, moduleKey, endpoint) {
       .catch(function () {
          btn.innerHTML = originalHtml;
          btn.disabled = false;
+         var fallbackMsg = <?php echo json_encode(__('Falha na comunicação com o servidor.', 'nextool')); ?>;
+         if (typeof glpi_toast_error === 'function') {
+            glpi_toast_error(fallbackMsg);
+         } else {
+            alert(fallbackMsg);
+         }
       });
 }
 
@@ -1549,10 +1576,43 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
    }
    document.addEventListener('glpi.load', scheduleInitializeModuleFilters);
 })();
+
+// M11: preview de screenshot por hover no card de módulo.
+// Bootstrap 4 (GLPI 10) usa o popover via jQuery (no GLPI 11 é window.bootstrap.Popover).
+// Se jQuery/popover não estiver disponível, apenas não exibe o preview (sem quebrar a UI).
+(function() {
+   if (typeof window.jQuery === 'undefined' || typeof window.jQuery.fn.popover !== 'function') return;
+   var $ = window.jQuery;
+   var $active = null;
+   var disposeActive = function() {
+      if ($active) { try { $active.popover('dispose'); } catch (e) {} $active = null; }
+   };
+   document.addEventListener('mouseenter', function(e) {
+      var card = e.target.closest && e.target.closest('.nextool-module-card');
+      if (!card) return;
+      var url = card.dataset.screenshotUrl;
+      if (!url) return;
+      disposeActive();
+      var trigger = card.querySelector('.card');
+      if (!trigger) return;
+      $active = $(trigger);
+      $active.popover({
+         trigger: 'manual', placement: 'auto', html: true,
+         content: '<img src="' + url + '" alt="Preview" style="max-width:280px;border-radius:4px;">',
+         template: '<div class="popover nextool-screenshot-tooltip" role="tooltip"><div class="arrow"></div><div class="popover-body"></div></div>'
+      });
+      $active.popover('show');
+   }, true);
+   document.addEventListener('mouseleave', function(e) {
+      var card = e.target.closest && e.target.closest('.nextool-module-card');
+      if (!card) return;
+      disposeActive();
+   }, true);
+})();
 </script>
 
 <?php
-require_once GLPI_ROOT . '/plugins/nextool/inc/alertmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
 $_nextoolUnreadAlerts = PluginNextoolAlertManager::getUnreadAlerts();
 if (!empty($_nextoolUnreadAlerts)):
    $alertsAjaxUrl = Plugin::getWebDir('nextool') . '/ajax/alerts.php';

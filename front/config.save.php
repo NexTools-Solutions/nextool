@@ -16,7 +16,9 @@ declare(strict_types=1);
 
 include ('../../../inc/includes.php');
 
-Session::checkRight("config", READ);
+// O endpoint atende ações de leitura (validate_license) e escrita;
+// permissões específicas são reforçadas abaixo por ação (assertCanAccessAdminTabs / assertCanManageAdminTabs).
+Session::checkLoginUser();
 
 /**
  * Redireciona para a aba do Nextool quando o forcetab vier no POST.
@@ -41,14 +43,14 @@ function plugin_nextool_redirect_after_action(): void
 // O core valida automaticamente no `inc/includes.php` para qualquer POST.
 
 // Inclui classes adicionais
-require_once GLPI_ROOT . '/plugins/nextool/inc/config.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/licensevalidator.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/configaudit.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/distributionclient.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/configaudit.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
 
 // UUID v4 para correlacionar todos os eventos desta ação no ContainerAPI
 $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
@@ -113,6 +115,12 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
       'client_secret' => $result['secret'],
    ]));
 
+   // Persiste o vínculo de provisionamento no context que sobrevive ao uninstall.
+   PluginNextoolConfig::setProvisioning(
+      (string) ($distributionSettings['client_identifier'] ?? ''),
+      (string) $result['secret']
+   );
+
    if ($logAudit) {
       PluginNextoolConfigAudit::log([
          'section' => 'distribution',
@@ -144,7 +152,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
 // Verificação de permissão depende da ação
 $action = $_POST['action'] ?? '';
 
-$validActions = ['', 'validate_license', 'regenerate_hmac', 'accept_policies'];
+$validActions = ['', 'validate_license', 'regenerate_hmac', 'accept_policies', 'unlink_environment'];
 if (!in_array($action, $validActions, true)) {
    http_response_code(400);
    die(json_encode(['success' => false, 'message' => __('Ação inválida.', 'nextool')]));
@@ -174,16 +182,25 @@ if ($action === 'regenerate_hmac') {
    }
 
    PluginNextoolDistributionClient::deleteEnvSecret($clientIdentifier);
-   Config::setConfigurationValues('plugin:nextool_distribution', array_merge($distributionSettings, [
-      'client_secret' => null,
-   ]));
+   // NÃO zerar o segredo atual antes de obter o novo: se o bootstrap falhar
+   // (ex: 409 -- ambiente já provisionado no servidor após o hardening CR-01),
+   // o cliente ficaria SEM segredo e travado. Só sobrescrevemos quando há um
+   // segredo novo válido (abaixo). O segredo atual permanece em
+   // 'plugin:nextool_provisioning' como rede de segurança.
 
    $result = PluginNextoolDistributionClient::obtainOrReuseClientSecret($baseUrl, $clientIdentifier);
 
    if ($result['secret'] === null) {
-      $errorMessage = $result['message']
-         ?? __('Não foi possível recriar o segredo HMAC. Verifique os logs e tente novamente.', 'nextool');
-      Session::addMessageAfterRedirect($errorMessage, false, ERROR);
+      // 409 = ambiente já provisionado no servidor: o segredo não é reentregue
+      // por segurança. Orientar o reset pelo administrador (ritecadmin), sem
+      // assustar -- o segredo atual continua válido.
+      if ((int) ($result['http_code'] ?? 0) === 409) {
+         $errorMessage = __('Este ambiente já está provisionado no servidor de licenciamento e, por segurança, o segredo não é reenviado automaticamente. Seu segredo atual continua válido. Se você o perdeu, solicite ao administrador o reset do provisionamento deste ambiente; depois você poderá provisionar novamente.', 'nextool');
+      } else {
+         $errorMessage = $result['message']
+            ?? __('Não foi possível recriar o segredo HMAC. Verifique os logs e tente novamente.', 'nextool');
+      }
+      Session::addMessageAfterRedirect($errorMessage, false, ($result['http_code'] ?? 0) === 409 ? WARNING : ERROR);
 
       Toolbox::logInFile('plugin_nextool', sprintf(
          'Regeneração de HMAC falhou — error: %s, http_code: %d, message: %s',
@@ -212,6 +229,12 @@ if ($action === 'regenerate_hmac') {
       'client_secret' => $result['secret'],
    ]));
 
+   // Persiste o vínculo de provisionamento no context que sobrevive ao uninstall.
+   PluginNextoolConfig::setProvisioning(
+      (string) ($distributionSettings['client_identifier'] ?? ''),
+      (string) $result['secret']
+   );
+
    PluginNextoolConfigAudit::log([
       'section' => 'distribution',
       'action'  => 'regenerate_hmac',
@@ -227,6 +250,44 @@ if ($action === 'regenerate_hmac') {
       $result['reused']
          ? __('Segredo HMAC já existia e foi reutilizado com sucesso.', 'nextool')
          : __('Novo segredo HMAC provisionado automaticamente.', 'nextool'),
+      false,
+      INFO
+   );
+
+   plugin_nextool_redirect_after_action();
+   exit;
+}
+
+if ($action === 'unlink_environment') {
+   // Desvincular ambiente: limpa o vínculo de provisionamento LOCAL (segredo
+   // HMAC persistido + tabela legacy). Use ao descomissionar este ambiente ou
+   // antes de re-provisionar do zero. NOTA: o ambiente continua provisionado no
+   // SERVIDOR -- um novo bootstrap só terá sucesso após o administrador resetar
+   // o provisionamento (ritecadmin), senão retornará 409.
+   $distributionSettings = PluginNextoolConfig::getDistributionSettings();
+   $clientIdentifier = trim((string)($distributionSettings['client_identifier'] ?? ''));
+
+   PluginNextoolConfig::clearProvisioning();
+   if ($clientIdentifier !== '') {
+      PluginNextoolDistributionClient::deleteEnvSecret($clientIdentifier);
+   }
+   // Também limpa o segredo no context de distribuição (mantém base_url/identifier).
+   $distValues = Config::getConfigurationValues('plugin:nextool_distribution');
+   if (isset($distValues['client_secret'])) {
+      unset($distValues['client_secret']);
+      Config::setConfigurationValues('plugin:nextool_distribution', $distValues);
+   }
+
+   PluginNextoolConfigAudit::log([
+      'section' => 'distribution',
+      'action'  => 'unlink_environment',
+      'result'  => 1,
+      'message' => __('Vínculo de provisionamento local removido.', 'nextool'),
+      'details' => ['environment_identifier' => $clientIdentifier],
+   ]);
+
+   Session::addMessageAfterRedirect(
+      __('Vínculo de provisionamento removido localmente. Para provisionar novamente, solicite ao administrador o reset deste ambiente no servidor.', 'nextool'),
       false,
       INFO
    );
@@ -262,8 +323,16 @@ if ($action === 'accept_policies') {
          );
          $distributionSettings = $bootstrap['settings'];
       } else {
-         $errorMessage = $bootstrap['error_message']
-            ?? __('Não foi possível gerar a chave de segurança automaticamente. Tente novamente em instantes.', 'nextool');
+         // 409 = ambiente já provisionado no servidor, mas o segredo local foi perdido
+         // (ex.: reinstalação/atualização do plugin). Por segurança o segredo não é
+         // reentregue; re-tentar não resolve e só gera ruído. Orientar o reset do
+         // provisionamento pelo administrador, em vez de mandar "tentar novamente".
+         if ((int) ($bootstrap['http_code'] ?? 0) === 409) {
+            $errorMessage = __('Este ambiente já está provisionado no servidor de licenciamento e, por segurança, o segredo não é reenviado automaticamente. Se o segredo local foi perdido, solicite ao administrador o reset do provisionamento deste ambiente; depois você poderá aceitar as políticas novamente.', 'nextool');
+         } else {
+            $errorMessage = $bootstrap['error_message']
+               ?? __('Não foi possível gerar a chave de segurança automaticamente. Tente novamente em instantes.', 'nextool');
+         }
          Session::addMessageAfterRedirect($errorMessage, false, WARNING);
 
          Toolbox::logInFile('plugin_nextool', sprintf(

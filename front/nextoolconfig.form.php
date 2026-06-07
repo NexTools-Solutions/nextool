@@ -18,10 +18,10 @@ if (!defined('GLPI_ROOT')) {
    include(__DIR__ . '/../../../inc/includes.php');
 }
 
-Session::checkRight('config', READ);
+Session::checkLoginUser();
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/permissionmanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/nextoolmainconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/nextoolmainconfig.class.php';
 
 if (!PluginNextoolPermissionManager::canViewAnyModule() && !PluginNextoolPermissionManager::canAccessAdminTabs()) {
    Session::addMessageAfterRedirect(__('Você não tem permissão para acessar a configuração do NexTool.', 'nextool'), false, ERROR);
@@ -66,7 +66,7 @@ if (isset($_GET['forcetab']) && in_array($_GET['forcetab'], $validTabs, true)) {
 // Garante que nextoolValidateLicense e funções relacionadas existam na página principal.
 // Necessário porque o conteúdo das abas pode ser carregado via AJAX e scripts injetados
 // por innerHTML não executam; incluir aqui garante disponibilidade global.
-require_once GLPI_ROOT . '/plugins/nextool/inc/licenseconfig.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
 $licenseConfig = PluginNextoolLicenseConfig::getDefaultConfig();
 $policiesAcceptedAt = $licenseConfig['policies_accepted_at'] ?? null;
 $hasAcceptedPolicies = !empty($policiesAcceptedAt);
@@ -80,7 +80,7 @@ if (function_exists('plugin_version_nextool')) {
 }
 $_nxTargetVersion = '';
 if (PluginNextoolPermissionManager::canAccessAdminTabs()) {
-   require_once GLPI_ROOT . '/plugins/nextool/inc/coreupdater.class.php';
+   require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
    $_nxCoreState = PluginNextoolCoreUpdater::getState();
    // Use staged version if available, otherwise fall back to latest known version
    $_nxTargetVersion = trim((string) ($_nxCoreState['staged_target_version'] ?? ''));
@@ -99,7 +99,7 @@ $options = [
 
 $item->display($options);
 
-require_once GLPI_ROOT . '/plugins/nextool/front/config.form.scripts.inc.php';
+require_once NEXTOOL_PHP_DIR . '/front/config.form.scripts.inc.php';
 
 // Form hidden DEPOIS do display para evitar interferir no layout flex do GLPI 10
 $configSaveUrl = Plugin::getWebDir('nextool') . '/front/config.save.php';

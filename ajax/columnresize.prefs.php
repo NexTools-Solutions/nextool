@@ -24,7 +24,7 @@ include('../../../inc/includes.php');
 Session::checkLoginUser();
 header('Content-Type: application/json; charset=UTF-8');
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulespath.inc.php';
+require_once __DIR__ . '/../inc/modulespath.inc.php';
 
 // O módulo columnresize é opcional; se não estiver presente, não podemos fatal-error aqui.
 $prefClassPath = NEXTOOL_MODULES_BASE . '/columnresize/inc/columnresizeuserpref.class.php';

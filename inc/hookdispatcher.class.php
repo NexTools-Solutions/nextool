@@ -18,6 +18,8 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
+require_once __DIR__ . '/validationexception.class.php';
+
 class PluginNextoolHookDispatcher {
 
    /** @var array[] preItemAdd[itemType] = [ [class, method], ... ] */
@@ -83,6 +85,10 @@ class PluginNextoolHookDispatcher {
             if ($ret !== null) {
                $out = $ret;
             }
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] pre_item_add Ticket: %s - %s',
@@ -108,6 +114,10 @@ class PluginNextoolHookDispatcher {
             if ($ret instanceof CommonDBTM) {
                $item = $ret;
             }
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_add Ticket: %s - %s',
@@ -126,6 +136,10 @@ class PluginNextoolHookDispatcher {
       foreach (self::$itemUpdate['Ticket'] ?? [] as $cb) {
          try {
             call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_update Ticket: %s - %s',
@@ -144,6 +158,10 @@ class PluginNextoolHookDispatcher {
       foreach (self::$itemAdd['TicketValidation'] ?? [] as $cb) {
          try {
             call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_add TicketValidation: %s - %s',
@@ -162,6 +180,10 @@ class PluginNextoolHookDispatcher {
       foreach (self::$itemUpdate['TicketValidation'] ?? [] as $cb) {
          try {
             call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_update TicketValidation: %s - %s',
@@ -180,6 +202,10 @@ class PluginNextoolHookDispatcher {
       foreach (self::$itemAdd['TicketTask'] ?? [] as $cb) {
          try {
             call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_add TicketTask: %s - %s',
@@ -199,6 +225,10 @@ class PluginNextoolHookDispatcher {
       foreach (self::$itemUpdate['TicketTask'] ?? [] as $cb) {
          try {
             call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_update TicketTask: %s - %s',
@@ -222,6 +252,10 @@ class PluginNextoolHookDispatcher {
       foreach (self::$itemAdd['ITILFollowup'] ?? [] as $cb) {
          try {
             call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_add ITILFollowup: %s - %s',
@@ -245,6 +279,10 @@ class PluginNextoolHookDispatcher {
       foreach (self::$itemAdd['ITILSolution'] ?? [] as $cb) {
          try {
             call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_add ITILSolution: %s - %s',
@@ -285,6 +323,10 @@ class PluginNextoolHookDispatcher {
       foreach (self::$postShowItem[$itemType] ?? [] as $cb) {
          try {
             call_user_func($cb, $params);
+         } catch (PluginNextoolValidationException $e) {
+            // Módulo abortou intencionalmente (sinal de pre_item_add/update do GLPI
+            // para impedir a criação/atualização). Rethrow sem log.
+            throw $e;
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] post_show_item %s: %s',

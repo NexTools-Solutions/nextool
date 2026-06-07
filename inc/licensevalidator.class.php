@@ -26,10 +26,10 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once GLPI_ROOT . '/plugins/nextool/inc/logmaintenance.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/modulemanager.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/validationattempt.class.php';
-require_once GLPI_ROOT . '/plugins/nextool/inc/hmacsignaturetrait.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/logmaintenance.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/validationattempt.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/hmacsignaturetrait.class.php';
 
 class PluginNextoolLicenseValidator {
 
@@ -508,8 +508,8 @@ class PluginNextoolLicenseValidator {
          // Persistir e aplicar modules_entitlement (anti-pirataria)
          if (!empty($responseData['modules_entitlement']) && is_array($responseData['modules_entitlement'])) {
             self::persistModulesEntitlement($responseData['modules_entitlement']);
-            // Aplicar entitlement APENAS se comunicação 100% OK e origin != config_status
-            if ($origin !== 'config_status') {
+            // Aplicar entitlement APENAS se comunicação 100% OK, licença VÁLIDA e origin != config_status
+            if ($valid && $origin !== 'config_status') {
                self::applyModulesEntitlement($responseData['modules_entitlement']);
             }
          }
@@ -914,6 +914,8 @@ class PluginNextoolLicenseValidator {
             CURLOPT_POSTFIELDS     => $body,
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_TIMEOUT        => 15,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
          ]);
 
          $response = curl_exec($ch);
