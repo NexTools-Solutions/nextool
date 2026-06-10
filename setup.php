@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.3.1');
+define('PLUGIN_NEXTOOL_VERSION', '4.3.2');
 
 /** GLPI mínimo e máximo suportados */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -119,6 +119,22 @@ function plugin_init_nextool() {
       // try/catch OBRIGATÓRIO (paridade GLPI 11): exceção aqui matava o init
       // em todo request — POSTs 403 e estado de update preso. Em falha: limpa
       // o pending (sai do loop), loga e segue; update re-tentável pela UI.
+      // BOOT-SAFE: escrita DIRETA em glpi_configs — NUNCA Config::setConfigurationValues()
+      // durante o boot. setConfigurationValues() dispara CommonDBTM->update → logConfigChange
+      // → Log::constructHistory → SearchOption::getOptionsForItemtype('Config') →
+      // plugin_<x>_getAddSearchOptions() (ex.: Fields) que referencia uma classe ainda não
+      // carregada neste boot → "Class not found" → o init morre (no 4.3.0, antes do csrf, isso
+      // virava 403 em TODO POST). getConfigurationValues() lê direto do DB (sem cache), então o
+      // reset é visto no mesmo request. Incidente portfolio (G11) 2026-06-10; paridade no G10.
+      $resetCoreUpdate = static function (array $vals): void {
+         global $DB;
+         foreach ($vals as $k => $v) {
+            $DB->update('glpi_configs', ['value' => $v], [
+               'context' => 'plugin:nextool_core_update',
+               'name'    => $k,
+            ]);
+         }
+      };
       try {
          $plugin = new Plugin();
          if ($plugin->getFromDBbyDir('nextool')) {
@@ -127,12 +143,12 @@ function plugin_init_nextool() {
             if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
                $plugin->activate($plugin->fields['id']);
             }
-            Config::setConfigurationValues('plugin:nextool_core_update', [
-               'pending_apply_version' => null,
-               'update_available' => 0,
-               'staged_target_version' => null,
-               'staged_source' => null,
-               'staged_at' => null,
+            $resetCoreUpdate([
+               'pending_apply_version' => '',
+               'update_available'      => '0',
+               'staged_target_version' => '',
+               'staged_source'         => '',
+               'staged_at'             => '',
             ]);
          }
       } catch (\Throwable $e) {
@@ -140,7 +156,7 @@ function plugin_init_nextool() {
          if (class_exists('Toolbox')) {
             Toolbox::logInFile('plugin_nextool', '[CORE-UPDATE] pending_apply EXCEPTION: ' . $e->getMessage());
          }
-         Config::setConfigurationValues('plugin:nextool_core_update', ['pending_apply_version' => null]);
+         $resetCoreUpdate(['pending_apply_version' => '']);
       }
    }
 
