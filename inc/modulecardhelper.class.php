@@ -80,12 +80,24 @@ class PluginNextoolModuleCardHelper {
             $primary = self::renderBadge(__('Download bloqueado: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
          } else {
             $canDownload = !empty($state['can_download_module'] ?? $state['can_use_module']);
+            // Gate de versão mínima do plugin base — mesmo critério do caminho de
+            // UPDATE (abaixo): sem o base mínimo, o ContainerAPI recusaria o
+            // manifesto (nextool_upgrade_required); exibir o botão Download só
+            // prometia um erro. Etiqueta âmbar no lugar (paridade GLPI 11, 2026-06-10).
+            $dlPluginVersion = $state['plugin_version'] ?? '';
+            $dlMinVer = isset($state['min_version_nextools']) && $state['min_version_nextools'] !== '' && $state['min_version_nextools'] !== null
+               ? trim((string) $state['min_version_nextools']) : null;
+            $dlBlocked = $dlMinVer !== null && ($dlPluginVersion === '' || version_compare($dlPluginVersion, $dlMinVer, '<'));
+
             if ($state['is_paid'] && !$canDownload) {
                $primary = self::renderLicensingButton($state);
             } elseif ($catalogDisabled) {
                $primary = self::renderBadge(__('Download indisponível (catálogo desativado)', 'nextool'));
             } elseif (empty($state['has_zip_extension'])) {
                $primary = self::renderBadge(__('Pré-requisito: extensão php-zip não instalada', 'nextool'), 'badge bg-danger text-white me-1');
+            } elseif ($dlBlocked) {
+               $msg = sprintf(__('Nextool %s necessário para baixar', 'nextool'), $dlMinVer);
+               $primary = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . '</span>';
             } else {
                $primary = self::renderActionForm(
                   $state, 'download', __('Download', 'nextool'),

@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.3.0');
+define('PLUGIN_NEXTOOL_VERSION', '4.3.1');
 
 /** GLPI mínimo e máximo suportados */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -92,6 +92,12 @@ function plugin_nextool_boot() {
 function plugin_init_nextool() {
    global $PLUGIN_HOOKS, $CFG_GLPI;
 
+   // csrf_compliant PRIMEIRO, incondicionalmente: se qualquer coisa abaixo
+   // lançar (ex.: Plugin::install do pending_apply falhando), o init morre —
+   // e sem esta flag TODO POST do plugin vira 403, travando o GLPI do cliente
+   // em loop. Paridade GLPI 11 (incidente do portfolio, 2026-06-10).
+   $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
+
    // Maintenance mode: apply em andamento — skip init para evitar carregar código inconsistente
    if (defined('NEXTOOL_DOC_DIR')) {
       $maintenanceFlag = rtrim(NEXTOOL_DOC_DIR, '/') . '/core-update/.maintenance';
@@ -110,20 +116,31 @@ function plugin_init_nextool() {
    $coreUpdateState = Config::getConfigurationValues('plugin:nextool_core_update');
    $pendingVersion = $coreUpdateState['pending_apply_version'] ?? null;
    if ($pendingVersion !== null && $pendingVersion !== '') {
-      $plugin = new Plugin();
-      if ($plugin->getFromDBbyDir('nextool')) {
-         $plugin->install($plugin->fields['id']);
-         $plugin->getFromDB($plugin->fields['id']);
-         if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
-            $plugin->activate($plugin->fields['id']);
+      // try/catch OBRIGATÓRIO (paridade GLPI 11): exceção aqui matava o init
+      // em todo request — POSTs 403 e estado de update preso. Em falha: limpa
+      // o pending (sai do loop), loga e segue; update re-tentável pela UI.
+      try {
+         $plugin = new Plugin();
+         if ($plugin->getFromDBbyDir('nextool')) {
+            $plugin->install($plugin->fields['id']);
+            $plugin->getFromDB($plugin->fields['id']);
+            if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
+               $plugin->activate($plugin->fields['id']);
+            }
+            Config::setConfigurationValues('plugin:nextool_core_update', [
+               'pending_apply_version' => null,
+               'update_available' => 0,
+               'staged_target_version' => null,
+               'staged_source' => null,
+               'staged_at' => null,
+            ]);
          }
-         Config::setConfigurationValues('plugin:nextool_core_update', [
-            'pending_apply_version' => null,
-            'update_available' => 0,
-            'staged_target_version' => null,
-            'staged_source' => null,
-            'staged_at' => null,
-         ]);
+      } catch (\Throwable $e) {
+         error_log('[NexTool] pending_apply falhou (update pode ser re-tentado pela UI): ' . $e->getMessage());
+         if (class_exists('Toolbox')) {
+            Toolbox::logInFile('plugin_nextool', '[CORE-UPDATE] pending_apply EXCEPTION: ' . $e->getMessage());
+         }
+         Config::setConfigurationValues('plugin:nextool_core_update', ['pending_apply_version' => null]);
       }
    }
 
