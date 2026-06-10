@@ -75,6 +75,23 @@ if (($qpos = strpos($filename, '?')) !== false) {
 require_once GLPI_ROOT . '/inc/includes.php';
 Session::checkLoginUser();
 
+// Libera o lock de sessão imediatamente após validar o login.
+// Arquivos servidos por este router (CSS/JS dos módulos) apenas LEEM config —
+// nunca escrevem na sessão. Sem este write_close, cada asset segura o lock
+// exclusivo do PHP durante todo o bootstrap, serializando os demais requests
+// autenticados da mesma sessão (PHP session locking) e degradando fortemente
+// o tempo de carregamento de toda página interna. $_SESSION continua legível.
+if (session_status() === PHP_SESSION_ACTIVE) {
+   session_write_close();
+}
+
+// Remove os headers anti-cache que o PHP emite por default quando há sessão
+// (Expires: 1981 + Pragma: no-cache via session_cache_limiter). Eles anulavam
+// o Cache-Control: max-age que os assets emitem — o browser re-baixava tudo a
+// cada page load. Cada asset define seu próprio Cache-Control após este ponto.
+header_remove('Expires');
+header_remove('Pragma');
+
 // Verifica se módulo existe
 require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
 $modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;

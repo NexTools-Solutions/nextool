@@ -385,17 +385,30 @@ abstract class PluginNextoolBaseModule {
       return [];
    }
 
+   /** @var array<string, array> Cache per-request de getConfig() por module_key (invalidado em saveConfig). */
+   private static $configCache = [];
+
    /**
     * Obtém configuração atual do módulo
-    * 
+    *
+    * Memoizado por request: getConfig() é chamado em múltiplos pontos do mesmo
+    * request (onInit, assets .js.php, handlers AJAX) — sem cache, cada chamada
+    * repete o mesmo SELECT em glpi_plugin_nextool_main_modules. Mesmo padrão do
+    * getEnabledFeaturesCache do módulo fixes. Invalidado em saveConfig().
+    *
     * @return array Configuração do módulo
     */
    public function getConfig() {
       global $DB;
 
+      $moduleKey = $this->getModuleKey();
+      if (array_key_exists($moduleKey, self::$configCache)) {
+         return self::$configCache[$moduleKey];
+      }
+
       $iterator = $DB->request([
          'FROM'  => 'glpi_plugin_nextool_main_modules',
-         'WHERE' => ['module_key' => $this->getModuleKey()],
+         'WHERE' => ['module_key' => $moduleKey],
          'LIMIT' => 1
       ]);
 
@@ -409,10 +422,10 @@ abstract class PluginNextoolBaseModule {
          // primeiro save) passam a valer o default em vez de ficarem silenciosamente
          // OFF. O config salvo continua sobrescrevendo os defaults (inclusive um 0
          // explicito, que o usuario setou de proposito, prevalece).
-         return array_merge($defaults, is_array($config) ? $config : []);
+         return self::$configCache[$moduleKey] = array_merge($defaults, is_array($config) ? $config : []);
       }
 
-      return $defaults;
+      return self::$configCache[$moduleKey] = $defaults;
    }
 
    /**
@@ -427,6 +440,10 @@ abstract class PluginNextoolBaseModule {
       if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
          return false;
       }
+
+      // Invalida o cache per-request de getConfig() — a próxima leitura
+      // reflete imediatamente o que foi salvo neste mesmo request.
+      unset(self::$configCache[$this->getModuleKey()]);
 
       $iterator = $DB->request([
          'FROM'  => 'glpi_plugin_nextool_main_modules',
@@ -548,13 +565,13 @@ abstract class PluginNextoolBaseModule {
     * @param string $filename Nome do arquivo CSS.php (ex: '[module_key].css.php')
     * @return string Caminho web relativo ao plugin para uso em hooks do GLPI
     */
-   protected function getCssPath($filename) {
+   protected function getCssPath($filename, array $extraFactors = []) {
       $moduleKey = $this->getModuleKey();
-      
+
       // Usa roteador genérico module_assets.php
       // Formato: front/module_assets.php?module=[key]&file=[filename]
       // O roteador serve o arquivo CSS do módulo sem passar pelo roteamento do Symfony
-      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename) . '&fv=' . $this->getAssetFv($filename);
+      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename) . '&fv=' . $this->getAssetFv($filename, $extraFactors);
    }
 
    /**
@@ -569,13 +586,13 @@ abstract class PluginNextoolBaseModule {
     * @param string $filename Nome do arquivo JS.php (ex: '[module_key].js.php')
     * @return string Caminho web relativo ao plugin para uso em hooks do GLPI
     */
-   protected function getJsPath($filename) {
+   protected function getJsPath($filename, array $extraFactors = []) {
       $moduleKey = $this->getModuleKey();
-      
+
       // Usa roteador genérico module_assets.php
       // Formato: front/module_assets.php?module=[key]&file=[filename]
       // O roteador serve o arquivo JS do módulo sem passar pelo roteamento do Symfony
-      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename) . '&fv=' . $this->getAssetFv($filename);
+      return 'front/module_assets.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename) . '&fv=' . $this->getAssetFv($filename, $extraFactors);
    }
 
    /**
@@ -585,13 +602,64 @@ abstract class PluginNextoolBaseModule {
     * CADA edição do asset, então um deploy chega ao usuário no próximo carregamento de página, SEM
     * precisar de hard reload. Vale p/ todos os módulos (este helper é do BaseModule).
     *
-    * @param string $filename Nome do arquivo (ex: '[module_key].js.php')
+    * $extraFactors: fatores ADICIONAIS de variação do conteúdo gerado (idioma, interface,
+    * flags de config). Assets .js.php/.css.php que embutem strings i18n ou config DEVEM
+    * incluir esses fatores — a URL passa a mudar quando o conteúdo muda, o que permite
+    * `Cache-Control: max-age` longo sem servir conteúdo stale (padrão fixes HI-01).
+    *
+    * @param string $filename     Nome do arquivo (ex: '[module_key].js.php')
+    * @param array  $extraFactors Fatores extras de variação (strings/escalares)
     * @return string stamp curto (12 hex)
     */
-   protected function getAssetFv($filename) {
+   protected function getAssetFv($filename, array $extraFactors = []) {
       $path = $this->getModulePath() . '/front/' . $filename;
       $ver  = method_exists($this, 'getVersion') ? (string) $this->getVersion() : '';
-      return substr(md5($ver . '|' . (@filemtime($path) ?: '0')), 0, 12);
+      $extra = empty($extraFactors) ? '' : '|' . implode('|', array_map('strval', $extraFactors));
+      return substr(md5($ver . '|' . (@filemtime($path) ?: '0') . $extra), 0, 12);
+   }
+
+   /**
+    * Fatores de variação por SESSÃO para assets que embutem strings i18n ou
+    * dependem da interface/permissões do usuário: [idioma, interface, perfil].
+    * O perfil ativo entra porque assets com gate de permissão server-side
+    * (ex.: timeline-button) geram conteúdo diferente por perfil — trocar de
+    * perfil muda a URL e invalida o cache do browser na hora.
+    * Combinar com getAssetFv()/getJsPath() — ex.: getJsPath('x.js.php',
+    * array_merge($this->getSessionAssetFactors(), [$flagDeConfig])).
+    *
+    * @return array{0: string, 1: string, 2: string}
+    */
+   protected function getSessionAssetFactors(): array {
+      return [
+         (string) ($_SESSION['glpilanguage'] ?? ''),
+         (string) ($_SESSION['glpiactiveprofile']['interface'] ?? ''),
+         (string) ($_SESSION['glpiactiveprofile']['id'] ?? ''),
+      ];
+   }
+
+   /**
+    * Gate de registro de asset por página: true se a REQUEST_URI atual contém
+    * algum dos fragmentos informados. Permite registrar add_javascript/add_css
+    * SOMENTE nas páginas onde o asset é usado (ex.: timeline button só em
+    * ticket.form.php), evitando o bootstrap do request de asset em todas as
+    * outras páginas. Os early-returns client-side dos JS continuam valendo
+    * como cinto de segurança. Em contexto sem REQUEST_URI (CLI/cron) retorna
+    * false — assets de página não fazem sentido lá.
+    *
+    * @param array $needles Fragmentos de URI (ex.: ['ticket.form.php', '/Ticket/'])
+    * @return bool
+    */
+   protected function isRequestForPage(array $needles): bool {
+      $uri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+      if ($uri === '') {
+         return false;
+      }
+      foreach ($needles as $needle) {
+         if ($needle !== '' && strpos($uri, (string) $needle) !== false) {
+            return true;
+         }
+      }
+      return false;
    }
 
    /**

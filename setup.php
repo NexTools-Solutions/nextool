@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.2.1');
+define('PLUGIN_NEXTOOL_VERSION', '4.3.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -236,6 +236,29 @@ function plugin_init_nextool() {
 
             $manager = PluginNextoolModuleManager::getInstance();
             $manager->loadActiveModules();
+
+            // Bundle de assets: colapsa os N registros de module_assets.php
+            // feitos pelos onInit acima em 1 URL por tipo (css/js) — reduz
+            // ~16-27 requests com bootstrap completo por page load para 2.
+            // Entradas com &nobundle=1 e assets fora do module_assets ficam
+            // intactos. Ver inc/assetbundler.class.php.
+            $bundlerFile = NEXTOOL_PHP_DIR . '/inc/assetbundler.class.php';
+            if (file_exists($bundlerFile)) {
+               require_once $bundlerFile;
+               PluginNextoolAssetBundler::collapseHooks();
+            }
+
+            // Pina o mapeamento reverso tabela->itemtype dos tipos CORE que
+            // classes de tab do ecossistema "emprestam" via getTable() (padrão
+            // KB #26: PluginNextoolProfile e ProfileTab de módulos retornam
+            // glpi_profiles). Se getTableForItemType() resolve a classe do
+            // plugin ANTES do core, DbUtils grava glpiitemtypetables
+            // [glpi_profiles] = PluginNextool... e o Search da lista de perfis
+            // monta os links das células para /plugins/nextool/front/
+            // profile.form.php — clicar num perfil cai no central (bug
+            // 2026-06-10). A pinagem garante o itemtype canônico.
+            $CFG_GLPI['glpiitemtypetables']['glpi_profiles'] = 'Profile';
+            $CFG_GLPI['glpitablesitemtype']['Profile']       = 'glpi_profiles';
 
             $hookfile = NEXTOOL_PHP_DIR . '/hook.php';
             if (file_exists($hookfile)) {

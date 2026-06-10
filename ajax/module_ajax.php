@@ -160,6 +160,20 @@ if (!in_array($method, $bodylessMethods, true)) {
    }
 }
 
+// Libera o lock de sessão para requests de LEITURA (GET/HEAD) antes de incluir
+// o handler. Endpoints de polling (contracthours get_status a cada 15s,
+// smartnotify notifications a cada 30s, aiassist chat poll) seguravam o lock
+// exclusivo do PHP durante todo o processamento, serializando os demais
+// requests autenticados da mesma sessão (mesmo fix do module_assets.php).
+// $_SESSION continua legível após o write_close. Handlers que ESCREVEM sessão
+// (rotação de token CSRF, mensagens) são todos POST — auditado em 2026-06-09:
+// accessmatrix/aiassist.action/geolocation.action exigem POST; o único GET que
+// escrevia (contracthours timer.php get_status) foi corrigido para só
+// rotacionar token em POST.
+if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION_ACTIVE) {
+   session_write_close();
+}
+
 // Carrega o arquivo do módulo
 include($filePath);
 
