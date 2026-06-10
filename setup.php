@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.3.1');
+define('PLUGIN_NEXTOOL_VERSION', '4.3.2');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -141,6 +141,7 @@ function plugin_init_nextool() {
       // flag (sai do loop), loga o erro e segue o init — o update pode ser
       // re-tentado pela UI com o GLPI utilizável.
       try {
+         global $DB;
          $plugin = new Plugin();
          if ($plugin->getFromDBbyDir('nextool')) {
             $plugin->install($plugin->fields['id']);
@@ -148,13 +149,28 @@ function plugin_init_nextool() {
             if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
                $plugin->activate($plugin->fields['id']);
             }
-            Config::setConfigurationValues('plugin:nextool_core_update', [
-               'pending_apply_version' => null,
-               'update_available' => 0,
-               'staged_target_version' => null,
-               'staged_source' => null,
-               'staged_at' => null,
-            ]);
+            // BOOT-SAFE: escrita DIRETA em glpi_configs — NUNCA Config::setConfigurationValues()
+            // aqui. setConfigurationValues() → CommonDBTM->update → post_updateItem →
+            // logConfigChange → Log::constructHistory → SearchOption::getOptionsForItemtype('Config')
+            // → plugin_fields_getAddSearchOptions() → "Class PluginFieldsContainer not found"
+            // quando o plugin Fields ainda não foi carregado NESTE boot dos plugins. Essa
+            // exceção matava o plugin_init e — no 4.3.0, antes do csrf_compliant — virava 403
+            // ("A ação que você requisitou não é permitida") em TODO POST, travando o cliente
+            // em loop. getConfigurationValues() lê direto do DB (sem cache), então o reset é
+            // visto no mesmo request. Incidente portfolio 2026-06-10 (stack real:
+            // setup.php → Config::setConfigurationValues → fields/hook.php:178).
+            foreach ([
+               'pending_apply_version' => '',
+               'update_available'      => '0',
+               'staged_target_version' => '',
+               'staged_source'         => '',
+               'staged_at'             => '',
+            ] as $cfgName => $cfgValue) {
+               $DB->update('glpi_configs', ['value' => $cfgValue], [
+                  'context' => 'plugin:nextool_core_update',
+                  'name'    => $cfgName,
+               ]);
+            }
          }
       } catch (\Throwable $e) {
          error_log('[NexTool] pending_apply falhou (update pode ser re-tentado pela UI): ' . $e->getMessage());
