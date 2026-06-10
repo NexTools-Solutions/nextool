@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.3.0');
+define('PLUGIN_NEXTOOL_VERSION', '4.3.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -106,6 +106,13 @@ function plugin_nextool_boot() {
 function plugin_init_nextool() {
    global $PLUGIN_HOOKS, $CFG_GLPI;
 
+   // csrf_compliant PRIMEIRO, incondicionalmente: se qualquer coisa abaixo
+   // lançar (ex.: Plugin::install do pending_apply falhando), o init morre —
+   // e sem esta flag TODO POST do plugin vira 403 "A ação que você requisitou
+   // não é permitida" (module_action, Sincronizar, etc.), travando o GLPI do
+   // cliente em loop. Incidente do portfolio em 2026-06-10 (update 4.3.0).
+   $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
+
    // Maintenance mode: apply em andamento — skip init para evitar carregar código inconsistente
    if (defined('NEXTOOL_DOC_DIR')) {
       $maintenanceFlag = rtrim(NEXTOOL_DOC_DIR, '/') . '/core-update/.maintenance';
@@ -127,25 +134,37 @@ function plugin_init_nextool() {
       ? GLPI_CACHE_DIR . '/nextool_pending_apply'
       : null;
    if ($pendingApplyFlag !== null && is_file($pendingApplyFlag)) {
-      $plugin = new Plugin();
-      if ($plugin->getFromDBbyDir('nextool')) {
-         $plugin->install($plugin->fields['id']);
-         $plugin->getFromDB($plugin->fields['id']);
-         if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
-            $plugin->activate($plugin->fields['id']);
+      // try/catch OBRIGATÓRIO: uma exceção aqui (install de módulo antigo
+      // incompatível, permissão de arquivo, etc.) matava o init em TODO
+      // request — plugin sem hooks, POSTs 403 e flag/update_available presos
+      // para sempre (incidente do portfolio, 2026-06-10). Em falha: remove o
+      // flag (sai do loop), loga o erro e segue o init — o update pode ser
+      // re-tentado pela UI com o GLPI utilizável.
+      try {
+         $plugin = new Plugin();
+         if ($plugin->getFromDBbyDir('nextool')) {
+            $plugin->install($plugin->fields['id']);
+            $plugin->getFromDB($plugin->fields['id']);
+            if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
+               $plugin->activate($plugin->fields['id']);
+            }
+            Config::setConfigurationValues('plugin:nextool_core_update', [
+               'pending_apply_version' => null,
+               'update_available' => 0,
+               'staged_target_version' => null,
+               'staged_source' => null,
+               'staged_at' => null,
+            ]);
          }
-         Config::setConfigurationValues('plugin:nextool_core_update', [
-            'pending_apply_version' => null,
-            'update_available' => 0,
-            'staged_target_version' => null,
-            'staged_source' => null,
-            'staged_at' => null,
-         ]);
+      } catch (\Throwable $e) {
+         error_log('[NexTool] pending_apply falhou (update pode ser re-tentado pela UI): ' . $e->getMessage());
+         if (class_exists('Toolbox')) {
+            Toolbox::logInFile('plugin_nextool', '[CORE-UPDATE] pending_apply EXCEPTION: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+         }
+      } finally {
          @unlink($pendingApplyFlag);
       }
    }
-
-   $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
 
    // CSS global escopado a .nextool-tab-card: oculta os controles de "pesquisa salva"
    // (SavedSearch) nas grades Search::show embarcadas em abas de modulo (bugados fora de
