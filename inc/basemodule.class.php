@@ -389,12 +389,20 @@ abstract class PluginNextoolBaseModule {
     * 
     * @return array Configuração do módulo
     */
+   /** @var array<string, array> Cache per-request de getConfig() por module_key (invalidado em saveConfig). */
+   private static $configCache = [];
+
    public function getConfig() {
       global $DB;
 
+      $moduleKey = $this->getModuleKey();
+      if (array_key_exists($moduleKey, self::$configCache)) {
+         return self::$configCache[$moduleKey];
+      }
+
       $iterator = $DB->request([
          'FROM'  => 'glpi_plugin_nextool_main_modules',
-         'WHERE' => ['module_key' => $this->getModuleKey()],
+         'WHERE' => ['module_key' => $moduleKey],
          'LIMIT' => 1
       ]);
 
@@ -408,10 +416,10 @@ abstract class PluginNextoolBaseModule {
          // primeiro save) passam a valer o default em vez de ficarem silenciosamente
          // OFF. O config salvo continua sobrescrevendo os defaults (inclusive um 0
          // explicito, que o usuario setou de proposito, prevalece).
-         return array_merge($defaults, is_array($config) ? $config : []);
+         return self::$configCache[$moduleKey] = array_merge($defaults, is_array($config) ? $config : []);
       }
 
-      return $defaults;
+      return self::$configCache[$moduleKey] = $defaults;
    }
 
    /**
@@ -422,6 +430,10 @@ abstract class PluginNextoolBaseModule {
     */
    public function saveConfig($config) {
       global $DB;
+
+      // Invalida o cache per-request de getConfig() — a próxima leitura
+      // reflete imediatamente o que foi salvo neste mesmo request.
+      unset(self::$configCache[$this->getModuleKey()]);
 
       if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
          return false;

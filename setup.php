@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.2.1');
+define('PLUGIN_NEXTOOL_VERSION', '4.3.0');
 
 /** GLPI mínimo e máximo suportados */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -218,6 +218,16 @@ function plugin_init_nextool() {
 
             $manager = PluginNextoolModuleManager::getInstance();
             $manager->loadActiveModules();
+
+            // Pina o mapeamento reverso tabela->itemtype dos tipos CORE que
+            // classes de tab do ecossistema "emprestam" via getTable() (padrão
+            // KB #26: PluginNextoolProfile retorna glpi_profiles). Se
+            // getTableForItemType() resolve a classe do plugin ANTES do core,
+            // o Search da lista de perfis monta os links das células para
+            // /plugins/nextool/front/profile.form.php — clicar num perfil cai
+            // no central. Paridade com o fix GLPI 11 (2026-06-10).
+            $CFG_GLPI['glpiitemtypetables']['glpi_profiles'] = 'Profile';
+            $CFG_GLPI['glpitablesitemtype']['Profile']       = 'glpi_profiles';
 
             $hookfile = NEXTOOL_PHP_DIR . '/hook.php';
             if (file_exists($hookfile)) {

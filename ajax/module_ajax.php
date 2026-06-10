@@ -111,6 +111,16 @@ if ($isStateless) {
 require_once GLPI_ROOT . '/inc/includes.php';
 Session::checkLoginUser();
 
+// Libera o lock de sessão para requests de LEITURA (GET/HEAD) antes de incluir
+// o handler (paridade com o GLPI 11, 2026-06-10): endpoints de polling seguravam
+// o lock exclusivo do PHP e serializavam os demais requests da mesma sessão.
+// Handlers que ESCREVEM sessão (rotação de token CSRF) são POST-only —
+// auditado: aiassist.action exige POST (linha ~129).
+$method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION_ACTIVE) {
+   session_write_close();
+}
+
 // Carrega o arquivo do módulo
 include($filePath);
 
