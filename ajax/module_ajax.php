@@ -116,8 +116,39 @@ Session::checkLoginUser();
 // o lock exclusivo do PHP e serializavam os demais requests da mesma sessão.
 // Handlers que ESCREVEM sessão (rotação de token CSRF) são POST-only —
 // auditado: aiassist.action exige POST (linha ~129).
+//
+// RETROCOMPAT (incidente portfolio 2026-06-11, paridade GLPI 11): módulos
+// ANTIGOS rotacionam token CSRF também em GET. Com a sessão já fechada, o
+// token novo ia pro JSON mas NÃO persistia — o JS trocava o token global da
+// página pelo token-fantasma e TODO POST seguinte virava 403. Defesa:
+// snapshot dos tokens antes do write_close + shutdown function (roda mesmo
+// com exit no handler) que re-persiste tokens novos reabrindo a sessão
+// silenciosamente. Plugin novo + módulo velho deixa de ser combinação quebrada.
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION_ACTIVE) {
+   $nxPreCloseTokens = $_SESSION['glpicsrftokens'] ?? [];
+   register_shutdown_function(static function () use ($nxPreCloseTokens): void {
+      $memTokens = $_SESSION['glpicsrftokens'] ?? [];
+      if (!is_array($memTokens)) {
+         return;
+      }
+      $newTokens = array_diff_key($memTokens, is_array($nxPreCloseTokens) ? $nxPreCloseTokens : []);
+      if ($newTokens === []) {
+         return; // caminho comum (handler não gerou token) — custo zero
+      }
+      if (session_id() === '' || session_status() === PHP_SESSION_ACTIVE) {
+         return; // sem sessão para reabrir, ou já reaberta por outrem
+      }
+      // Reabre a MESMA sessão sem emitir headers (output já foi enviado).
+      @ini_set('session.use_cookies', '0');
+      @session_cache_limiter('');
+      if (!@session_start()) {
+         return;
+      }
+      $diskTokens = $_SESSION['glpicsrftokens'] ?? [];
+      $_SESSION['glpicsrftokens'] = (is_array($diskTokens) ? $diskTokens : []) + $newTokens;
+      session_write_close();
+   });
    session_write_close();
 }
 
