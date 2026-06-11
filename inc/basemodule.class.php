@@ -711,14 +711,156 @@ abstract class PluginNextoolBaseModule {
       global $DB;
 
       $sqlPath = $this->getSqlPath($filename);
-      
+
       if (!$sqlPath || !file_exists($sqlPath)) {
          // Arquivo não existe, não é erro (módulo pode não ter SQL)
          return true;
       }
 
-      // GLPI 11: usar runFile do framework em vez de doQuery em SQL bruto
-      return $DB->runFile($sqlPath);
+      // runFile do framework em vez de query em SQL bruto. Erros de SQL podem
+      // lançar exceção dependendo da versão do core -- sem o try/catch viram
+      // HTTP 500 bruto no endpoint AJAX em vez de mensagem limpa na UI.
+      try {
+         return $DB->runFile($sqlPath);
+      } catch (\Throwable $e) {
+         Toolbox::logInFile(
+            'plugin_nextool',
+            sprintf(
+               '[SQL] Falha ao executar %s do módulo %s: %s',
+               $filename,
+               $this->getModuleKey(),
+               $e->getMessage()
+            ) . "\n"
+         );
+         return false;
+      }
+   }
+
+   /**
+    * Executa uma query DDL de migração de forma compatível com qualquer 10.0.x
+    * (doQuery existe a partir do 10.0.7; antes era query).
+    *
+    * @param string $sql
+    * @return bool
+    */
+   private function runMigrationQuery(string $sql): bool {
+      global $DB;
+
+      try {
+         $res = method_exists($DB, 'doQuery') ? $DB->doQuery($sql) : $DB->query($sql);
+         return (bool) $res;
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', '[SQL] Migração falhou: ' . $e->getMessage() . "\n");
+         return false;
+      }
+   }
+
+   /**
+    * Adiciona coluna se não existir (portável MySQL/MariaDB).
+    *
+    * `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` é extensão exclusiva do MariaDB;
+    * MySQL 8 rejeita com erro 1064. Este helper faz o check via $DB->fieldExists()
+    * e roda um ADD COLUMN simples -- funciona em ambos os SGBDs.
+    *
+    * @param string $table      Nome da tabela
+    * @param string $column     Nome da coluna
+    * @param string $definition Definição SQL da coluna (ex: "tinyint NOT NULL DEFAULT 1 AFTER `foo`")
+    * @return bool True se a coluna existe ao final (criada agora ou já existente)
+    */
+   protected function addColumnIfNotExists(string $table, string $column, string $definition): bool {
+      global $DB;
+
+      if (!$DB->tableExists($table)) {
+         return false;
+      }
+      if ($DB->fieldExists($table, $column, false)) {
+         return true;
+      }
+
+      return $this->runMigrationQuery(sprintf(
+         'ALTER TABLE `%s` ADD COLUMN `%s` %s',
+         $table,
+         $column,
+         $definition
+      ));
+   }
+
+   /**
+    * Remove coluna se existir (portável MySQL/MariaDB).
+    *
+    * @param string $table  Nome da tabela
+    * @param string $column Nome da coluna
+    * @return bool True se a coluna não existe ao final
+    */
+   protected function dropColumnIfExists(string $table, string $column): bool {
+      global $DB;
+
+      if (!$DB->tableExists($table) || !$DB->fieldExists($table, $column, false)) {
+         return true;
+      }
+
+      return $this->runMigrationQuery(sprintf('ALTER TABLE `%s` DROP COLUMN `%s`', $table, $column));
+   }
+
+   /**
+    * Verifica se um índice existe na tabela (portável MySQL/MariaDB).
+    *
+    * @param string $table   Nome da tabela
+    * @param string $keyName Nome do índice
+    * @return bool
+    */
+   protected function indexExists(string $table, string $keyName): bool {
+      global $DB;
+
+      try {
+         $sql = sprintf("SHOW INDEX FROM `%s` WHERE Key_name = '%s'", $table, $DB->escape($keyName));
+         $result = method_exists($DB, 'doQuery') ? $DB->doQuery($sql) : $DB->query($sql);
+         return $result && $DB->numrows($result) > 0;
+      } catch (\Throwable $e) {
+         return false;
+      }
+   }
+
+   /**
+    * Adiciona índice se não existir (portável MySQL/MariaDB).
+    *
+    * `ADD INDEX IF NOT EXISTS` é extensão exclusiva do MariaDB.
+    *
+    * @param string $table         Nome da tabela
+    * @param string $keyName       Nome do índice
+    * @param string $keyDefinition Definição completa (ex: "INDEX `idx_x` (`a`,`b`)" ou "UNIQUE KEY `uniq_y` (`c`)")
+    * @return bool True se o índice existe ao final
+    */
+   protected function addKeyIfNotExists(string $table, string $keyName, string $keyDefinition): bool {
+      global $DB;
+
+      if (!$DB->tableExists($table)) {
+         return false;
+      }
+      if ($this->indexExists($table, $keyName)) {
+         return true;
+      }
+
+      return $this->runMigrationQuery(sprintf('ALTER TABLE `%s` ADD %s', $table, $keyDefinition));
+   }
+
+   /**
+    * Remove índice se existir (portável MySQL/MariaDB).
+    *
+    * `DROP INDEX IF EXISTS` em ALTER TABLE é extensão exclusiva do MariaDB.
+    *
+    * @param string $table   Nome da tabela
+    * @param string $keyName Nome do índice
+    * @return bool True se o índice não existe ao final
+    */
+   protected function dropKeyIfExists(string $table, string $keyName): bool {
+      global $DB;
+
+      if (!$DB->tableExists($table) || !$this->indexExists($table, $keyName)) {
+         return true;
+      }
+
+      return $this->runMigrationQuery(sprintf('ALTER TABLE `%s` DROP INDEX `%s`', $table, $keyName));
    }
 
    /**
