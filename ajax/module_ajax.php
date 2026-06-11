@@ -170,7 +170,41 @@ if (!in_array($method, $bodylessMethods, true)) {
 // accessmatrix/aiassist.action/geolocation.action exigem POST; o único GET que
 // escrevia (contracthours timer.php get_status) foi corrigido para só
 // rotacionar token em POST.
+//
+// RETROCOMPAT (incidente portfolio 2026-06-11): MÓDULOS ANTIGOS (ex.:
+// contracthours <3.4.6) rotacionam token CSRF também em GET. Com a sessão já
+// fechada, o token novo ia pro JSON mas NÃO persistia — o JS do módulo trocava
+// o token global da página por esse token-fantasma e TODO POST seguinte (de
+// qualquer tela) virava 403 "A ação que você requisitou não é permitida".
+// Defesa: snapshot dos tokens antes do write_close + shutdown function (roda
+// mesmo se o handler der exit) que detecta tokens novos em $_SESSION (memória)
+// e os re-persiste reabrindo a sessão silenciosamente. Plugin novo + módulo
+// velho deixa de ser uma combinação quebrada.
 if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION_ACTIVE) {
+   $nxPreCloseTokens = $_SESSION['glpicsrftokens'] ?? [];
+   register_shutdown_function(static function () use ($nxPreCloseTokens): void {
+      $memTokens = $_SESSION['glpicsrftokens'] ?? [];
+      if (!is_array($memTokens)) {
+         return;
+      }
+      $newTokens = array_diff_key($memTokens, is_array($nxPreCloseTokens) ? $nxPreCloseTokens : []);
+      if ($newTokens === []) {
+         return; // caminho comum (handler não gerou token) — custo zero
+      }
+      if (session_id() === '' || session_status() === PHP_SESSION_ACTIVE) {
+         return; // sem sessão para reabrir, ou já reaberta por outrem
+      }
+      // Reabre a MESMA sessão sem emitir headers (output já foi enviado):
+      // cookie já existe no browser e o cache limiter não pode reenviar nada.
+      @ini_set('session.use_cookies', '0');
+      @session_cache_limiter('');
+      if (!@session_start()) {
+         return;
+      }
+      $diskTokens = $_SESSION['glpicsrftokens'] ?? [];
+      $_SESSION['glpicsrftokens'] = (is_array($diskTokens) ? $diskTokens : []) + $newTokens;
+      session_write_close();
+   });
    session_write_close();
 }
 
