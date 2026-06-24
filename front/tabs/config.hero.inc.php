@@ -223,7 +223,7 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
             <button type="button" class="btn btn-outline-danger me-auto d-none" id="nextool-account-link-unlink-btn" onclick="nextoolUnlinkAccount(this);">
                <i class="ti ti-unlink me-1"></i><?php echo __('Desvincular', 'nextool'); ?>
             </button>
-            <a href="https://app.nextoolsolutions.com/painel/vincular" target="_blank" rel="noopener" class="btn btn-outline-primary d-none" id="nextool-account-link-portal-go-btn">
+            <a href="https://app.nextoolsolutions.com/painel/plugin-nextool" target="_blank" rel="noopener" class="btn btn-outline-primary d-none" id="nextool-account-link-portal-go-btn">
                <i class="ti ti-external-link me-1"></i><?php echo __('Ir ao painel', 'nextool'); ?>
             </a>
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?php echo __('Fechar', 'nextool'); ?></button>
