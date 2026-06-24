@@ -1653,7 +1653,11 @@ if (!empty($_nextoolUnreadAlerts)):
       }
    }
 })();
+</script>
+<?php endif; // fim do modal de alertas (só renderiza quando há alertas não lidos) ?>
 
+<?php /* F3 (5.0.0): helper de POST + vínculo de conta -- SEMPRE emitido, fora do if de alertas. */ ?>
+<script>
 // nextoolPostJson -- helper de POST com CSRF (portado p/ a F3, GLPI 11 paridade).
 function nextoolPostJson(endpoint, params, opts) {
    opts = opts || {};
@@ -1777,4 +1781,3 @@ window.nextoolGenerateLinkCode = nextoolGenerateLinkCode;
 window.nextoolCopyLinkCode = nextoolCopyLinkCode;
 window.nextoolUnlinkAccount = nextoolUnlinkAccount;
 </script>
-<?php endif; ?>
