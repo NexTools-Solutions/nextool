@@ -288,16 +288,17 @@ foreach ($allModuleKeys as $moduleKey) {
    $moduleCanPurge = PluginNextoolPermissionManager::canPurgeModuleDataForModule($moduleKey);
 
    // Ordenação por grupo de estado:
-   // 1=Update disponível, 2=Ativos, 3=Instalados, 4=Disponível para instalar,
-   // 5=Vitrine PAID (sem licença), 6=Disponível para download (FREE), 7=Bloqueados
+   // 1=Update disponível, 2=Instalados DESATIVADOS ("Ativar"), 3=Ativos ("Configurações"),
+   // 4=Disponível para instalar, 5=Vitrine PAID (sem licença), 6=Download (FREE), 7=Bloqueados
+   // Os DESATIVADOS sobem (grupo 2, ACIMA dos ativos) para ficar fácil ver que estão off.
    // Módulos novos (<30 dias, não instalados) recebem grupo 0 (aparecem primeiro)
    $sortGroup = 7; // default: bloqueados/edge cases
    if (!empty($updateAvailable)) {
       $sortGroup = 1;
+   } elseif ($isInstalled && !$isEnabled && $moduleDownloaded) {
+      $sortGroup = 2; // Instalado mas DESATIVADO -> botão "Ativar"
    } elseif ($isEnabled && $moduleDownloaded) {
-      $sortGroup = 2;
-   } elseif ($isInstalled && $moduleDownloaded) {
-      $sortGroup = 3;
+      $sortGroup = 3; // Ativo -> botão "Configurações"
    } elseif ($canUseModule && $moduleDownloaded) {
       $sortGroup = 4;
    } elseif ($isPaid && !$canUseModule && $requiresRemoteDownload) {

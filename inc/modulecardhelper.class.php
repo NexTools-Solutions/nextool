@@ -77,6 +77,7 @@ class PluginNextoolModuleCardHelper {
 
       $isSuspended = !empty($state['is_license_suspended']);
       $primary = '';
+      $primaryIsDisable = false;
       $secondary = [];
 
       // ── Determinar CTA primario ──────────────────────────────
@@ -179,6 +180,16 @@ class PluginNextoolModuleCardHelper {
                __('Configurações', 'nextool'), 'btn btn-sm btn-primary', 'ti ti-settings', $state['config_url']
             );
          }
+         // Prioridade 5 (fallback): ativo SEM página de config -> "Desativar" no lugar do
+         // "Configurações" ausente, para o card sempre ter um botão primário à esquerda.
+         elseif ($state['is_enabled']) {
+            $primary = self::renderActionForm(
+               $state, 'disable', __('Desativar', 'nextool'),
+               'btn btn-sm btn-outline-warning module-action', 'ti ti-player-pause',
+               $catalogDisabled
+            );
+            $primaryIsDisable = true;
+         }
 
          // ── Acoes secundarias (dropdown) ──────────────────────
 
@@ -187,7 +198,10 @@ class PluginNextoolModuleCardHelper {
          }
 
          if ($state['is_enabled']) {
-            $secondary[] = self::renderDropdownAction($state, 'disable', __('Desativar', 'nextool'), 'ti ti-player-pause');
+            // Desativar só vai no dropdown se NÃO virou o botão primário (módulo sem config).
+            if (empty($primaryIsDisable)) {
+               $secondary[] = self::renderDropdownAction($state, 'disable', __('Desativar', 'nextool'), 'ti ti-player-pause');
+            }
          } else {
             if ($primary !== '' && strpos($primary, 'data-action=\'enable\'') === false) {
                $secondary[] = self::renderDropdownAction($state, 'enable', __('Ativar', 'nextool'), 'ti ti-player-play',
@@ -316,7 +330,7 @@ class PluginNextoolModuleCardHelper {
       if (empty($items)) {
          return '';
       }
-      return '<div class="dropdown d-inline-block">'
+      return '<div class="dropdown d-inline-block ms-auto">'
          . '<button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">'
          . '<i class="ti ti-dots"></i></button>'
          . '<ul class="dropdown-menu dropdown-menu-end">'
