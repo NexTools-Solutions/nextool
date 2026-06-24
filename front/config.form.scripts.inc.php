@@ -1639,7 +1639,11 @@ if (!empty($_nextoolUnreadAlerts)):
       }
    }
 })();
+</script>
+<?php endif; // fim do modal de alertas (só renderiza quando há alertas não lidos) ?>
 
+<?php /* F3 (5.0.0): vínculo de conta -- SEMPRE emitido, fora do if de alertas. */ ?>
+<script>
 // === F3 (5.0.0): vínculo de conta NexTool ===
 var NEXTOOL_ACCOUNT_ENDPOINT = <?php echo json_encode(Plugin::getWebDir('nextool') . '/ajax/account_action.php'); ?>;
 
@@ -1738,4 +1742,3 @@ window.nextoolGenerateLinkCode = nextoolGenerateLinkCode;
 window.nextoolCopyLinkCode = nextoolCopyLinkCode;
 window.nextoolUnlinkAccount = nextoolUnlinkAccount;
 </script>
-<?php endif; ?>
