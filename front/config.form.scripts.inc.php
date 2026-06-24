@@ -1710,16 +1710,19 @@ function nextoolRefreshLinkStatus() {
          return;
       }
       var goBtn = document.getElementById('nextool-account-link-portal-go-btn');
+      var genBtn = document.getElementById('nextool-account-link-generate-btn');
       if (d.linked) {
          statusBox.className = 'alert alert-success mb-3';
          statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i><?php echo Html::entities_deep(__('Ambiente vinculado', 'nextool')); ?>' + (d.portal_email ? (': <strong>' + d.portal_email + '</strong>') : '');
          if (unlinkBtn) { unlinkBtn.classList.remove('d-none'); }
          if (goBtn) { goBtn.classList.remove('d-none'); }
+         if (genBtn) { genBtn.classList.add('d-none'); }
       } else {
          statusBox.className = 'alert alert-secondary mb-3';
          statusBox.innerHTML = '<i class="ti ti-circle-dashed me-1"></i><?php echo Html::entities_deep(__('Ambiente ainda não vinculado.', 'nextool')); ?>';
          if (unlinkBtn) { unlinkBtn.classList.add('d-none'); }
          if (goBtn) { goBtn.classList.add('d-none'); }
+         if (genBtn) { genBtn.classList.remove('d-none'); }
       }
    });
 }
