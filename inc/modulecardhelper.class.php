@@ -98,6 +98,10 @@ class PluginNextoolModuleCardHelper {
             } elseif ($dlBlocked) {
                $msg = sprintf(__('Nextool %s necessário para baixar', 'nextool'), $dlMinVer);
                $primary = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . '</span>';
+            } elseif (!$state['is_paid'] && !empty($state['account_link_required'])) {
+               // Gate de vínculo (FREE): em vez de um Download que tomaria 403 account_link_required
+               // no servidor, oferece o vínculo direto (abre o mesmo modal do hero "Vincular conta").
+               $primary = self::renderAccountLinkButton();
             } else {
                $primary = self::renderActionForm(
                   $state, 'download', __('Download', 'nextool'),
@@ -350,6 +354,17 @@ class PluginNextoolModuleCardHelper {
 
    private static function renderBadge(string $label, string $classes = 'badge bg-secondary'): string {
       return sprintf("<span class='%s me-1'>%s</span>", $classes, $label);
+   }
+
+   /**
+    * Botão "Vincular conta" que substitui o Download quando o gate de vínculo está ativo (FREE +
+    * account_link_required). Abre o mesmo modal do hero (#nextool-account-link-modal).
+    */
+   private static function renderAccountLinkButton(): string {
+      return '<button type="button" class="btn btn-sm btn-warning module-action"'
+         . ' data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal">'
+         . '<i class="ti ti-user-check me-1"></i>' . __('Vincular conta', 'nextool')
+         . '</button>';
    }
 
    private static function renderActionForm(
