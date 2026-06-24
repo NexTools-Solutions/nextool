@@ -1667,7 +1667,7 @@ function nextoolRefreshLinkStatus() {
       var d = res.data || {};
       if (!res.ok || !d.success) {
          statusBox.className = 'alert alert-warning mb-3';
-         statusBox.textContent = d.message || '<?php echo Html::entities_deep(__('Não foi possível consultar o vínculo.', 'nextool')); ?>';
+         statusBox.textContent = d.message || <?php echo json_encode(__('Não foi possível consultar o vínculo.', 'nextool')); ?>;
          return;
       }
       if (d.linked) {
@@ -1688,7 +1688,7 @@ function nextoolGenerateLinkCode(btn) {
       if (btn) { btn.disabled = false; }
       var d = res.data || {};
       if (!res.ok || !d.success) {
-         nextoolAccountLinkAlert('danger', d.message || '<?php echo Html::entities_deep(__('Falha ao gerar o código.', 'nextool')); ?>');
+         nextoolAccountLinkAlert('danger', d.message || <?php echo json_encode(__('Falha ao gerar o código.', 'nextool')); ?>);
          return;
       }
       var codeInput = document.getElementById('nextool-account-link-code');
@@ -1699,14 +1699,14 @@ function nextoolGenerateLinkCode(btn) {
       if (portalBtn && d.portal_link_url) { portalBtn.setAttribute('href', d.portal_link_url); }
       if (expires) {
          var mins = Math.round((d.expires_in || 600) / 60);
-         expires.textContent = '<?php echo Html::entities_deep(__('Válido por aproximadamente', 'nextool')); ?> ' + mins + ' min.';
+         expires.textContent = <?php echo json_encode(__('Válido por aproximadamente', 'nextool')); ?> + ' ' + mins + ' min.';
       }
       if (box) { box.classList.remove('d-none'); }
       var alertBox = document.getElementById('nextool-account-link-alert');
       if (alertBox) { alertBox.classList.add('d-none'); }
    }).catch(function () {
       if (btn) { btn.disabled = false; }
-      nextoolAccountLinkAlert('danger', '<?php echo Html::entities_deep(__('Erro de comunicação.', 'nextool')); ?>');
+      nextoolAccountLinkAlert('danger', <?php echo json_encode(__('Erro de comunicação.', 'nextool')); ?>);
    });
 }
 
@@ -1724,7 +1724,7 @@ function nextoolCopyLinkCode(btn) {
 }
 
 function nextoolUnlinkAccount(btn) {
-   nextoolShowConfirm('<?php echo Html::entities_deep(__('Desvincular este ambiente da conta? Você precisará vincular novamente para baixar módulos gratuitos.', 'nextool')); ?>', function () {
+   nextoolShowConfirm(<?php echo json_encode(__('Desvincular este ambiente da conta? Você precisará vincular novamente para baixar módulos gratuitos.', 'nextool')); ?>, function () {
       if (btn) { btn.disabled = true; }
       nextoolPostJson(NEXTOOL_ACCOUNT_ENDPOINT, { action: 'unlink' }).then(function (res) {
          if (btn) { btn.disabled = false; }
@@ -1732,7 +1732,7 @@ function nextoolUnlinkAccount(btn) {
          if (res.ok && d.success) {
             nextoolRefreshLinkStatus();
          } else {
-            nextoolAccountLinkAlert('danger', d.message || '<?php echo Html::entities_deep(__('Falha ao desvincular.', 'nextool')); ?>');
+            nextoolAccountLinkAlert('danger', d.message || <?php echo json_encode(__('Falha ao desvincular.', 'nextool')); ?>);
          }
       });
    });

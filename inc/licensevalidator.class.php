@@ -551,6 +551,13 @@ class PluginNextoolLicenseValidator {
             self::persistCoreUpdateHint($responseData['core_update']);
          }
 
+         // Gate de vínculo de conta: o servidor diz se o download FREE exige conta vinculada
+         // (gate hard + não-vinculado). A UI usa isso para trocar "Download" por "Vincular conta".
+         // Persistido sempre (inclui '0' para limpar quando deixa de ser exigido, ex.: pós-vínculo).
+         self::persistConfig('plugin:nextool_account_link', [
+            'link_required' => !empty($responseData['account_link_required']) ? '1' : '0',
+         ], 'account_link gate');
+
          // Persistir payment_methods disponíveis (para modal dinâmico)
          if (!empty($responseData['payment_methods']) && is_array($responseData['payment_methods'])) {
             self::persistPaymentMethods($responseData['payment_methods']);

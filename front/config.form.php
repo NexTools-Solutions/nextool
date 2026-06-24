@@ -50,6 +50,10 @@ require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
 
 $distributionConfigured = $distributionBaseUrl !== '' && $distributionClientIdentifier !== '' && $distributionClientSecret !== '';
 
+// Gate de vínculo de conta (sinal do ContainerAPI no validate, persistido em plugin:nextool_account_link):
+// quando '1', o download FREE exige conta vinculada -> a UI troca o botão "Download" por "Vincular conta".
+$accountLinkRequired = (Config::getConfigurationValues('plugin:nextool_account_link')['link_required'] ?? '0') === '1';
+
 // Configuração de licença (tabela específica)
 require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/logmaintenance.class.php';
@@ -358,6 +362,7 @@ foreach ($allModuleKeys as $moduleKey) {
          'module_downloaded'       => $moduleDownloaded,
          'catalog_is_enabled'      => $catalogIsEnabled,
          'update_available'        => $updateAvailable,
+         'account_link_required'   => $accountLinkRequired,
          'plugin_version'          => $currentPluginVersion,
          'min_version_nextools'    => $meta['min_version_nextools'] ?? null,
          'upgrade_url'             => NEXTOOL_SITE_URL,
