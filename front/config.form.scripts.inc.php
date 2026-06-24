@@ -205,6 +205,22 @@ function nextoolShowConfirm(message, onConfirm) {
       modal.hide();
       if (onConfirm) onConfirm();
    });
+
+   // Empilhamento sobre outro modal já aberto (ex.: "Desvincular" a partir do modal de vínculo):
+   // por padrão o Bootstrap deixaria este modal de confirmação ATRÁS (mesmo z-index, ordem do DOM).
+   // Eleva o z-index deste modal e do seu backdrop acima do modal de baixo.
+   var nextoolOpenModals = document.querySelectorAll('.modal.show').length;
+   if (nextoolOpenModals > 0) {
+      var nextoolZ = 1055 + nextoolOpenModals * 20;
+      modalEl.style.zIndex = nextoolZ;
+      modalEl.addEventListener('shown.bs.modal', function onNextoolStacked() {
+         modalEl.removeEventListener('shown.bs.modal', onNextoolStacked);
+         var bds = document.querySelectorAll('.modal-backdrop');
+         if (bds.length) { bds[bds.length - 1].style.zIndex = nextoolZ - 1; }
+      });
+   } else {
+      modalEl.style.zIndex = '';
+   }
    modal.show();
 }
 
