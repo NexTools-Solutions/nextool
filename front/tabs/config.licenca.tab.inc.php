@@ -155,11 +155,12 @@ declare(strict_types=1);
                                  <div class="text-muted fw-semibold mb-1"><?php echo __('URL da plataforma NexTool', 'nextool'); ?></div>
                                  <div class="input-group input-group-sm">
                                     <input type="url"
-                                           class="form-control"
+                                           class="form-control bg-light"
                                            id="rt-endpoint-url"
                                            name="endpoint_url"
                                            value="<?php echo Html::entities_deep($distributionBaseUrl); ?>"
-                                           placeholder="<?php echo Html::entities_deep(PluginNextoolConfig::DEFAULT_CONTAINERAPI_BASE_URL); ?>">
+                                           placeholder="<?php echo Html::entities_deep(PluginNextoolConfig::DEFAULT_CONTAINERAPI_BASE_URL); ?>"
+                                           readonly>
                                     <button type="button"
                                             class="btn btn-outline-secondary"
                                             onclick="const el=document.getElementById('rt-endpoint-url'); navigator.clipboard.writeText(el ? el.value : ''); this.innerText='Copiado!'; setTimeout(() => { this.innerText='Copiar'; }, 2000);">
@@ -167,13 +168,22 @@ declare(strict_types=1);
                                     </button>
                                  </div>
                                  <div class="form-text">
-                                    <?php
-                                       echo sprintf(
-                                          __('Informe a URL de conexão da plataforma NexTool. Deixe em branco para usar o padrão (%s).', 'nextool'),
-                                          Html::entities_deep(PluginNextoolConfig::DEFAULT_CONTAINERAPI_BASE_URL)
-                                       );
-                                    ?>
+                                    <i class="ti ti-lock me-1"></i><?php echo __('Gerenciada pela plataforma NexTool e atualizada automaticamente na sincronização (não editável).', 'nextool'); ?>
                                  </div>
+                              </div>
+
+                              <div class="mt-3">
+                                 <div class="text-muted fw-semibold mb-1"><?php echo __('Conta NexTool vinculada', 'nextool'); ?></div>
+                                 <?php if (!empty($accountLinked)): ?>
+                                    <span class="badge text-white bg-success me-2"><i class="ti ti-user-check me-1"></i><?php echo __('Vinculada', 'nextool'); ?></span>
+                                    <?php if (($accountEmail ?? '') !== ''): ?><span class="fw-semibold"><?php echo Html::entities_deep($accountEmail); ?></span><?php endif; ?>
+                                    <div class="form-text"><?php echo __('Este ambiente está vinculado a uma conta do portal NexTool. Abra "Gerenciar conta" no topo para ver detalhes ou desvincular.', 'nextool'); ?></div>
+                                 <?php else: ?>
+                                    <span class="badge bg-secondary me-2"><i class="ti ti-user-off me-1"></i><?php echo __('Não vinculada', 'nextool'); ?></span>
+                                    <button type="button" class="btn btn-sm btn-outline-primary ms-1" data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal" onclick="nextoolRefreshLinkStatus();">
+                                       <i class="ti ti-user-check me-1"></i><?php echo __('Vincular conta', 'nextool'); ?>
+                                    </button>
+                                 <?php endif; ?>
                               </div>
                            </div>
 

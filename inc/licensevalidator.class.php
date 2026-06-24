@@ -522,14 +522,20 @@ class PluginNextoolLicenseValidator {
             self::persistCoreUpdateHint($responseData['core_update']);
          }
 
-         // Gate de vínculo de conta: o servidor diz se o download FREE exige conta vinculada
-         // (gate hard + não-vinculado). A UI troca "Download" por "Vincular conta".
+         // Estado do vínculo de conta (server-driven): persiste p/ a UI (hero, modal, aba licença).
          try {
             Config::setConfigurationValues('plugin:nextool_account_link', [
                'link_required' => !empty($responseData['account_link_required']) ? '1' : '0',
+               'linked'        => !empty($responseData['account_linked']) ? '1' : '0',
+               'email'         => isset($responseData['account_email']) ? (string) $responseData['account_email'] : '',
             ]);
          } catch (\Throwable $e) {
-            Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir account_link gate - ' . $e->getMessage());
+            Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir account_link state - ' . $e->getMessage());
+         }
+
+         // Item 6: a URL da plataforma é controlada pelo servidor (campo read-only no plugin).
+         if (!empty($responseData['platform_url'])) {
+            self::adoptPlatformUrl((string) $responseData['platform_url']);
          }
 
          // Persistir payment_methods disponíveis (para modal dinâmico)
@@ -1498,6 +1504,29 @@ class PluginNextoolLicenseValidator {
          ]);
       } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir core_update hint - ' . $e->getMessage());
+      }
+   }
+
+   /**
+    * Item 6 -- a URL da plataforma é controlada pelo servidor (campo read-only no plugin). Adota o
+    * platform_url recebido no /validate SE for https válido e diferente do atual.
+    */
+   private static function adoptPlatformUrl(string $url): void {
+      $url = rtrim(trim($url), '/');
+      if ($url === '' || stripos($url, 'https://') !== 0 || filter_var($url, FILTER_VALIDATE_URL) === false) {
+         return;
+      }
+      try {
+         $dist = Config::getConfigurationValues('plugin:nextool_distribution');
+         $current = isset($dist['base_url']) ? rtrim(trim((string) $dist['base_url']), '/') : '';
+         if ($url === $current) {
+            return;
+         }
+         $dist['base_url'] = $url;
+         Config::setConfigurationValues('plugin:nextool_distribution', $dist);
+         Toolbox::logInFile('plugin_nextool', sprintf('LicenseValidator: platform_url adotada do servidor: %s', $url));
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao adotar platform_url - ' . $e->getMessage());
       }
    }
 

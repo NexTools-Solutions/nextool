@@ -91,8 +91,8 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                        class="btn btn-outline-light fw-semibold"
                        data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal"
                        onclick="nextoolRefreshLinkStatus();">
-                  <i class="ti ti-user-check me-1"></i>
-                  <?php echo __('Vincular conta', 'nextool'); ?>
+                  <i class="ti <?php echo !empty($accountLinked) ? 'ti-user-cog' : 'ti-user-check'; ?> me-1"></i>
+                  <?php echo !empty($accountLinked) ? __('Gerenciar conta', 'nextool') : __('Vincular conta', 'nextool'); ?>
                </button>
             <?php endif; ?>
             </div>
@@ -223,6 +223,9 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
             <button type="button" class="btn btn-outline-danger me-auto d-none" id="nextool-account-link-unlink-btn" onclick="nextoolUnlinkAccount(this);">
                <i class="ti ti-unlink me-1"></i><?php echo __('Desvincular', 'nextool'); ?>
             </button>
+            <a href="https://app.nextoolsolutions.com/painel/vincular" target="_blank" rel="noopener" class="btn btn-outline-primary d-none" id="nextool-account-link-portal-go-btn">
+               <i class="ti ti-external-link me-1"></i><?php echo __('Ir ao painel', 'nextool'); ?>
+            </a>
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?php echo __('Fechar', 'nextool'); ?></button>
             <button type="button" class="btn btn-primary" id="nextool-account-link-generate-btn" onclick="nextoolGenerateLinkCode(this);">
                <i class="ti ti-key me-1"></i><?php echo __('Gerar código', 'nextool'); ?>
