@@ -320,6 +320,26 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Declara quais ações da matriz CRUD de permissões são FUNCIONAIS para este módulo.
+    *
+    * O plugin base consome este método ao montar a matriz de permissões por perfil
+    * (PluginNextoolProfile), passando o resultado como 'rights' por linha. Assim o
+    * base NUNCA precisa ser editado por módulo: cada módulo declara o que aparece.
+    *
+    * Default = somente READ (a esmagadora maioria dos módulos é "ver módulo/aba"; o
+    * gerenciamento administrativo é coberto pelo direito global "Módulos do NexTool").
+    * Módulos com CRUD próprio devem sobrescrever e incluir CREATE/UPDATE/DELETE.
+    *
+    * Os rótulos DEVEM ser idênticos aos de PluginNextoolProfile::getRights() para que
+    * o core do GLPI funda as colunas (a matriz é a união dos rights de todas as linhas).
+    *
+    * @return array<int,string> Mapa direito-bit => rótulo (ex.: [READ => __('Ler', 'nextool')])
+    */
+   public function getProfileRights(): array {
+      return [READ => __('Ler', 'nextool')];
+   }
+
+   /**
     * Retorna itens de menu adicionais para o hook redefine_menus.
     *
     * Módulos que precisam de menu de primeiro nível na sidebar (fora do

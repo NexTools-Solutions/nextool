@@ -1153,21 +1153,8 @@ if (document.readyState === 'loading') {
 }
 document.addEventListener('glpi.load', _nextoolSyncCooldown.init);
 
-function nextoolRegenerateHmac(btn) {
-   var form = document.getElementById('configForm');
-   if (!form) return false;
-   if (!window.confirm(<?php echo json_encode(__('Gerar uma nova chave de segurança invalida a chave atual imediatamente. Todas as integrações que usam a chave antiga deixarão de funcionar até que o novo valor seja atualizado. Deseja continuar?', 'nextool')); ?>)) return false;
-   var actionInput = form.querySelector('input[name="action"]');
-   if (!actionInput) {
-      actionInput = document.createElement('input');
-      actionInput.type = 'hidden';
-      actionInput.name = 'action';
-      form.appendChild(actionInput);
-   }
-   actionInput.value = 'regenerate_hmac';
-   form.submit();
-   return false;
-}
+// F5 -- nextoolRegenerateHmac removido: a rotação de segredo/identidade é coordenada pelo servidor
+// (re-enroll/migrate). Sem botões que disparem a ação 'regenerate_hmac'.
 
 function nextoolInitContactForm() {
    var form = document.getElementById('nextool-contact-form');
@@ -1666,5 +1653,128 @@ if (!empty($_nextoolUnreadAlerts)):
       }
    }
 })();
+
+// nextoolPostJson -- helper de POST com CSRF (portado p/ a F3, GLPI 11 paridade).
+function nextoolPostJson(endpoint, params, opts) {
+   opts = opts || {};
+   var csrfToken = nextoolGetAjaxCsrfToken();
+   if (!csrfToken && opts.rejectOnNoCsrf) {
+      return Promise.reject(new Error('csrf-token-not-found'));
+   }
+   return fetch(endpoint, {
+      method: 'POST',
+      headers: {
+         'Accept': 'application/json',
+         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+         'X-Requested-With': 'XMLHttpRequest',
+         'X-Glpi-Csrf-Token': csrfToken || ''
+      },
+      body: new URLSearchParams(params || {}).toString(),
+      credentials: 'same-origin'
+   }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+         return { ok: r.ok, status: r.status, data: data };
+      });
+   });
+}
+window.nextoolPostJson = nextoolPostJson;
+
+// === F3 (5.0.0): vínculo de conta NexTool ===
+var NEXTOOL_ACCOUNT_ENDPOINT = <?php echo json_encode(Plugin::getWebDir('nextool') . '/ajax/account_action.php'); ?>;
+
+function nextoolAccountLinkAlert(type, msg) {
+   var box = document.getElementById('nextool-account-link-alert');
+   if (!box) { return; }
+   box.className = 'alert mt-2 alert-' + type;
+   box.textContent = msg;
+   box.classList.remove('d-none');
+}
+
+function nextoolRefreshLinkStatus() {
+   var statusBox = document.getElementById('nextool-account-link-status');
+   var unlinkBtn = document.getElementById('nextool-account-link-unlink-btn');
+   var codeBox = document.getElementById('nextool-account-link-code-box');
+   if (codeBox) { codeBox.classList.add('d-none'); }
+   if (!statusBox) { return; }
+   statusBox.className = 'alert alert-secondary d-flex align-items-center mb-3';
+   statusBox.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span><?php echo Html::entities_deep(__('Verificando vínculo...', 'nextool')); ?></span>';
+   nextoolPostJson(NEXTOOL_ACCOUNT_ENDPOINT, { action: 'refresh_status' }).then(function (res) {
+      var d = res.data || {};
+      if (!res.ok || !d.success) {
+         statusBox.className = 'alert alert-warning mb-3';
+         statusBox.textContent = d.message || '<?php echo Html::entities_deep(__('Não foi possível consultar o vínculo.', 'nextool')); ?>';
+         return;
+      }
+      if (d.linked) {
+         statusBox.className = 'alert alert-success mb-3';
+         statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i><?php echo Html::entities_deep(__('Ambiente vinculado', 'nextool')); ?>' + (d.portal_email ? (': <strong>' + d.portal_email + '</strong>') : '');
+         if (unlinkBtn) { unlinkBtn.classList.remove('d-none'); }
+      } else {
+         statusBox.className = 'alert alert-secondary mb-3';
+         statusBox.innerHTML = '<i class="ti ti-circle-dashed me-1"></i><?php echo Html::entities_deep(__('Ambiente ainda não vinculado.', 'nextool')); ?>';
+         if (unlinkBtn) { unlinkBtn.classList.add('d-none'); }
+      }
+   });
+}
+
+function nextoolGenerateLinkCode(btn) {
+   if (btn) { btn.disabled = true; }
+   nextoolPostJson(NEXTOOL_ACCOUNT_ENDPOINT, { action: 'generate_link_code' }).then(function (res) {
+      if (btn) { btn.disabled = false; }
+      var d = res.data || {};
+      if (!res.ok || !d.success) {
+         nextoolAccountLinkAlert('danger', d.message || '<?php echo Html::entities_deep(__('Falha ao gerar o código.', 'nextool')); ?>');
+         return;
+      }
+      var codeInput = document.getElementById('nextool-account-link-code');
+      var box = document.getElementById('nextool-account-link-code-box');
+      var portalBtn = document.getElementById('nextool-account-link-portal-btn');
+      var expires = document.getElementById('nextool-account-link-expires');
+      if (codeInput) { codeInput.value = d.link_code || ''; }
+      if (portalBtn && d.portal_link_url) { portalBtn.setAttribute('href', d.portal_link_url); }
+      if (expires) {
+         var mins = Math.round((d.expires_in || 600) / 60);
+         expires.textContent = '<?php echo Html::entities_deep(__('Válido por aproximadamente', 'nextool')); ?> ' + mins + ' min.';
+      }
+      if (box) { box.classList.remove('d-none'); }
+      var alertBox = document.getElementById('nextool-account-link-alert');
+      if (alertBox) { alertBox.classList.add('d-none'); }
+   }).catch(function () {
+      if (btn) { btn.disabled = false; }
+      nextoolAccountLinkAlert('danger', '<?php echo Html::entities_deep(__('Erro de comunicação.', 'nextool')); ?>');
+   });
+}
+
+function nextoolCopyLinkCode(btn) {
+   var codeInput = document.getElementById('nextool-account-link-code');
+   if (!codeInput) { return; }
+   codeInput.select();
+   try { document.execCommand('copy'); } catch (e) {}
+   if (navigator.clipboard) { navigator.clipboard.writeText(codeInput.value).catch(function () {}); }
+   if (btn) {
+      var orig = btn.innerHTML;
+      btn.innerHTML = '<i class="ti ti-check"></i>';
+      setTimeout(function () { btn.innerHTML = orig; }, 1500);
+   }
+}
+
+function nextoolUnlinkAccount(btn) {
+   nextoolShowConfirm('<?php echo Html::entities_deep(__('Desvincular este ambiente da conta? Você precisará vincular novamente para baixar módulos gratuitos.', 'nextool')); ?>', function () {
+      if (btn) { btn.disabled = true; }
+      nextoolPostJson(NEXTOOL_ACCOUNT_ENDPOINT, { action: 'unlink' }).then(function (res) {
+         if (btn) { btn.disabled = false; }
+         var d = res.data || {};
+         if (res.ok && d.success) {
+            nextoolRefreshLinkStatus();
+         } else {
+            nextoolAccountLinkAlert('danger', d.message || '<?php echo Html::entities_deep(__('Falha ao desvincular.', 'nextool')); ?>');
+         }
+      });
+   });
+}
+window.nextoolRefreshLinkStatus = nextoolRefreshLinkStatus;
+window.nextoolGenerateLinkCode = nextoolGenerateLinkCode;
+window.nextoolCopyLinkCode = nextoolCopyLinkCode;
+window.nextoolUnlinkAccount = nextoolUnlinkAccount;
 </script>
 <?php endif; ?>

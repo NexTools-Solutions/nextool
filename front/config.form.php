@@ -47,14 +47,6 @@ $distributionClientIdentifier = $distributionSettings['client_identifier'] ?? ($
 $distributionClientSecret = $distributionSettings['client_secret'] ?? '';
 
 require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
-// Segredo HMAC: não exibir em HTML, não registrar em logs (regra global de segurança).
-$hmacSecretRow = null;
-if ($distributionClientIdentifier !== '') {
-   $hmacSecretRow = PluginNextoolDistributionClient::getEnvSecretRow($distributionClientIdentifier);
-   if ($distributionClientSecret === '' && $hmacSecretRow && !empty($hmacSecretRow['client_secret'])) {
-      $distributionClientSecret = (string)$hmacSecretRow['client_secret'];
-   }
-}
 
 $distributionConfigured = $distributionBaseUrl !== '' && $distributionClientIdentifier !== '' && $distributionClientSecret !== '';
 

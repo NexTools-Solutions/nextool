@@ -71,6 +71,60 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
 {
    $baseUrl = trim((string) ($distributionSettings['base_url'] ?? ''));
    $clientIdentifier = trim((string) ($distributionSettings['client_identifier'] ?? ''));
+
+   // F1a -- enroll server-issued: install NOVO (sem identidade) + ContainerAPI configurado ->
+   // o servidor CUNHA o environment_id único (mata a colisão localhost, garante unicidade por GLPI).
+   // Sem fallback local: se o enroll falhar, o ambiente segue sem identidade (degrada para FREE) e
+   // re-tenta no próximo save. Ambientes legados (identifier já presente) NÃO passam por aqui.
+   if ($baseUrl !== '' && $clientIdentifier === '') {
+      $enroll = PluginNextoolDistributionClient::enrollEnvironment($baseUrl);
+      if ($enroll['environment_id'] === null || $enroll['client_secret'] === null) {
+         return [
+            'attempted'         => true,
+            'success'           => false,
+            'reused_secret'     => false,
+            'settings'          => $distributionSettings,
+            'client_identifier' => '',
+            'error'             => $enroll['error'],
+            'error_message'     => $enroll['message'],
+            'http_code'         => $enroll['http_code'],
+            'retry_after'       => $enroll['retry_after'],
+         ];
+      }
+
+      $clientIdentifier = $enroll['environment_id'];
+      // Persiste a identidade cunhada: main_configs + context distribution + provisioning resiliente.
+      PluginNextoolConfig::setClientIdentifier($clientIdentifier);
+      $distributionSettings['client_identifier'] = $clientIdentifier;
+      Config::setConfigurationValues('plugin:nextool_distribution', array_merge($distributionSettings, [
+         'client_identifier' => $clientIdentifier,
+         'client_secret'     => $enroll['client_secret'],
+      ]));
+      PluginNextoolConfig::setProvisioning($clientIdentifier, $enroll['client_secret']);
+
+      if ($logAudit) {
+         PluginNextoolConfigAudit::log([
+            'section' => 'distribution',
+            'action'  => 'enroll',
+            'result'  => 1,
+            'message' => __('Ambiente registrado no servidor de licenciamento (identidade emitida pelo servidor).', 'nextool'),
+            'details' => ['base_url' => $baseUrl],
+         ]);
+      }
+
+      return [
+         'attempted'         => true,
+         'success'           => true,
+         'reused_secret'     => false,
+         'settings'          => PluginNextoolConfig::getDistributionSettings(),
+         'client_identifier' => $clientIdentifier,
+         'error'             => null,
+         'error_message'     => null,
+         'http_code'         => $enroll['http_code'],
+         'retry_after'       => null,
+      ];
+   }
+
    $needsBootstrap = $baseUrl !== '' && $clientIdentifier !== '' && empty($distributionSettings['client_secret']);
 
    if (!$needsBootstrap) {
@@ -152,7 +206,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
 // Verificação de permissão depende da ação
 $action = $_POST['action'] ?? '';
 
-$validActions = ['', 'validate_license', 'regenerate_hmac', 'accept_policies', 'unlink_environment'];
+$validActions = ['', 'validate_license', 'accept_policies', 'unlink_environment'];
 if (!in_array($action, $validActions, true)) {
    http_response_code(400);
    die(json_encode(['success' => false, 'message' => __('Ação inválida.', 'nextool')]));
@@ -166,97 +220,9 @@ if ($action === 'validate_license') {
    PluginNextoolPermissionManager::assertCanManageAdminTabs();
 }
 
-if ($action === 'regenerate_hmac') {
-   $distributionSettings = PluginNextoolConfig::getDistributionSettings();
-   $baseUrl          = trim((string)($distributionSettings['base_url'] ?? ''));
-   $clientIdentifier = trim((string)($distributionSettings['client_identifier'] ?? ''));
-
-   if ($baseUrl === '' || $clientIdentifier === '') {
-     Session::addMessageAfterRedirect(
-        __('Configure a URL do ContainerAPI e o identificador do ambiente antes de recriar o segredo HMAC.', 'nextool'),
-        false,
-        WARNING
-     );
-     plugin_nextool_redirect_after_action();
-     exit;
-   }
-
-   PluginNextoolDistributionClient::deleteEnvSecret($clientIdentifier);
-   // NÃO zerar o segredo atual antes de obter o novo: se o bootstrap falhar
-   // (ex: 409 -- ambiente já provisionado no servidor após o hardening CR-01),
-   // o cliente ficaria SEM segredo e travado. Só sobrescrevemos quando há um
-   // segredo novo válido (abaixo). O segredo atual permanece em
-   // 'plugin:nextool_provisioning' como rede de segurança.
-
-   $result = PluginNextoolDistributionClient::obtainOrReuseClientSecret($baseUrl, $clientIdentifier);
-
-   if ($result['secret'] === null) {
-      // 409 = ambiente já provisionado no servidor: o segredo não é reentregue
-      // por segurança. Orientar o reset pelo administrador (ritecadmin), sem
-      // assustar -- o segredo atual continua válido.
-      if ((int) ($result['http_code'] ?? 0) === 409) {
-         $errorMessage = __('Este ambiente já está provisionado no servidor de licenciamento e, por segurança, o segredo não é reenviado automaticamente. Seu segredo atual continua válido. Se você o perdeu, solicite ao administrador o reset do provisionamento deste ambiente; depois você poderá provisionar novamente.', 'nextool');
-      } else {
-         $errorMessage = $result['message']
-            ?? __('Não foi possível recriar o segredo HMAC. Verifique os logs e tente novamente.', 'nextool');
-      }
-      Session::addMessageAfterRedirect($errorMessage, false, ($result['http_code'] ?? 0) === 409 ? WARNING : ERROR);
-
-      Toolbox::logInFile('plugin_nextool', sprintf(
-         'Regeneração de HMAC falhou — error: %s, http_code: %d, message: %s',
-         $result['error'] ?? '(unknown)',
-         $result['http_code'] ?? 0,
-         $result['message'] ?? '(none)'
-      ));
-
-      PluginNextoolConfigAudit::log([
-         'section' => 'distribution',
-         'action'  => 'regenerate_hmac',
-         'result'  => 0,
-         'message' => $errorMessage,
-         'details' => [
-            'error'             => $result['error'] ?? null,
-            'http_code'         => $result['http_code'] ?? 0,
-            'client_identifier' => $clientIdentifier ?? null,
-         ],
-      ]);
-
-      plugin_nextool_redirect_after_action();
-      exit;
-   }
-
-   Config::setConfigurationValues('plugin:nextool_distribution', array_merge($distributionSettings, [
-      'client_secret' => $result['secret'],
-   ]));
-
-   // Persiste o vínculo de provisionamento no context que sobrevive ao uninstall.
-   PluginNextoolConfig::setProvisioning(
-      (string) ($distributionSettings['client_identifier'] ?? ''),
-      (string) $result['secret']
-   );
-
-   PluginNextoolConfigAudit::log([
-      'section' => 'distribution',
-      'action'  => 'regenerate_hmac',
-      'result'  => 1,
-      'message' => __('Segredo HMAC recriado com sucesso.', 'nextool'),
-      'details' => [
-         'environment_identifier' => $clientIdentifier,
-         'reused_existing_secret' => $result['reused'] ? 1 : 0,
-      ],
-   ]);
-
-   Session::addMessageAfterRedirect(
-      $result['reused']
-         ? __('Segredo HMAC já existia e foi reutilizado com sucesso.', 'nextool')
-         : __('Novo segredo HMAC provisionado automaticamente.', 'nextool'),
-      false,
-      INFO
-   );
-
-   plugin_nextool_redirect_after_action();
-   exit;
-}
+// F5 -- ação 'regenerate_hmac' removida: a rotação de segredo/identidade é coordenada pelo servidor
+// (re-enroll/migrate). O fluxo local sempre falhava por design (CR-01 recusa reemitir secret de
+// ambiente já provisionado -> 409). Provisão inicial é automática (bootstrap_hmac_if_needed na sync).
 
 if ($action === 'unlink_environment') {
    // Desvincular ambiente: limpa o vínculo de provisionamento LOCAL (segredo
@@ -268,9 +234,6 @@ if ($action === 'unlink_environment') {
    $clientIdentifier = trim((string)($distributionSettings['client_identifier'] ?? ''));
 
    PluginNextoolConfig::clearProvisioning();
-   if ($clientIdentifier !== '') {
-      PluginNextoolDistributionClient::deleteEnvSecret($clientIdentifier);
-   }
    // Também limpa o segredo no context de distribuição (mantém base_url/identifier).
    $distValues = Config::getConfigurationValues('plugin:nextool_distribution');
    if (isset($distValues['client_secret'])) {
@@ -303,7 +266,7 @@ if ($action === 'accept_policies') {
 
    if ($baseUrl === '' || $clientIdentifier === '') {
       Session::addMessageAfterRedirect(
-         __('Configure a URL do ContainerAPI e gere o identificador do ambiente antes de aceitar as políticas de uso.', 'nextool'),
+         __('Configure a URL do ContainerAPI e provisione o ambiente (a identidade é emitida pelo servidor) antes de aceitar as políticas de uso.', 'nextool'),
          false,
          WARNING
       );

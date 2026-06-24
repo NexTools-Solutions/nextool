@@ -184,54 +184,15 @@ declare(strict_types=1);
                                     <span class="text-muted"><?php echo __('Defina primeiro o código do ambiente para habilitar a chave de segurança.', 'nextool'); ?></span>
                                  <?php elseif ($distributionClientSecret !== ''): ?>
                                     <span class="badge text-white bg-success me-2"><?php echo __('Provisionado', 'nextool'); ?></span>
-                                    <?php if ($hmacSecretRow): ?>
-                                       <div class="form-text">
-                                          <?php
-                                             $createdAt = !empty($hmacSecretRow['date_creation'])
-                                                ? Html::convDateTime($hmacSecretRow['date_creation'])
-                                                : __('desconhecida', 'nextool');
-                                             $updatedAt = !empty($hmacSecretRow['date_mod'])
-                                                ? Html::convDateTime($hmacSecretRow['date_mod'])
-                                                : __('desconhecida', 'nextool');
-                                             echo sprintf(
-                                                __('Gerado em %1$s • Última atualização %2$s', 'nextool'),
-                                                Html::entities_deep($createdAt),
-                                                Html::entities_deep($updatedAt)
-                                             );
-                                          ?>
-                                       </div>
-                                    <?php else: ?>
-                                       <div class="form-text">
-                                          <?php echo __('Atualizado após a última sincronização bem-sucedida.', 'nextool'); ?>
-                                       </div>
-                                    <?php endif; ?>
-                                    <?php if ($canManageAdminTabs): ?>
-                                       <div class="d-flex flex-wrap gap-2 mt-2">
-                                          <button type="button"
-                                                 class="btn btn-outline-danger btn-sm"
-                                                 onclick="nextoolRegenerateHmac(this);">
-                                             <i class="ti ti-refresh me-1"></i><?php echo __('Regerar chave', 'nextool'); ?>
-                                          </button>
-                                       </div>
-                                    <?php else: ?>
-                                       <div class="form-text mt-2">
-                                          <?php echo __('Somente perfis com permissão de gerenciamento podem copiar ou regenerar a chave de segurança.', 'nextool'); ?>
-                                       </div>
-                                    <?php endif; ?>
+                                    <div class="form-text">
+                                       <?php echo __('Atualizado após a última sincronização bem-sucedida.', 'nextool'); ?>
+                                    </div>
+                                    <?php // F5 -- botão "Regerar chave" removido: a rotação de segredo/identidade é
+                                          // coordenada pelo servidor (re-enroll/migrate). O botão local SEMPRE falhava por
+                                          // design (CR-01 recusa reemitir secret de ambiente já provisionado -> 409). ?>
                                  <?php else: ?>
-                                    <span class="text-muted d-block"><?php echo __('Aguardando sincronização para gerar automaticamente.', 'nextool'); ?></span>
+                                    <span class="text-muted d-block"><?php echo __('A chave de segurança é provisionada automaticamente na sincronização com o servidor de licenciamento.', 'nextool'); ?></span>
                                     <div class="d-flex flex-wrap gap-2 mt-2">
-                                       <?php if ($canManageAdminTabs): ?>
-                                          <button type="button"
-                                                 class="btn btn-outline-primary btn-sm"
-                                                 onclick="nextoolRegenerateHmac(this);">
-                                             <i class="ti ti-refresh me-1"></i><?php echo __('Gerar chave agora', 'nextool'); ?>
-                                          </button>
-                                       <?php else: ?>
-                                          <span class="form-text mb-0">
-                                             <?php echo __('Somente perfis com permissão de gerenciamento podem gerar a chave de segurança.', 'nextool'); ?>
-                                          </span>
-                                       <?php endif; ?>
                                        <a href="<?= NEXTOOL_TERMS_URL ?>"
                                           target="_blank"
                                           class="btn btn-link px-0 text-decoration-underline">

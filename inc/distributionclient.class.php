@@ -492,6 +492,71 @@ class PluginNextoolDistributionClient {
       return $this->decodeJsonResponse($response, __('Falha ao enviar o formulário de contato.', 'nextool'));
    }
 
+   /**
+    * F3 -- solicita um código de vínculo de conta ao ContainerAPI (assinado HMAC do ambiente).
+    * O código é exibido/abre o portal; sua posse prova controle do ambiente (anti-spoofing).
+    *
+    * @return array{link_code:string,expires_in:int,portal_link_url:string}
+    */
+   public function requestLinkCode(): array {
+      if (!$this->supportsSignedRequests()) {
+         throw new RuntimeException(__('Ambiente ainda não provisionado. Sincronize a licença antes de vincular a conta.', 'nextool'));
+      }
+      $body = '{}';
+      $response = $this->performRequest($this->baseUrl . '/api/account/link-code', [
+         'method' => 'POST',
+         'body' => $body,
+         'headers' => array_merge(
+            ['Content-Type: application/json'],
+            self::buildHmacHeadersV2($this->clientIdentifier, '/api/account/link-code', $body, $this->clientSecret)
+         ),
+         'timeout' => 30,
+      ]);
+      return $this->decodeJsonResponse($response, __('Falha ao gerar o código de vínculo.', 'nextool'));
+   }
+
+   /**
+    * F3 -- consulta o estado do vínculo de conta do ambiente (para a UI).
+    *
+    * @return array{linked:bool,verified:bool,portal_email:?string,linked_at:?string}
+    */
+   public function getLinkStatus(): array {
+      if (!$this->supportsSignedRequests()) {
+         return ['linked' => false, 'verified' => false, 'portal_email' => null, 'linked_at' => null];
+      }
+      $body = '{}';
+      $response = $this->performRequest($this->baseUrl . '/api/account/link-status', [
+         'method' => 'POST',
+         'body' => $body,
+         'headers' => array_merge(
+            ['Content-Type: application/json'],
+            self::buildHmacHeadersV2($this->clientIdentifier, '/api/account/link-status', $body, $this->clientSecret)
+         ),
+         'timeout' => 20,
+      ]);
+      return $this->decodeJsonResponse($response, __('Falha ao consultar o vínculo de conta.', 'nextool'));
+   }
+
+   /**
+    * F3 -- desfaz o vínculo de conta do ambiente.
+    */
+   public function unlinkAccount(): array {
+      if (!$this->supportsSignedRequests()) {
+         throw new RuntimeException(__('Ambiente não provisionado.', 'nextool'));
+      }
+      $body = '{}';
+      $response = $this->performRequest($this->baseUrl . '/api/account/unlink', [
+         'method' => 'POST',
+         'body' => $body,
+         'headers' => array_merge(
+            ['Content-Type: application/json'],
+            self::buildHmacHeadersV2($this->clientIdentifier, '/api/account/unlink', $body, $this->clientSecret)
+         ),
+         'timeout' => 20,
+      ]);
+      return $this->decodeJsonResponse($response, __('Falha ao desvincular a conta.', 'nextool'));
+   }
+
    private function decodeJsonResponse(array $response, string $errorPrefix): array {
       $data = json_decode($response['body'], true);
       if (!is_array($data)) {
@@ -578,36 +643,18 @@ class PluginNextoolDistributionClient {
       }
    }
 
-   public static function getEnvSecretRow(?string $clientIdentifier): ?array {
-      global $DB;
-
-      $clientIdentifier = trim((string)$clientIdentifier);
-      if ($clientIdentifier === '' || !$DB->tableExists('glpi_plugin_nextool_containerapi_env_secrets')) {
-         return null;
-      }
-
-      $iterator = $DB->request([
-         'FROM'  => 'glpi_plugin_nextool_containerapi_env_secrets',
-         'WHERE' => ['environment_identifier' => $clientIdentifier],
-         'LIMIT' => 1,
-      ]);
-
-      foreach ($iterator as $row) {
-         return $row;
-      }
-
-      return null;
-   }
-
    /**
-    * Obtém ou reutiliza o segredo HMAC de um ambiente.
+    * Obtém o segredo HMAC de um ambiente via bootstrap na ContainerAPI.
     *
-    * Tenta bootstrap via ContainerAPI; se falhar, reutiliza segredo existente
-    * na tabela de segredos do ambiente.
+    * O fallback local (tabela admin `glpi_plugin_nextool_containerapi_env_secrets`)
+    * foi removido: era um atalho de co-locação que só existia no GLPI co-residente
+    * com a ContainerAPI; o plugin cliente nunca tem essa tabela admin (regra de
+    * ouro: nextool não acessa o banco admin direto). O segredo resiliente vive no
+    * context `plugin:nextool_provisioning`.
     *
     * @param string $baseUrl URL base do ContainerAPI
     * @param string $clientIdentifier Identificador do ambiente
-    * @param bool|null &$reused Preenchido com true se reutilizou segredo existente
+    * @param bool|null &$reused Mantido por compatibilidade (sempre false)
     * @return array{secret: ?string, reused: bool, error: ?string, http_code: int, message: ?string, retry_after: ?int}
     */
    public static function obtainOrReuseClientSecret(string $baseUrl, string $clientIdentifier, ?bool &$reused = null): array {
@@ -625,22 +672,7 @@ class PluginNextoolDistributionClient {
          ];
       }
 
-      // Bootstrap falhou — tentar fallback na tabela local
-      $row = self::getEnvSecretRow($clientIdentifier);
-      if ($row && !empty($row['client_secret'])) {
-         $reused = true;
-         Toolbox::logInFile('plugin_nextool', sprintf('HMAC reutilizado a partir do registro existente para %s.', $clientIdentifier));
-         return [
-            'secret'      => (string) $row['client_secret'],
-            'reused'      => true,
-            'error'       => null,
-            'http_code'   => 0,
-            'message'     => null,
-            'retry_after' => null,
-         ];
-      }
-
-      // Ambos falharam — propagar o motivo do bootstrap
+      // Bootstrap falhou -- sem fallback local (a tabela admin não existe no cliente).
       return [
          'secret'      => null,
          'reused'      => false,
@@ -651,20 +683,184 @@ class PluginNextoolDistributionClient {
       ];
    }
 
-   public static function deleteEnvSecret(?string $clientIdentifier): bool {
-      global $DB;
-
-      $clientIdentifier = trim((string)$clientIdentifier);
-      if ($clientIdentifier === '' || !$DB->tableExists('glpi_plugin_nextool_containerapi_env_secrets')) {
-         return false;
+   /**
+    * F1a -- enroll server-issued: pede ao ContainerAPI que CUNHE um environment_id opaco e único
+    * (em vez de derivar localmente). Retorna {environment_id, client_secret} juntos. Usado em
+    * install NOVO (sem identidade) -- mata a colisão localhost e garante unicidade por GLPI mesmo
+    * na mesma máquina/IP. Envia a capability 'enroll-v2' (D1) + telemetria (domain/glpi_version)
+    * para o registro inicial do ambiente no servidor.
+    *
+    * @return array{environment_id: ?string, client_secret: ?string, error: ?string, http_code: int, message: ?string, retry_after: ?int}
+    */
+   public static function enrollEnvironment(string $baseUrl): array {
+      $baseUrl = rtrim($baseUrl, '/');
+      if ($baseUrl === '') {
+         return [
+            'environment_id' => null, 'client_secret' => null,
+            'error' => 'invalid_config', 'http_code' => 0,
+            'message' => __('URL do ContainerAPI não configurada.', 'nextool'),
+            'retry_after' => null,
+         ];
       }
 
-      $DB->delete(
-         'glpi_plugin_nextool_containerapi_env_secrets',
-         ['environment_identifier' => $clientIdentifier]
-      );
+      require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
 
-      return true;
+      $domain = '';
+      if (!empty($GLOBALS['CFG_GLPI']['url_base'])) {
+         $domain = (string) (parse_url((string) $GLOBALS['CFG_GLPI']['url_base'], PHP_URL_HOST) ?: '');
+      }
+      $glpiVersion = defined('GLPI_VERSION') ? GLPI_VERSION : null;
+      $payload = json_encode(array_filter([
+         'domain'       => $domain !== '' ? $domain : null,
+         'glpi_version' => $glpiVersion,
+         'client_info'  => array_filter([
+            'plugin_version' => PluginNextoolConfig::getPluginVersion(),
+            'glpi_version'   => $glpiVersion,
+         ]),
+      ]), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+      $ch = curl_init($baseUrl . '/api/distribution/enroll');
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+      curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+      curl_setopt($ch, CURLOPT_POST, true);
+      curl_setopt($ch, CURLOPT_POSTFIELDS, $payload ?: '{}');
+      curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+      curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+      if (!isset($GLOBALS['nextool_request_group_id'])) {
+         $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
+      }
+      curl_setopt($ch, CURLOPT_HTTPHEADER, [
+         'Content-Type: application/json',
+         'X-Nextool-Caps: enroll-v2',
+         'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'],
+      ]);
+
+      $response  = curl_exec($ch);
+      $httpCode  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      $curlError = curl_error($ch);
+      $curlErrno = curl_errno($ch);
+      curl_close($ch);
+
+      if ($response === false) {
+         Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou — erro de rede (curl errno %d): %s', $curlErrno, $curlError));
+         return [
+            'environment_id' => null, 'client_secret' => null,
+            'error' => 'network_error', 'http_code' => 0,
+            'message' => __('Erro de rede ao conectar com o servidor de licenciamento. Tente novamente em instantes.', 'nextool'),
+            'retry_after' => null,
+         ];
+      }
+
+      $data = json_decode($response, true);
+
+      if ($httpCode >= 300) {
+         $retryAfter = is_array($data) && isset($data['retry_after']) ? (int) $data['retry_after'] : null;
+         Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou — HTTP %d: %s', $httpCode, substr((string) $response, 0, 300)));
+         $userMessage = $httpCode === 429
+            ? sprintf(__('O servidor de licenciamento está limitando requisições. Tente novamente em %d segundos.', 'nextool'), $retryAfter ?? 60)
+            : __('Não foi possível registrar o ambiente no servidor de licenciamento. Tente novamente em instantes.', 'nextool');
+         return [
+            'environment_id' => null, 'client_secret' => null,
+            'error' => is_array($data) ? ($data['error'] ?? 'http_error') : 'http_error',
+            'http_code' => $httpCode, 'message' => $userMessage, 'retry_after' => $retryAfter,
+         ];
+      }
+
+      $environmentId = is_array($data) ? ($data['environment_id'] ?? null) : null;
+      $secret        = is_array($data) ? ($data['client_secret'] ?? null) : null;
+      if (!is_string($environmentId) || $environmentId === '' || !is_string($secret) || $secret === '') {
+         Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou — resposta sem environment_id/client_secret (HTTP %d)', $httpCode));
+         return [
+            'environment_id' => null, 'client_secret' => null,
+            'error' => 'invalid_response', 'http_code' => $httpCode,
+            'message' => __('O servidor de licenciamento não retornou a identidade esperada. Tente novamente em instantes.', 'nextool'),
+            'retry_after' => null,
+         ];
+      }
+
+      return [
+         'environment_id' => $environmentId, 'client_secret' => $secret,
+         'error' => null, 'http_code' => $httpCode, 'message' => null, 'retry_after' => null,
+      ];
+   }
+
+   /**
+    * F5 -- migração de identidade legada (RITECH-) -> server-issued (NX2-). Assina com o segredo
+    * ATUAL (prova de posse) e deixa o SERVIDOR decidir o modo: rename in-place (único, preserva
+    * histórico/licença), fresh (clone FREE), defer (PAID ambíguo -> fork manual), noop/not_eligible.
+    * Retorna {environment_id, client_secret, mode}: se client_secret vier null, o chamador MANTÉM a
+    * identidade atual (defer/noop/not_eligible) ou retenta (erro). NUNCA cunha id local.
+    *
+    * @return array{environment_id: ?string, client_secret: ?string, mode: ?string, error: ?string, http_code: int}
+    */
+   public static function migrateEnvironment(string $baseUrl, string $currentIdentifier, string $currentSecret): array {
+      $baseUrl = rtrim(trim($baseUrl), '/');
+      $currentIdentifier = trim($currentIdentifier);
+      $currentSecret = trim($currentSecret);
+      $fail = static function (string $error, int $code = 0): array {
+         return ['environment_id' => null, 'client_secret' => null, 'mode' => null, 'error' => $error, 'http_code' => $code];
+      };
+      if ($baseUrl === '' || $currentIdentifier === '' || $currentSecret === '') {
+         return $fail('invalid_config');
+      }
+
+      require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+
+      $domain = '';
+      if (!empty($GLOBALS['CFG_GLPI']['url_base'])) {
+         $domain = (string) (parse_url((string) $GLOBALS['CFG_GLPI']['url_base'], PHP_URL_HOST) ?: '');
+      }
+      $glpiVersion = defined('GLPI_VERSION') ? GLPI_VERSION : null;
+      $payload = json_encode(array_filter([
+         'domain'       => $domain !== '' ? $domain : null,
+         'glpi_version' => $glpiVersion,
+         'client_info'  => array_filter([
+            'plugin_version' => PluginNextoolConfig::getPluginVersion(),
+            'glpi_version'   => $glpiVersion,
+         ]),
+      ]), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
+
+      $headers = array_merge(
+         ['Content-Type: application/json'],
+         self::buildHmacHeadersV2($currentIdentifier, '/api/distribution/migrate', $payload, $currentSecret)
+      );
+      if (!isset($GLOBALS['nextool_request_group_id'])) {
+         $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
+      }
+      $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
+
+      $ch = curl_init($baseUrl . '/api/distribution/migrate');
+      curl_setopt_array($ch, [
+         CURLOPT_RETURNTRANSFER => true,
+         CURLOPT_POST           => true,
+         CURLOPT_POSTFIELDS     => $payload,
+         CURLOPT_HTTPHEADER     => $headers,
+         CURLOPT_TIMEOUT        => 30,
+         CURLOPT_SSL_VERIFYPEER => true,
+         CURLOPT_SSL_VERIFYHOST => 2,
+      ]);
+      $response  = curl_exec($ch);
+      $httpCode  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      $curlError = curl_error($ch);
+      curl_close($ch);
+
+      if ($response === false) {
+         Toolbox::logInFile('plugin_nextool', sprintf('Migrate falhou — erro de rede: %s', $curlError));
+         return $fail('network_error');
+      }
+      $data = json_decode($response, true);
+      if ($httpCode >= 300 || !is_array($data)) {
+         Toolbox::logInFile('plugin_nextool', sprintf('Migrate falhou — HTTP %d: %s', $httpCode, substr((string) $response, 0, 300)));
+         return $fail(is_array($data) ? (string) ($data['error'] ?? 'http_error') : 'http_error', $httpCode);
+      }
+
+      return [
+         'environment_id' => isset($data['environment_id']) && is_string($data['environment_id']) ? $data['environment_id'] : null,
+         'client_secret'  => isset($data['client_secret']) && is_string($data['client_secret']) ? $data['client_secret'] : null,
+         'mode'           => isset($data['mode']) ? (string) $data['mode'] : null,
+         'error'          => null,
+         'http_code'      => $httpCode,
+      ];
    }
 
    /**
