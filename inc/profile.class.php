@@ -93,15 +93,17 @@ class PluginNextoolProfile extends Profile {
          ];
       }
 
-      // Obter lista de módulos instalados (e ativos, para helpdesk)
+      // Obter lista de módulos instalados (e ativos, para helpdesk) + instâncias
       $installedModuleKeys = [];
       $activeModuleKeys = [];
+      $moduleInstances = [];
       if (class_exists('PluginNextoolModuleManager')) {
          try {
             $manager = PluginNextoolModuleManager::getInstance();
             foreach ($manager->getAllModules() as $mk => $mod) {
                if ($mod->isInstalled()) {
                   $installedModuleKeys[] = $mk;
+                  $moduleInstances[$mk] = $mod;
                   if ($mod->isEnabled()) {
                      $activeModuleKeys[] = $mk;
                   }
@@ -122,11 +124,22 @@ class PluginNextoolProfile extends Profile {
          if ($isHelpdesk && !in_array($moduleRight['key'], $activeModuleKeys, true)) {
             continue;
          }
-         $rights[] = [
+         $row = [
             'itemtype' => self::class,
             'label'    => sprintf(__('Módulo: %s', 'nextool'), $moduleRight['label']),
             'field'    => $moduleRight['right'],
          ];
+         // O MÓDULO declara quais colunas CRUD são funcionais (base consome do módulo).
+         // Linhas que declaram só READ renderizam checkbox apenas na coluna Ler; as
+         // demais ficam vazias (o core do GLPI suporta 'rights' por linha na matriz).
+         $instance = $moduleInstances[$moduleRight['key']] ?? null;
+         if ($instance !== null && method_exists($instance, 'getProfileRights')) {
+            $declared = $instance->getProfileRights();
+            if (!empty($declared)) {
+               $row['rights'] = $declared;
+            }
+         }
+         $rights[] = $row;
       }
 
       echo "<div id='nextool-rights-matrix'>";

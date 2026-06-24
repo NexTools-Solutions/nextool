@@ -241,4 +241,64 @@ class PluginNextoolHookDispatcher {
          }
       }
    }
+
+   // ========================================
+   // RULE ACTIONS (extensão do motor de regras nativo do GLPI)
+   // ========================================
+   //
+   // O GLPI resolve o hook `getRuleActions` como a função global
+   // `plugin_nextool_getRuleActions` (ver hook.php), invocada por
+   // Rule::doHookAndMergeResults(Hooks::AUTO_GET_RULE_ACTIONS, ...). Cada módulo
+   // que queira contribuir ações para um tipo de regra (ex.: 'RuleRight')
+   // registra um provider aqui no onInit() e declara o itemtype em
+   // $PLUGIN_HOOKS['use_rules']['nextool']. A persistência do valor atribuído é
+   // nativa: RuleRight::executeActions() trata qualquer ação `assign` no `default`
+   // do switch e o resultado é mesclado nos campos do usuário (User.php).
+
+   /** @var array<string, callable[]> ruleActions[ruleItemtype] = [ provider, ... ] */
+   private static $ruleActions = [];
+
+   /**
+    * Registra um provider de ações para um tipo de regra.
+    *
+    * @param string   $ruleItemtype Ex.: 'RuleRight'
+    * @param callable $provider     fn(array $params): array — devolve [actionKey => definição]
+    */
+   public static function registerRuleActions(string $ruleItemtype, callable $provider): void {
+      if (!isset(self::$ruleActions[$ruleItemtype])) {
+         self::$ruleActions[$ruleItemtype] = [];
+      }
+      self::$ruleActions[$ruleItemtype][] = $provider;
+   }
+
+   /**
+    * Despacha a coleta de ações para o tipo de regra do hook. Mescla os arrays
+    * de todos os providers registrados para aquele itemtype.
+    *
+    * @param array $params Payload do hook: ['rule_itemtype' => string, 'values' => array]
+    * @return array [actionKey => definição] — vazio se não houver provider
+    */
+   public static function dispatchRuleActions(array $params): array {
+      $itemtype = $params['rule_itemtype'] ?? '';
+      if ($itemtype === '' || empty(self::$ruleActions[$itemtype])) {
+         return [];
+      }
+
+      $actions = [];
+      foreach (self::$ruleActions[$itemtype] as $provider) {
+         try {
+            $ret = call_user_func($provider, $params);
+            if (is_array($ret)) {
+               $actions = array_merge($actions, $ret);
+            }
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] getRuleActions %s: %s',
+               $itemtype,
+               $e->getMessage()
+            ));
+         }
+      }
+      return $actions;
+   }
 }

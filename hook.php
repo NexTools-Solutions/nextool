@@ -26,6 +26,25 @@ require_once __DIR__ . '/inc/permissionmanager.class.php';
 require_once __DIR__ . '/inc/hookprovidersdispatcher.class.php';
 require_once __DIR__ . '/inc/nextoolmainconfig.class.php';
 
+/**
+ * Hook GLPI `getRuleActions` (Hooks::AUTO_GET_RULE_ACTIONS).
+ *
+ * O core do GLPI resolve a extensão de ações de regra por plugin como a função
+ * global `plugin_<plugin>_getRuleActions` (Plugin::doOneHook → includeHook).
+ * Aqui apenas delegamos ao dispatcher central, que mescla as ações dos módulos
+ * ativos que registraram um provider para o tipo de regra (ex.: 'RuleRight').
+ * Só é invocado para os itemtypes declarados em $PLUGIN_HOOKS['use_rules']['nextool'].
+ *
+ * @param array $params ['rule_itemtype' => string, 'values' => array]
+ * @return array [actionKey => definição] — vazio se nenhum módulo contribuir
+ */
+function plugin_nextool_getRuleActions($params) {
+   if (!class_exists('PluginNextoolHookDispatcher')) {
+      return [];
+   }
+   return PluginNextoolHookDispatcher::dispatchRuleActions(is_array($params) ? $params : []);
+}
+
 function plugin_nextool_install() {
    global $DB;
 
@@ -73,6 +92,8 @@ function plugin_nextool_install() {
    }
    $migration->executeMigration();
 
+   // F1a -- garante o registro base de config no install. NÃO gera mais client_identifier
+   // localmente (a identidade é cunhada pelo ContainerAPI via enroll no provisionamento ativo).
    $configfile = NEXTOOL_PHP_DIR . '/inc/config.class.php';
    if (file_exists($configfile)) {
       require_once $configfile;
@@ -80,7 +101,7 @@ function plugin_nextool_install() {
          try {
             PluginNextoolConfig::getConfig();
          } catch (Exception $e) {
-            Toolbox::logInFile('plugin_nextool', "Erro ao inicializar client_identifier durante install: " . $e->getMessage());
+            Toolbox::logInFile('plugin_nextool', "Erro ao inicializar a configuração base durante install: " . $e->getMessage());
          }
       }
    }
@@ -102,13 +123,6 @@ function plugin_nextool_install() {
                $identifier = trim((string) ($gc['client_identifier'] ?? ''));
             }
             $secret = trim((string) ($dist['client_secret'] ?? ''));
-            if ($secret === '' && $identifier !== ''
-               && class_exists('PluginNextoolDistributionClient')) {
-               $row = PluginNextoolDistributionClient::getEnvSecretRow($identifier);
-               if ($row && !empty($row['client_secret'])) {
-                  $secret = trim((string) $row['client_secret']);
-               }
-            }
             if ($identifier !== '' && $secret !== '') {
                PluginNextoolConfig::setProvisioning($identifier, $secret);
                Toolbox::logInFile('plugin_nextool', 'Provisionamento migrado para o context resiliente (plugin:nextool_provisioning).');
@@ -132,6 +146,15 @@ function plugin_nextool_install() {
 
    PluginNextoolPermissionManager::installRights();
    PluginNextoolPermissionManager::syncModuleRights();
+
+   // F2 (5.0.0): registra a CronTask de sincronização do catálogo (idempotente-por-criação).
+   if (function_exists('_plugin_nextool_register_crons')) {
+      try {
+         _plugin_nextool_register_crons();
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'Registro da CronTask catalogSync falhou: ' . $e->getMessage());
+      }
+   }
 
    return true;
 }

@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '4.3.4');
+define('PLUGIN_NEXTOOL_VERSION', '5.0.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -207,9 +207,10 @@ function plugin_init_nextool() {
    }
 
 
-   // Gera e persiste o Identificador do Cliente no momento em que o plugin é carregado (ativado)
-   // em vez de depender apenas da primeira leitura preguiçosa da configuração.
-   // Isso garante que, após a ativação, o ambiente já tenha um client_identifier estável.
+   // F1a -- a identidade (client_identifier) NÃO é mais gerada localmente: é cunhada pelo
+   // ContainerAPI via enroll no provisionamento ativo (front/config.save.php). Esta chamada
+   // apenas garante o registro base de config e carrega a configuração; getConfig() não gera
+   // mais identificador (installs novos ficam sem identidade até enrollar).
    $configfile = NEXTOOL_PHP_DIR . '/inc/config.class.php';
    if (file_exists($configfile)) {
       require_once $configfile;
@@ -490,4 +491,28 @@ function plugin_nextool_check_prerequisites() {
  */
 function plugin_nextool_check_config() {
    return true;
+}
+
+/**
+ * Registra as CronTasks do NexTool. Idempotente: CronTask::register faz early-return se a task
+ * já existe (ver learning_crontask_register_idempotent). MODE_EXTERNAL obrigatório para
+ * poll/integração (web-hit MODE_INTERNAL trava em state=2). Chamado no install/upgrade (F2).
+ * Mudança futura de freq/mode exige UPDATE explícito em glpi_crontasks (register não atualiza).
+ */
+function _plugin_nextool_register_crons() {
+   if (!class_exists('CronTask')) {
+      return;
+   }
+   if (!class_exists('PluginNextoolCronCatalogSync')) {
+      $cronFile = __DIR__ . '/inc/croncatalogsync.class.php';
+      if (file_exists($cronFile)) {
+         require_once $cronFile;
+      }
+   }
+   if (class_exists('PluginNextoolCronCatalogSync')) {
+      CronTask::register('PluginNextoolCronCatalogSync', 'catalogSync', DAY_TIMESTAMP, [
+         'comment' => 'Sincroniza o catálogo de módulos NexTool com a plataforma',
+         'mode'    => CronTask::MODE_EXTERNAL,
+      ]);
+   }
 }

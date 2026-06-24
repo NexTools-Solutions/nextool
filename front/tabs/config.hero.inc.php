@@ -89,6 +89,15 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                   <?php echo __('Sincronizar', 'nextool'); ?>
                </button>
             <?php endif; ?>
+            <?php if (empty($nextoolHeroHideAccountLink)): ?>
+               <button type="button"
+                       class="btn btn-outline-light fw-semibold"
+                       data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal"
+                       onclick="nextoolRefreshLinkStatus();">
+                  <i class="ti ti-user-check me-1"></i>
+                  <?php echo __('Vincular conta', 'nextool'); ?>
+               </button>
+            <?php endif; ?>
             </div>
             <div class="small text-white-50">
                <a href="<?= NEXTOOL_WHATSAPP_URL ?>" target="_blank" class="text-white text-decoration-underline">
@@ -169,6 +178,57 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?php echo __('Cancelar', 'nextool'); ?></button>
             <button type="button" class="btn btn-primary" id="nextool-modal-action-btn">
                <i class="ti ti-player-play me-1"></i><?php echo __('Iniciar atualização', 'nextool'); ?>
+            </button>
+         </div>
+      </div>
+   </div>
+</div>
+<?php endif; ?>
+<?php if (empty($GLOBALS['nextool_account_link_modal_rendered'])): ?>
+<?php $GLOBALS['nextool_account_link_modal_rendered'] = true; ?>
+<div class="modal fade" id="nextool-account-link-modal" tabindex="-1" aria-hidden="true">
+   <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+         <div class="modal-header">
+            <h5 class="modal-title"><i class="ti ti-user-check me-2"></i><?php echo __('Vincular conta NexTool', 'nextool'); ?></h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+         </div>
+         <div class="modal-body">
+            <p class="text-muted small">
+               <?php echo __('Vincule este ambiente a uma conta no nosso site para continuar baixando módulos gratuitos. Gere um código abaixo e confirme o vínculo no portal (já logado) ou informe o código manualmente.', 'nextool'); ?>
+            </p>
+
+            <div id="nextool-account-link-status" class="alert alert-secondary d-flex align-items-center mb-3">
+               <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+               <span><?php echo __('Verificando vínculo...', 'nextool'); ?></span>
+            </div>
+
+            <div id="nextool-account-link-code-box" class="d-none">
+               <label class="form-label fw-semibold"><?php echo __('Seu código de vínculo', 'nextool'); ?></label>
+               <div class="input-group mb-2">
+                  <input type="text" class="form-control form-control-lg text-center fw-bold" id="nextool-account-link-code" readonly style="letter-spacing:2px;">
+                  <button class="btn btn-outline-secondary" type="button" onclick="nextoolCopyLinkCode(this);">
+                     <i class="ti ti-copy"></i>
+                  </button>
+               </div>
+               <div class="form-text mb-2" id="nextool-account-link-expires"></div>
+               <a href="#" target="_blank" rel="noopener" class="btn btn-primary w-100" id="nextool-account-link-portal-btn">
+                  <i class="ti ti-external-link me-1"></i><?php echo __('Abrir portal e confirmar', 'nextool'); ?>
+               </a>
+               <p class="text-muted small mt-2 mb-0">
+                  <?php echo __('Ou acesse o portal manualmente e informe o código acima.', 'nextool'); ?>
+               </p>
+            </div>
+
+            <div class="alert d-none mt-2" role="alert" id="nextool-account-link-alert"></div>
+         </div>
+         <div class="modal-footer">
+            <button type="button" class="btn btn-outline-danger me-auto d-none" id="nextool-account-link-unlink-btn" onclick="nextoolUnlinkAccount(this);">
+               <i class="ti ti-unlink me-1"></i><?php echo __('Desvincular', 'nextool'); ?>
+            </button>
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?php echo __('Fechar', 'nextool'); ?></button>
+            <button type="button" class="btn btn-primary" id="nextool-account-link-generate-btn" onclick="nextoolGenerateLinkCode(this);">
+               <i class="ti ti-key me-1"></i><?php echo __('Gerar código', 'nextool'); ?>
             </button>
          </div>
       </div>

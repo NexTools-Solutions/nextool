@@ -30,6 +30,7 @@ require_once NEXTOOL_PHP_DIR . '/inc/logmaintenance.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/validationattempt.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/hmacsignaturetrait.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/entitlementtoken.class.php';
 
 class PluginNextoolLicenseValidator {
 
@@ -40,6 +41,13 @@ class PluginNextoolLicenseValidator {
       'STARTER' => 'DESENVOLVIMENTO',
       'PRO'     => 'LICENCIADO',
    ];
+
+   /**
+    * F2 -- capabilities anunciadas ao ContainerAPI (header X-Nextool-Caps). `entitlement-v1` =
+    * este plugin verifica o token de entitlement (Ed25519, offline) e trata metadata vazia na
+    * negação sem quebrar. Gate de compatibilidade por capability (nunca por versão numérica).
+    */
+   public const NEXTOOL_CAPABILITIES = 'entitlement-v1';
 
    /**
     * Namespaces de configuração persistidos via Config::setConfigurationValues por este validator.
@@ -430,7 +438,24 @@ class PluginNextoolLicenseValidator {
             );
          }
 
-         self::enforceFreeModeFallback('Falha ao comunicar com o ContainerAPI');
+         // F2 -- graça offline: se há um token de entitlement assinado e ainda válido, confiamos nele
+         // (resiliência ao ContainerAPI indisponível) em vez de degradar para FREE. Note que o bloco
+         // de sucesso abaixo (sync de catálogo / entitlement anti-pirataria) NÃO roda aqui -- a graça
+         // só preserva o direito já provado, sem aplicar alterações destrutivas offline.
+         if (!self::applyOfflineEntitlement($clientId, $valid, $plan, $allowedModules, $licenseStatus, $warnings, $message)) {
+            self::enforceFreeModeFallback('Falha ao comunicar com o ContainerAPI');
+         }
+      } else if (!empty($responseData['re_enroll_required'])) {
+         // F3-B -- fork manual: descarta a identidade local e re-enrolla; encerra esta rodada em FREE
+         // (o ambiente novo ainda não tem licença; o dono ativa o binding só no legítimo). A próxima
+         // validação já usa a nova identidade.
+         self::handleReEnrollSignal($distributionBaseUrl, $clientId);
+         $valid = false;
+         $plan = 'FREE';
+         $allowedModules = [];
+         $licenseStatus = null;
+         $message = __('Ambiente em reconfiguração de identidade (re-enroll). Modo FREE até concluir.', 'nextool');
+         self::enforceFreeModeFallback('re_enroll_required');
       } else {
          // Campos adicionais da nova fase 3 (podem ou não estar presentes conforme versão do administrativo)
          if (!empty($responseData['license_status'])) {
@@ -472,6 +497,8 @@ class PluginNextoolLicenseValidator {
             if (!empty($responseData['allowed_modules']) && is_array($responseData['allowed_modules'])) {
                $allowedModules = $responseData['allowed_modules'];
             }
+            // F2 -- verifica (anti-tamper) e persiste o token de entitlement assinado p/ uso offline.
+            self::persistVerifiedEntitlement($clientId, $responseData);
          } else {
             $valid = false;
             // Pode vir "error" + "message" ou apenas "message"
@@ -944,6 +971,9 @@ class PluginNextoolLicenseValidator {
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
       }
       $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
+      // F2 -- anuncia a capability: o servidor passa a (a) emitir o token de entitlement e (b) zerar
+      // a metadata na negação (este plugin trata metadata vazia sem quebrar -- TEST-03).
+      $headers[] = 'X-Nextool-Caps: ' . self::NEXTOOL_CAPABILITIES;
 
       if (function_exists('curl_init')) {
          $ch = curl_init($apiEndpoint);
@@ -1341,6 +1371,134 @@ class PluginNextoolLicenseValidator {
             sprintf('Aviso: licença expirada, contrato ativo (origin=%s, status=%s)', $origin, $status ?? 'UNKNOWN')
          );
       }
+   }
+
+   /**
+    * F2 -- verifica (anti-tamper) o token de entitlement recebido e o persiste p/ uso offline. Se o
+    * token vier mas NÃO conferir (assinatura/exp/environment alheio), registra e ignora -- nunca
+    * confia em token não verificado. Sem token (servidor antigo), no-op.
+    */
+   protected static function persistVerifiedEntitlement(?string $clientId, array $responseData): void {
+      $token = isset($responseData['license_token']) && is_string($responseData['license_token'])
+         ? trim($responseData['license_token']) : '';
+      if ($token === '') {
+         return;
+      }
+      $claims = PluginNextoolEntitlementToken::verify($token, (string) ($clientId ?? ''));
+      if ($claims === null) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: license_token recebido nao verificou (assinatura/exp/environment) -- ignorado.');
+         return;
+      }
+      self::persistConfig(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [
+         'entitlement_token'           => $token,
+         'entitlement_token_exp'       => (int) ($claims['exp'] ?? 0),
+         'entitlement_token_synced_at' => date('Y-m-d H:i:s'),
+      ], 'entitlement_token');
+   }
+
+   /**
+    * F2 -- graça offline: quando o ContainerAPI está indisponível, usa o token de entitlement
+    * assinado (se ainda válido: assinatura + exp + environment_id DESTE ambiente) como prova do
+    * direito, em vez de degradar para FREE. Retorna true se aplicou a graça.
+    */
+   protected static function applyOfflineEntitlement(
+      ?string $clientId,
+      bool &$valid,
+      ?string &$plan,
+      array &$allowedModules,
+      ?string &$licenseStatus,
+      array &$warnings,
+      string &$message
+   ): bool {
+      if (!class_exists('Config')) {
+         return false;
+      }
+      $values = Config::getConfigurationValues(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT);
+      $token  = isset($values['entitlement_token']) ? (string) $values['entitlement_token'] : '';
+      if ($token === '') {
+         return false;
+      }
+      $claims = PluginNextoolEntitlementToken::verify($token, (string) ($clientId ?? ''));
+      if ($claims === null) {
+         return false; // expirado/invalidado -> sem graça, segue FREE
+      }
+      $valid          = true;
+      $plan           = self::normalizePlan((string) ($claims['plan'] ?? 'FREE')) ?? 'FREE';
+      $mods           = isset($claims['allowed_modules']) && is_array($claims['allowed_modules']) ? $claims['allowed_modules'] : [];
+      $allowedModules = array_values($mods);
+      $licenseStatus  = 'ACTIVE';
+      $warnings[]     = __('Servidor de licenças indisponível: operando com o direito assinado em cache (offline).', 'nextool');
+      $message        = __('Direito validado offline pelo token assinado (servidor indisponível).', 'nextool');
+      Toolbox::logInFile('plugin_nextool', 'LicenseValidator: graca offline aplicada via token de entitlement assinado.');
+      return true;
+   }
+
+   /**
+    * F3-B -- honra o sinal `re_enroll_required` (fork manual): re-enrolla (o servidor cunha uma NOVA
+    * identidade única), descarta a antiga e adota a nova. Se o enroll falhar, NÃO mexe (retenta no
+    * próximo ciclo). O ambiente novo nasce sem licença -- o dono reativa o binding só no legítimo.
+    */
+   protected static function handleReEnrollSignal(string $baseUrl, ?string $oldIdentifier): void {
+      $baseUrl = trim($baseUrl);
+      if ($baseUrl === '') {
+         return;
+      }
+      require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
+
+      $oldIdentifier = trim((string) $oldIdentifier);
+      $dist = PluginNextoolConfig::getDistributionSettings();
+      $currentSecret = isset($dist['client_secret']) ? trim((string) $dist['client_secret']) : '';
+
+      // F5 -- migração COORDENADA pelo servidor: assina com o segredo ATUAL (prova de posse) e deixa
+      // o servidor escolher o modo (rename in-place preservando histórico p/ único; fresh p/ clone
+      // FREE; defer p/ PAID ambíguo). O plugin só ADOTA o {id, secret} retornado.
+      if ($oldIdentifier !== '' && $currentSecret !== '') {
+         $migrate = PluginNextoolDistributionClient::migrateEnvironment($baseUrl, $oldIdentifier, $currentSecret);
+         if (is_string($migrate['environment_id']) && $migrate['environment_id'] !== ''
+             && is_string($migrate['client_secret']) && $migrate['client_secret'] !== '') {
+            self::adoptNewIdentity($oldIdentifier, $migrate['environment_id'], $migrate['client_secret']);
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               'LicenseValidator: re_enroll_required honrado via migrate (modo=%s) -- identidade %s.',
+               $migrate['mode'] ?? '?', $migrate['environment_id']
+            ));
+            return;
+         }
+         // defer/noop/not_eligible: o servidor respondeu, mas NÃO entregou nova identidade -> mantém
+         // a atual (aguarda o admin fazer o fork manual). NÃO cair no enroll fresco (perderia o vínculo).
+         if (($migrate['mode'] ?? null) !== null) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               'LicenseValidator: migrate modo=%s sem nova identidade -- mantém a atual (aguarda admin).',
+               $migrate['mode']
+            ));
+            return;
+         }
+         // erro de rede/http -> tenta o enroll fresco como rede de segurança (comportamento F3-B).
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: migrate indisponível -- fallback para enroll fresco.');
+      }
+
+      // Fallback: sem segredo atual para assinar OU migrate indisponível -> enroll fresco.
+      $enroll = PluginNextoolDistributionClient::enrollEnvironment($baseUrl);
+      if ($enroll['environment_id'] === null || $enroll['client_secret'] === null) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: re_enroll_required recebido, mas o enroll falhou -- retenta no proximo ciclo.');
+         return;
+      }
+      self::adoptNewIdentity($oldIdentifier, $enroll['environment_id'], $enroll['client_secret']);
+      Toolbox::logInFile('plugin_nextool', sprintf('LicenseValidator: re_enroll_required honrado (enroll fresco) -- nova identidade %s cunhada.', $enroll['environment_id']));
+   }
+
+   /**
+    * F5 -- adota a nova identidade server-issued: descarta a antiga (provisioning + secret local) e
+    * persiste o novo par identifier+secret nas configs de distribuição.
+    */
+   private static function adoptNewIdentity(string $oldIdentifier, string $newId, string $newSecret): void {
+      PluginNextoolConfig::clearProvisioning();
+      PluginNextoolConfig::setClientIdentifier($newId);
+      PluginNextoolConfig::setProvisioning($newId, $newSecret);
+      $dist = PluginNextoolConfig::getDistributionSettings();
+      $dist['client_identifier'] = $newId;
+      $dist['client_secret']     = $newSecret;
+      Config::setConfigurationValues('plugin:nextool_distribution', $dist);
    }
 
    protected static function enforceFreeModeFallback(string $reason): void {

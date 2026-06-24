@@ -23,8 +23,6 @@ class PluginNextoolConfig extends CommonDBTM {
 
    const DEFAULT_CONTAINERAPI_BASE_URL = 'https://containerapi.nextoolsolutions.ai/';
 
-   private const CLIENT_ID_SALT = 'RITEC_SALT_V2';
-
    /**
     * Context dedicado para o VÍNCULO DE PROVISIONAMENTO do ambiente
     * (client_identifier + client_secret HMAC). Diferente de
@@ -94,62 +92,12 @@ class PluginNextoolConfig extends CommonDBTM {
    // Sem alterações de schema em runtime (GLPI não permite queries diretas aqui).
    // Campos novos devem ser criados via install/upgrade (Migration) e aqui apenas detectados.
 
-   protected static function generateClientIdentifier() {
-      // Padrão simplificado determinístico:
-      // RITECH-{ID8}-{CC}
-      //
-      // - ID8: 8 chars A-Z0-9 derivados de hash estável do host/ambiente
-      // - CC:  2 chars de checksum derivados do mesmo hash
-
-      // Descobre host a partir da URL base do GLPI ou variáveis de servidor
-      $host = '';
-      if (isset($GLOBALS['CFG_GLPI']['url_base']) && $GLOBALS['CFG_GLPI']['url_base']) {
-         $parsedHost = parse_url($GLOBALS['CFG_GLPI']['url_base'], PHP_URL_HOST);
-         if (!empty($parsedHost)) {
-            $host = $parsedHost;
-         }
-      }
-      if ($host === '') {
-         if (!empty($_SERVER['HTTP_HOST'])) {
-            $host = $_SERVER['HTTP_HOST'];
-         } else if (!empty($_SERVER['SERVER_NAME'])) {
-            $host = $_SERVER['SERVER_NAME'];
-         } else {
-            $host = 'localhost';
-         }
-      }
-
-      $host = strtolower(trim($host));
-
-      // Base determinística para hash (usa apenas o host normalizado)
-      $baseString = $host . '|' . self::CLIENT_ID_SALT;
-
-      // Gera ID8: 8 chars A-Z0-9
-      $hash = hash('sha256', $baseString);
-      $id8 = strtoupper(substr($hash, 0, 8));
-
-      if ($id8 === '') {
-         $id8 = 'RITECID8';
-      }
-
-      // Checksum CC: 2 chars A-Z0-9 a partir de outro hash
-      $chkHash = strtoupper(hash('crc32', $baseString));
-      $cc      = '';
-      $j       = 0;
-      while (strlen($cc) < 2 && $j < strlen($chkHash)) {
-         $c = $chkHash[$j];
-         if (ctype_xdigit($c)) {
-            $cc .= strtoupper($c);
-         }
-         $j++;
-      }
-
-      if (strlen($cc) < 2) {
-         $cc = str_pad($cc, 2, 'X');
-      }
-
-      return sprintf('RITECH-%s-%s', $id8, $cc);
-   }
+   /**
+    * F4 -- REMOVIDA. A identidade NÃO é mais gerada localmente: o ContainerAPI a cunha via enroll
+    * (server-issued, NX2-) desde a F1a. A geração por hash do host era a CAUSA da colisão localhost
+    * (vários ambientes na mesma máquina recebiam o mesmo RITECH-). Os legados RITECH- migram para
+    * server-issued via re-enroll (F4 migração / F3 fork). Nada mais gera identidade no cliente.
+    */
 
    /**
     * Cache per-request do resultado de getConfig().
@@ -211,18 +159,13 @@ class PluginNextoolConfig extends CommonDBTM {
          ]);
       }
 
-      // Gera identificador se estiver vazio
-      if (empty($config['client_identifier']) && $DB->fieldExists('glpi_plugin_nextool_main_configs', 'client_identifier')) {
-         $id = self::generateClientIdentifier();
-         $configObj = new self();
-         $configObj->getFromDB(1);
-         $configObj->update([
-            'id' => 1,
-            'client_identifier' => $id,
-            'date_mod' => date('Y-m-d H:i:s')
-         ]);
-         $config['client_identifier'] = $id;
-      }
+      // F1a -- identidade server-issued: o getConfig NÃO gera mais o client_identifier localmente
+      // (a geração por hash do host causava a colisão localhost). Para install NOVO o identificador
+      // é cunhado pelo ContainerAPI via enroll (PluginNextoolDistributionClient::enrollEnvironment),
+      // disparado no provisionamento ativo (front/config.save.php) e persistido aqui via update.
+      // Ambientes LEGADOS já têm o RITECH- na tabela e seguem sendo lidos acima (COMP-03 preservado);
+      // installs novos não-provisionados operam com client_identifier vazio (degradam para FREE).
+      // generateClientIdentifier() foi REMOVIDA na F4 (identidade server-issued via enroll).
 
       self::$cachedConfig = $config;
       return $config;
@@ -308,6 +251,28 @@ class PluginNextoolConfig extends CommonDBTM {
       }
 
       Config::setConfigurationValues(self::PROVISIONING_CONTEXT, array_merge($current, $payload));
+   }
+
+   /**
+    * F1a -- persiste o client_identifier CUNHADO pelo servidor (enroll) em main_configs e invalida
+    * o cache memoizado do request. Substitui a geração local: o identificador agora vem do
+    * ContainerAPI. Só grava valor não-vazio (nunca apaga uma identidade existente por engano).
+    */
+   public static function setClientIdentifier(string $clientIdentifier): void {
+      global $DB;
+      $clientIdentifier = trim($clientIdentifier);
+      if ($clientIdentifier === '' || !$DB->tableExists('glpi_plugin_nextool_main_configs')) {
+         return;
+      }
+      $configObj = new self();
+      if ($configObj->getFromDB(1)) {
+         $configObj->update([
+            'id' => 1,
+            'client_identifier' => $clientIdentifier,
+            'date_mod' => date('Y-m-d H:i:s'),
+         ]);
+      }
+      self::$cachedConfig = null; // invalida o memoize (armadilha do cache no mesmo request)
    }
 
    /**

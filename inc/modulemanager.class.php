@@ -1354,6 +1354,35 @@ class PluginNextoolModuleManager {
             continue;
          }
 
+         // Quando o DISCO está numa versão MAIS NOVA que o banco (deploy
+         // runtime-first, FTP, redeploy), rodar a migração do módulo ANTES de
+         // registrar a nova versão. Sem isso, apenas bumpar a versão "mente" o
+         // estado: o schema novo (colunas/tabelas criadas em runMigrations()/
+         // upgrade()) nunca é aplicado, e o updateModule() depois retorna cedo
+         // por achar que já está atualizado -> 500 'Unknown column' em runtime.
+         // upgrade() é idempotente (addColumnIfNotExists, CREATE IF NOT EXISTS).
+         $isUpgrade = ($dbVersion !== null && $dbVersion !== '')
+            ? version_compare($diskVersion, $dbVersion, '>')
+            : true; // banco sem versão registrada: tratar como sincronização inicial
+         if ($isUpgrade) {
+            try {
+               $migrated = $module->upgrade($dbVersion, $diskVersion);
+            } catch (\Throwable $e) {
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  "[ModuleManager] syncInstalledVersionsFromDisk: upgrade(%s: %s -> %s) FALHOU, versão NÃO sincronizada: %s\n",
+                  $moduleKey, $dbVersion ?? 'null', $diskVersion, $e->getMessage()
+               ));
+               continue; // mantém divergente para nova tentativa no próximo request
+            }
+            if ($migrated === false) {
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  "[ModuleManager] syncInstalledVersionsFromDisk: upgrade(%s: %s -> %s) retornou false, versão NÃO sincronizada\n",
+                  $moduleKey, $dbVersion ?? 'null', $diskVersion
+               ));
+               continue;
+            }
+         }
+
          $DB->update(
             'glpi_plugin_nextool_main_modules',
             [
@@ -1364,10 +1393,11 @@ class PluginNextoolModuleManager {
          );
 
          Toolbox::logInFile('plugin_nextool', sprintf(
-            "[ModuleManager] syncInstalledVersionsFromDisk: %s banco=%s -> disco=%s\n",
+            "[ModuleManager] syncInstalledVersionsFromDisk: %s banco=%s -> disco=%s%s\n",
             $moduleKey,
             $dbVersion ?? 'null',
-            $diskVersion
+            $diskVersion,
+            $isUpgrade ? ' (migração aplicada)' : ''
          ));
       }
    }
