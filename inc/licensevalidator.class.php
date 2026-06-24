@@ -76,6 +76,26 @@ class PluginNextoolLicenseValidator {
    }
 
    /**
+    * Item 6 -- a URL da plataforma é controlada pelo servidor (campo read-only no plugin). Adota o
+    * platform_url recebido no /validate SE for https válido (defesa contra redirecionamento indevido)
+    * e diferente do atual. Atualiza a base_url do context plugin:nextool_distribution.
+    */
+   private static function adoptPlatformUrl(string $url): void {
+      $url = rtrim(trim($url), '/');
+      if ($url === '' || stripos($url, 'https://') !== 0 || filter_var($url, FILTER_VALIDATE_URL) === false) {
+         return;
+      }
+      $dist = Config::getConfigurationValues('plugin:nextool_distribution');
+      $current = isset($dist['base_url']) ? rtrim(trim((string) $dist['base_url']), '/') : '';
+      if ($url === $current) {
+         return;
+      }
+      $dist['base_url'] = $url;
+      self::persistConfig('plugin:nextool_distribution', $dist, 'platform_url');
+      Toolbox::logInFile('plugin_nextool', sprintf('LicenseValidator: platform_url adotada do servidor: %s', $url));
+   }
+
+   /**
     * Normaliza nome de plano, convertendo aliases legados para os nomes atuais.
     */
    public static function normalizePlan(?string $plan): ?string {
@@ -551,12 +571,18 @@ class PluginNextoolLicenseValidator {
             self::persistCoreUpdateHint($responseData['core_update']);
          }
 
-         // Gate de vínculo de conta: o servidor diz se o download FREE exige conta vinculada
-         // (gate hard + não-vinculado). A UI usa isso para trocar "Download" por "Vincular conta".
-         // Persistido sempre (inclui '0' para limpar quando deixa de ser exigido, ex.: pós-vínculo).
+         // Estado do vínculo de conta (server-driven): persiste p/ a UI (hero, modal, aba licença).
+         // link_required: download FREE exige vínculo; linked/email: conta vinculada e qual.
          self::persistConfig('plugin:nextool_account_link', [
             'link_required' => !empty($responseData['account_link_required']) ? '1' : '0',
-         ], 'account_link gate');
+            'linked'        => !empty($responseData['account_linked']) ? '1' : '0',
+            'email'         => isset($responseData['account_email']) ? (string) $responseData['account_email'] : '',
+         ], 'account_link state');
+
+         // Item 6: a URL da plataforma é controlada pelo servidor (campo read-only no plugin).
+         if (!empty($responseData['platform_url'])) {
+            self::adoptPlatformUrl((string) $responseData['platform_url']);
+         }
 
          // Persistir payment_methods disponíveis (para modal dinâmico)
          if (!empty($responseData['payment_methods']) && is_array($responseData['payment_methods'])) {

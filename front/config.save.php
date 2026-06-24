@@ -376,7 +376,9 @@ $previousGlobalConfig = PluginNextoolConfig::getConfig();
 
 // Persistir configuração global apenas quando os campos vierem no POST.
 // Isso evita sobrescrever dados em ações como validate_license via nextoolSyncForm.
-$endpointWasPosted = array_key_exists('endpoint_url', $_POST);
+// Item 6 (5.0.x): a URL da plataforma é controlada pelo servidor (campo read-only no licenciamento).
+// O form nunca altera a base_url -- ela só muda via adoptPlatformUrl no sync. Ignora endpoint_url postado.
+$endpointWasPosted = false;
 $isActiveWasPosted = array_key_exists('is_active', $_POST);
 $shouldPersistGlobal = in_array($action, ['', 'validate_license'], true)
    && ($endpointWasPosted || $isActiveWasPosted);

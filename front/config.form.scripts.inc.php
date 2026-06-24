@@ -1670,14 +1670,17 @@ function nextoolRefreshLinkStatus() {
          statusBox.textContent = d.message || <?php echo json_encode(__('Não foi possível consultar o vínculo.', 'nextool')); ?>;
          return;
       }
+      var goBtn = document.getElementById('nextool-account-link-portal-go-btn');
       if (d.linked) {
          statusBox.className = 'alert alert-success mb-3';
          statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i><?php echo Html::entities_deep(__('Ambiente vinculado', 'nextool')); ?>' + (d.portal_email ? (': <strong>' + d.portal_email + '</strong>') : '');
          if (unlinkBtn) { unlinkBtn.classList.remove('d-none'); }
+         if (goBtn) { goBtn.classList.remove('d-none'); }
       } else {
          statusBox.className = 'alert alert-secondary mb-3';
          statusBox.innerHTML = '<i class="ti ti-circle-dashed me-1"></i><?php echo Html::entities_deep(__('Ambiente ainda não vinculado.', 'nextool')); ?>';
          if (unlinkBtn) { unlinkBtn.classList.add('d-none'); }
+         if (goBtn) { goBtn.classList.add('d-none'); }
       }
    });
 }
@@ -1704,6 +1707,7 @@ function nextoolGenerateLinkCode(btn) {
       if (box) { box.classList.remove('d-none'); }
       var alertBox = document.getElementById('nextool-account-link-alert');
       if (alertBox) { alertBox.classList.add('d-none'); }
+      nextoolStartLinkPolling();
    }).catch(function () {
       if (btn) { btn.disabled = false; }
       nextoolAccountLinkAlert('danger', <?php echo json_encode(__('Erro de comunicação.', 'nextool')); ?>);
@@ -1737,6 +1741,36 @@ function nextoolUnlinkAccount(btn) {
       });
    });
 }
+// Item 2: após gerar o código, fica "Aguardando confirmação..." (amarelo girando) e faz polling
+// do status a cada 3s; quando o vínculo confirma no site, vira verde (via nextoolRefreshLinkStatus).
+var nextoolLinkPollTimer = null;
+function nextoolStopLinkPolling() {
+   if (nextoolLinkPollTimer) { clearInterval(nextoolLinkPollTimer); nextoolLinkPollTimer = null; }
+}
+function nextoolStartLinkPolling() {
+   nextoolStopLinkPolling();
+   var statusBox = document.getElementById('nextool-account-link-status');
+   if (statusBox) {
+      statusBox.className = 'alert alert-warning d-flex align-items-center mb-3';
+      statusBox.innerHTML = '<span class="spinner-border spinner-border-sm text-warning me-2"></span><span>'
+         + <?php echo json_encode(__('Aguardando confirmação no portal...', 'nextool')); ?> + '</span>';
+   }
+   nextoolLinkPollTimer = setInterval(function () {
+      nextoolPostJson(NEXTOOL_ACCOUNT_ENDPOINT, { action: 'refresh_status' }).then(function (res) {
+         var d = res.data || {};
+         if (res.ok && d.success && d.linked) {
+            nextoolStopLinkPolling();
+            var codeBox = document.getElementById('nextool-account-link-code-box');
+            if (codeBox) { codeBox.classList.add('d-none'); }
+            nextoolRefreshLinkStatus();
+         }
+      });
+   }, 3000);
+}
+(function () {
+   var m = document.getElementById('nextool-account-link-modal');
+   if (m) { m.addEventListener('hidden.bs.modal', nextoolStopLinkPolling); }
+})();
 window.nextoolRefreshLinkStatus = nextoolRefreshLinkStatus;
 window.nextoolGenerateLinkCode = nextoolGenerateLinkCode;
 window.nextoolCopyLinkCode = nextoolCopyLinkCode;
