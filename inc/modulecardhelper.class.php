@@ -97,7 +97,11 @@ class PluginNextoolModuleCardHelper {
                ? trim((string) $state['min_version_nextools']) : null;
             $dlBlocked = $dlMinVer !== null && ($dlPluginVersion === '' || version_compare($dlPluginVersion, $dlMinVer, '<'));
 
-            if ($state['is_paid'] && !$canDownload) {
+            if (!empty($state['account_link_required'])) {
+               // Gate de vínculo UNIVERSAL (link-first): em vez de Download/Licenciar que tomaria 403
+               // account_link_required no servidor, oferece o vínculo (abre o modal "Vincular conta").
+               $primary = self::renderAccountLinkButton();
+            } elseif ($state['is_paid'] && !$canDownload) {
                $primary = self::renderLicensingButton($state);
             } elseif ($catalogDisabled) {
                $primary = self::renderBadge(__('Download indisponível (catálogo desativado)', 'nextool'));
@@ -106,10 +110,6 @@ class PluginNextoolModuleCardHelper {
             } elseif ($dlBlocked) {
                $msg = sprintf(__('Nextool %s necessário para baixar', 'nextool'), $dlMinVer);
                $primary = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . '</span>';
-            } elseif (!$state['is_paid'] && !empty($state['account_link_required'])) {
-               // Gate de vínculo (FREE): em vez de um Download que tomaria 403 account_link_required
-               // no servidor, oferece o vínculo direto (abre o mesmo modal do hero "Vincular conta").
-               $primary = self::renderAccountLinkButton();
             } else {
                $primary = self::renderActionForm(
                   $state, 'download', __('Download', 'nextool'),
@@ -144,7 +144,10 @@ class PluginNextoolModuleCardHelper {
          }
          // Prioridade 2: Update disponivel
          elseif (!empty($state['update_available']) && !$catalogDisabled) {
-            if (empty($state['has_zip_extension'])) {
+            if (!empty($state['account_link_required'])) {
+               // Atualizar baixa do servidor -> mesmo gate de vínculo universal. Oferece o vínculo.
+               $primary = self::renderAccountLinkButton();
+            } elseif (empty($state['has_zip_extension'])) {
                $primary = self::renderBadge(__('Atualização indisponível: extensão php-zip não instalada', 'nextool'), 'badge bg-danger text-white me-1');
             } elseif ($isSuspended && $state['is_paid']) {
                $primary = self::renderBadge(__('Atualização bloqueada: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
