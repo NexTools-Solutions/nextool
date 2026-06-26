@@ -10,8 +10,8 @@ Importante: este projeto possui **linha para GLPI 10** e **linha para GLPI 11**.
 
 Este repositório (`NexTools-Solutions/nextool`) possui **duas linhas** do plugin NexTool:
 
-- <a href="https://github.com/NexTools-Solutions/nextool/releases/tag/v5.1.0-glpi10" target="_blank" rel="noopener"><strong>GLPI 10</strong>: branch <code>glpi-10</code> (esta linha)</a>
-- <a href="https://github.com/NexTools-Solutions/nextool/releases/tag/v5.1.0" target="_blank" rel="noopener"><strong>GLPI 11</strong>: branch <code>main</code> (código e releases próprios)</a>
+- <a href="https://github.com/NexTools-Solutions/nextool/releases/tag/v5.2.0-glpi10" target="_blank" rel="noopener"><strong>GLPI 10</strong>: branch <code>glpi-10</code> (esta linha)</a>
+- <a href="https://github.com/NexTools-Solutions/nextool/releases/tag/v5.2.0" target="_blank" rel="noopener"><strong>GLPI 11</strong>: branch <code>main</code> (código e releases próprios)</a>
 
 **Regra crítica:** não fazer merge entre `main` e `glpi-10`. Se uma mudança precisa existir nas duas versões, portar (cherry-pick/manual) e testar em cada linha.
 

@@ -58,40 +58,23 @@ declare(strict_types=1);
                </div>
             <?php endif; ?>
             <?php if ($requiresPolicyAcceptance): ?>
-               <div class="alert alert-info mb-0">
-                  <div class="text-center">
-                     <div>
-                        <i class="ti ti-info-circle fs-4 me-3"></i>
-                        <div>
-                           <p class="mb-2">
-                              Para visualizar e instalar os módulos oficiais do Nextools, é necessário aceitar as
-                              <a href="<?= NEXTOOL_TERMS_URL ?>" target="_blank" class="text-decoration-underline fw-semibold">Políticas de Uso</a>.
-                           </p>
-                           <p class="mb-0 text-muted small">
-                              Esse processo confirma o ambiente na plataforma NexTool, registra o aceite e atualiza sua lista de módulos disponíveis.
-                           </p>
+               <div class="d-flex justify-content-center">
+                  <div class="text-center p-4 rounded" style="max-width: 600px; width: 100%; background-color: #eef4fb; border: 1px solid #cfe0f3; color: #1f3a56;">
+                     <p class="mb-3">
+                        <?php echo __('Vincule este ambiente à sua conta NexTool para ativar e liberar os módulos oficiais.', 'nextool'); ?>
+                     </p>
+                     <?php if ($canManageAdminTabs): ?>
+                        <button type="button" class="btn btn-primary"
+                                data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal" onclick="nextoolRefreshLinkStatus();">
+                           <i class="ti ti-user-check me-1"></i>
+                           <?php echo __('Vincular conta', 'nextool'); ?>
+                        </button>
+                     <?php else: ?>
+                        <div class="text-muted small mt-2">
+                           <i class="ti ti-lock me-1"></i>
+                           <?php echo __('Somente usuários com permissão de gerenciamento podem liberar o catálogo de módulos.', 'nextool'); ?>
                         </div>
-                     </div>
-                     <div class="w-100 mx-auto nextool-policy-actions">
-                        <?php if ($canManageAdminTabs): ?>
-                           <form method="post"
-                                 class="d-block text-center"
-                                 action="<?php echo Plugin::getWebDir('nextool') . '/front/config.save.php'; ?>">
-                              <?php echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); ?>
-                              <?php echo Html::hidden('action', ['value' => 'accept_policies']); ?>
-                              <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$1' : 'PluginNextoolSetup$1']); ?>
-                              <button type="submit" class="btn btn-primary w-100">
-                                 <i class="ti ti-checkbox me-1"></i>
-                                 Aceitar políticas e liberar módulos
-                              </button>
-                           </form>
-                        <?php else: ?>
-                           <div class="alert alert-light border mb-0">
-                              <i class="ti ti-lock me-2"></i>
-                              <?php echo __('Somente usuários com permissão de gerenciamento podem liberar o catálogo de módulos.', 'nextool'); ?>
-                           </div>
-                        <?php endif; ?>
-                     </div>
+                     <?php endif; ?>
                   </div>
                </div>
             <?php elseif (empty($modulesState)): ?>

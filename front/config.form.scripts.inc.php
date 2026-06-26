@@ -983,11 +983,6 @@ var _nextoolSyncCooldown = (function() {
 function nextoolValidateLicense(btn) {
    var form = (btn && btn.form) ? btn.form : document.getElementById('configForm') || document.getElementById('nextoolSyncForm');
    if (!form) return false;
-   var hasAcceptedPolicies = <?php echo !empty($hasAcceptedPolicies) ? 'true' : 'false'; ?>;
-   if (!hasAcceptedPolicies) {
-      var msg = 'Ao sincronizar a licença do NexTool pela primeira vez, serão enviados apenas dados técnicos do ambiente (domínio, código do ambiente, chave da licença, IP do servidor e versões do sistema) para a plataforma de licenciamento NexTool. Nenhum dado de chamados, usuários finais ou anexos é coletado.\n\nVocê concorda com esta política de uso e coleta de dados?';
-      if (!window.confirm(msg)) return false;
-   }
    var actionInput = form.querySelector('input[name="action"]');
    if (!actionInput) {
       actionInput = document.createElement('input');
@@ -995,7 +990,7 @@ function nextoolValidateLicense(btn) {
       actionInput.name = 'action';
       form.appendChild(actionInput);
    }
-   actionInput.value = hasAcceptedPolicies ? 'validate_license' : 'accept_policies';
+   actionInput.value = 'validate_license';
 
    // Cooldown: ativar countdown de 60s e desabilitar botão
    _nextoolSyncCooldown.activate();
@@ -1667,7 +1662,17 @@ function nextoolStartLinkPolling() {
             nextoolStopLinkPolling();
             var codeBox = document.getElementById('nextool-account-link-code-box');
             if (codeBox) { codeBox.classList.add('d-none'); }
-            nextoolRefreshLinkStatus();
+            var genBtn = document.getElementById('nextool-account-link-generate-btn');
+            if (genBtn) { genBtn.classList.add('d-none'); }
+            // Vinculo recem-confirmado: o catalogo/modulos so aparecem apos recarregar a pagina.
+            var statusBox = document.getElementById('nextool-account-link-status');
+            if (statusBox) {
+               statusBox.className = 'alert alert-success mb-3';
+               statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i> '
+                  + <?php echo json_encode(__('Conta vinculada com sucesso! Recarregue a página para liberar os módulos.', 'nextool')); ?>
+                  + ' <button type="button" class="btn btn-sm btn-success ms-2" onclick="window.location.reload();"><i class="ti ti-refresh me-1"></i>'
+                  + <?php echo json_encode(__('Recarregar agora', 'nextool')); ?> + '</button>';
+            }
          }
       });
    }, 3000);

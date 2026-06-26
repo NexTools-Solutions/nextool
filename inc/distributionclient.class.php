@@ -785,6 +785,47 @@ class PluginNextoolDistributionClient {
    }
 
    /**
+    * Fluxo vinculo-first: identifica o ambiente SOB DEMANDA. Enrola no ContainerAPI (cunha NX2- +
+    * segredo HMAC) e PERSISTE a identidade nos 3 lugares (main_configs, context distribution,
+    * provisioning resiliente que sobrevive ao uninstall). Usado quando o usuario clica "Vincular
+    * conta" num ambiente ainda nao identificado -- o aceite formal dos termos acontece no portal,
+    * no momento do vinculo. So a base_url e pre-requisito.
+    *
+    * @return array{success: bool, client_identifier: string, message: ?string, http_code: int, retry_after: ?int}
+    */
+   public static function enrollAndPersist(string $baseUrl): array {
+      $enroll = self::enrollEnvironment($baseUrl);
+      if ($enroll['environment_id'] === null || $enroll['client_secret'] === null) {
+         return [
+            'success' => false, 'client_identifier' => '',
+            'message' => $enroll['message'], 'http_code' => $enroll['http_code'],
+            'retry_after' => $enroll['retry_after'] ?? null,
+         ];
+      }
+      $clientIdentifier = (string) $enroll['environment_id'];
+      PluginNextoolConfig::setClientIdentifier($clientIdentifier);
+      $dist = PluginNextoolConfig::getDistributionSettings();
+      Config::setConfigurationValues('plugin:nextool_distribution', array_merge($dist, [
+         'client_identifier' => $clientIdentifier,
+         'client_secret'     => $enroll['client_secret'],
+      ]));
+      PluginNextoolConfig::setProvisioning($clientIdentifier, (string) $enroll['client_secret']);
+      if (class_exists('PluginNextoolConfigAudit')) {
+         PluginNextoolConfigAudit::log([
+            'section' => 'distribution',
+            'action'  => 'enroll',
+            'result'  => 1,
+            'message' => __('Ambiente identificado no servidor de licenciamento (vínculo de conta).', 'nextool'),
+            'details' => ['base_url' => $baseUrl],
+         ]);
+      }
+      return [
+         'success' => true, 'client_identifier' => $clientIdentifier,
+         'message' => null, 'http_code' => $enroll['http_code'], 'retry_after' => null,
+      ];
+   }
+
+   /**
     * F5 -- migração de identidade legada (RITECH-) -> server-issued (NX2-). Assina com o segredo
     * ATUAL (prova de posse) e deixa o SERVIDOR decidir o modo: rename in-place (único, preserva
     * histórico/licença), fresh (clone FREE), defer (PAID ambíguo -> fork manual), noop/not_eligible.

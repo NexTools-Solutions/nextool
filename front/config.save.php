@@ -264,9 +264,14 @@ if ($action === 'accept_policies') {
    $baseUrl = trim((string)($distributionSettings['base_url'] ?? ''));
    $clientIdentifier = trim((string)($distributionSettings['client_identifier'] ?? ''));
 
-   if ($baseUrl === '' || $clientIdentifier === '') {
+   // Deadlock-fix (regressao da F1a): a identidade NX2- e cunhada pelo SERVIDOR no enroll, que
+   // roda logo abaixo em plugin_nextool_bootstrap_hmac_if_needed (quando base_url existe e
+   // client_identifier esta vazio). Exigir client_identifier AQUI criava um impasse -- para
+   // aceitar precisava da identidade que so o proprio aceite gera. So a base_url e pre-requisito
+   // real: e o aceite das politicas que DISPARA o enroll (consentimento ANTES da telemetria).
+   if ($baseUrl === '') {
       Session::addMessageAfterRedirect(
-         __('Configure a URL do ContainerAPI e provisione o ambiente (a identidade é emitida pelo servidor) antes de aceitar as políticas de uso.', 'nextool'),
+         __('Configure a URL do ContainerAPI antes de aceitar as políticas de uso.', 'nextool'),
          false,
          WARNING
       );
