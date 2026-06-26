@@ -175,10 +175,6 @@ declare(strict_types=1);
                      if ($tier === 'DEV') { $ribbonLabel = __('DEV', 'nextool'); $ribbonClass = 'nextool-ribbon-dev'; }
                      elseif ($module['is_paid']) { $ribbonLabel = __('LICENCIADO', 'nextool'); $ribbonClass = 'nextool-ribbon-paid'; }
                      else { $ribbonLabel = __('GRÁTIS', 'nextool'); $ribbonClass = 'nextool-ribbon-free'; }
-                     $priceDisplay = '';
-                     if ($module['is_paid'] && !empty($module['price_cents'])) {
-                        $priceDisplay = 'R$ ' . number_format($module['price_cents'] / 12 / 100, 2, ',', '.') . '/mês';
-                     }
                      $dlCount = (int)($module['download_count'] ?? 0);
                      $features = $module['features'] ?? [];
                      $moduleCategory = $module['category'] ?? '';
@@ -248,9 +244,6 @@ declare(strict_types=1);
                               <?php if ($module['is_paid'] && empty($module['can_download']) && empty($module['is_license_suspended'])): ?>
                               <div class="alert alert-warning small p-2 mb-2 d-flex align-items-center justify-content-between">
                                  <span><i class="ti ti-lock me-1"></i><?php echo __('Licença necessária para utilizar todos os recursos', 'nextool'); ?></span>
-                                 <?php if ($priceDisplay !== ''): ?>
-                                 <span class="fw-bold text-nowrap ms-2"><?php echo $priceDisplay; ?></span>
-                                 <?php endif; ?>
                               </div>
                               <?php endif; ?>
                               <div class="d-flex justify-content-between align-items-center">
