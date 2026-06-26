@@ -367,12 +367,15 @@ class PluginNextoolModuleCardHelper {
    }
 
    private static function renderLicensingButton(array $state): string {
-      $moduleKey = Html::entities_deep($state['module_key']);
-      $moduleName = Html::entities_deep($state['name'] ?? $state['module_key']);
+      // O licenciamento migrou para o portal: o botao "Licenciar" deep-linka para
+      // app.nextoolsolutions.com/painel/plugin-nextool (mesma base do account-link). A compra,
+      // o preco e o checkout NAO acontecem mais dentro do plugin.
       $label = Html::entities_deep(__('Licenciar', 'nextool'));
-      return "<button type='button' class='btn btn-sm btn-outline-licensing me-1 nextool-module-action'"
-         . " data-module='{$moduleKey}' data-action='licensing' data-module-name='{$moduleName}'>"
-         . "<i class='ti ti-certificate me-1'></i>{$label}</button>";
+      $url = 'https://app.nextoolsolutions.com/painel/plugin-nextool?module='
+         . rawurlencode((string) $state['module_key']);
+      return "<a href='" . Html::entities_deep($url) . "' target='_blank' rel='noopener'"
+         . " class='btn btn-sm btn-outline-licensing me-1'>"
+         . "<i class='ti ti-certificate me-1'></i>{$label}</a>";
    }
 
    private static function renderLink(string $label, string $classes, string $icon, string $url, bool $newTab = false): string {

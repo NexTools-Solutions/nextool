@@ -584,11 +584,6 @@ class PluginNextoolLicenseValidator {
             self::adoptPlatformUrl((string) $responseData['platform_url']);
          }
 
-         // Persistir payment_methods disponíveis (para modal dinâmico)
-         if (!empty($responseData['payment_methods']) && is_array($responseData['payment_methods'])) {
-            self::persistPaymentMethods($responseData['payment_methods']);
-         }
-
          // Persistir alertas recebidos
          if (!empty($responseData['alerts']) && is_array($responseData['alerts'])) {
             self::persistAlerts($responseData['alerts']);
@@ -1546,32 +1541,6 @@ class PluginNextoolLicenseValidator {
          'plugin_nextool',
          sprintf('LicenseValidator: %s. Ambiente operará em modo FREE.', $reason)
       );
-   }
-
-   /**
-    * Persiste payment_methods disponíveis na config GLPI.
-    */
-   private static function persistPaymentMethods(array $methods): void {
-      self::persistConfig('plugin:nextool_billing', [
-         'payment_methods' => json_encode(array_values($methods)),
-      ], 'payment_methods');
-   }
-
-   /**
-    * Recupera payment_methods disponíveis da config GLPI.
-    *
-    * @return string[] Ex: ['card', 'boleto']
-    */
-   public static function getPaymentMethods(): array {
-      $raw = Config::getConfigurationValue('plugin:nextool_billing', 'payment_methods') ?? '';
-      if ($raw === '') {
-         return ['card'];
-      }
-      $decoded = json_decode($raw, true);
-      $methods = is_array($decoded) && !empty($decoded) ? $decoded : ['card'];
-      // Pix temporariamente desabilitado -- conta Stripe ainda nao tem elegibilidade
-      $methods = array_values(array_filter($methods, fn($m) => strtolower($m) !== 'pix'));
-      return !empty($methods) ? $methods : ['card'];
    }
 
    /**

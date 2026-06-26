@@ -63,51 +63,6 @@ declare(strict_types=1);
    </div>
 </div>
 
-<!-- Modal de licenciamento (Stripe Checkout) -->
-<div class="modal fade" id="nextool-licensing-modal" tabindex="-1" aria-hidden="true">
-   <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content">
-         <div class="modal-header">
-            <h5 class="modal-title">
-               <i class="ti ti-certificate me-2 text-primary"></i>
-               <?php echo __('Licenciar Módulo', 'nextool'); ?> - <span id="nextool-licensing-modal-title-name"></span>
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-         </div>
-         <div class="modal-body">
-            <div class="alert alert-warning mb-3">
-               <i class="ti ti-alert-triangle me-1"></i>
-               <?php echo __('Este licenciamento é válido exclusivamente para o módulo selecionado.', 'nextool'); ?>
-            </div>
-            <p class="mb-2"><?php echo __('Benefícios inclusos na licença:', 'nextool'); ?></p>
-            <ul class="mb-3">
-               <li><?php echo __('Licença válida por 12 meses a partir da data de compra', 'nextool'); ?></li>
-               <li><?php echo __('Todas as atualizações durante o período de licença', 'nextool'); ?></li>
-               <li><?php echo __('Onboarding incluído para configuração inicial', 'nextool'); ?></li>
-               <li><?php echo __('Garantia de compatibilidade com versões suportadas do GLPI', 'nextool'); ?></li>
-               <li><?php echo __('Suporte a falhas e erros durante a vigência da licença', 'nextool'); ?></li>
-            </ul>
-            <div class="alert alert-info mb-3">
-               <i class="ti ti-info-circle me-1"></i>
-               <?php echo __('Você será redirecionado para a página de pagamento segura do Stripe. Após a confirmação do pagamento, sincronize a licença para ativar o módulo.', 'nextool'); ?>
-            </div>
-            <p class="fw-bold mb-2"><?php echo __('Selecione a forma de pagamento:', 'nextool'); ?></p>
-            <div class="row g-2" id="nextool-licensing-methods">
-               <?php
-               // Métodos de pagamento vêm do cache do ContainerAPI (atualizado no Sincronizar)
-               require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
-               $paymentMethods = PluginNextoolLicenseValidator::getPaymentMethods();
-               ?>
-            </div>
-            <div id="nextool-licensing-status" class="text-center mt-3 d-none">
-               <i class="ti ti-loader-2 ti-spin me-1"></i>
-               <span><?php echo __('Redirecionando para o pagamento...', 'nextool'); ?></span>
-            </div>
-         </div>
-      </div>
-   </div>
-</div>
-
 <script type="text/javascript">
 function nextoolActivateDefaultTab() {
    var tabsContainer = document.getElementById('nextool-config-tabs');
@@ -319,96 +274,6 @@ function nextoolShowTypedConfirm(message, onConfirm) {
    modal.show();
 }
 
-// --- Modal de licenciamento (Stripe Checkout) ---
-var _nextoolPaymentMethodConfig = {
-   card:   { icon: 'ti ti-credit-card', label: <?php echo json_encode(__('Cartão de Crédito', 'nextool')); ?>, desc: '', btnClass: 'btn-outline-primary', extraStyle: 'border: 2px solid #0d6efd;' },
-   boleto: { icon: 'ti ti-barcode',     label: <?php echo json_encode(__('Boleto Bancário', 'nextool')); ?>,   desc: '', btnClass: 'btn-outline-warning' },
-   pix:    { icon: 'ti ti-qrcode',      label: <?php echo json_encode(__('Pix', 'nextool')); ?>,              desc: '', btnClass: 'btn-outline-success' }
-};
-var _nextoolAvailableMethods = <?php echo json_encode($paymentMethods); ?>;
-
-function nextoolRenderPaymentButtons() {
-   var container = document.getElementById('nextool-licensing-methods');
-   if (!container) return;
-   container.innerHTML = '';
-   var methods = _nextoolAvailableMethods;
-   var colClass = methods.length <= 2 ? 'col-6' : (methods.length === 3 ? 'col-4' : 'col-6');
-   for (var i = 0; i < methods.length; i++) {
-      var m = methods[i];
-      var cfg = _nextoolPaymentMethodConfig[m];
-      if (!cfg) continue;
-      var col = document.createElement('div');
-      col.className = colClass;
-      col.innerHTML = '<button type="button" class="btn ' + cfg.btnClass + ' w-100 py-3 nextool-licensing-pay-btn" data-method="' + m + '"' + (cfg.extraStyle ? ' style="' + cfg.extraStyle + '"' : '') + '>'
-         + '<i class="' + cfg.icon + ' fs-1 d-block mb-1"></i>'
-         + cfg.label
-         + (cfg.desc ? '<small class="d-block text-muted mt-1">' + cfg.desc + '</small>' : '')
-         + '</button>';
-      container.appendChild(col);
-   }
-}
-
-function nextoolShowLicensingModal(moduleKey, moduleName) {
-   var modalEl = document.getElementById('nextool-licensing-modal');
-   if (!modalEl) return;
-
-   var titleNameEl = document.getElementById('nextool-licensing-modal-title-name');
-   if (titleNameEl) titleNameEl.textContent = moduleName || moduleKey;
-
-   var statusEl = document.getElementById('nextool-licensing-status');
-   var billingEndpoint = <?php echo json_encode(Plugin::getWebDir('nextool') . '/ajax/billing.php'); ?>;
-
-   // Renderizar botões dinamicamente
-   nextoolRenderPaymentButtons();
-
-   // Reset estado
-   if (statusEl) statusEl.classList.add('d-none');
-
-   // Handler para botões de pagamento (delegação no container)
-   var container = document.getElementById('nextool-licensing-methods');
-   if (container) {
-      // Remover handler anterior
-      var newContainer = container.cloneNode(true);
-      container.parentNode.replaceChild(newContainer, container);
-
-      newContainer.addEventListener('click', function (event) {
-         var btn = event.target.closest('.nextool-licensing-pay-btn');
-         if (!btn || btn.disabled) return;
-
-         var method = btn.dataset.method || 'card';
-
-         // Desabilitar todos os botões e mostrar loading
-         newContainer.querySelectorAll('.nextool-licensing-pay-btn').forEach(function(b) { b.disabled = true; });
-         if (statusEl) statusEl.classList.remove('d-none');
-
-         nextoolPostJson(billingEndpoint, {
-            action: 'create_checkout',
-            module: moduleKey,
-            payment_method: method
-         })
-         .then(function (result) {
-            var data = result.data;
-            if (data && data.checkout_url) {
-               window.open(data.checkout_url, '_blank');
-               bootstrap.Modal.getOrCreateInstance(modalEl).hide();
-            } else {
-               var msg = (data && data.error) ? data.error : '<?php echo Html::entities_deep(__('Erro ao criar sessão de checkout.', 'nextool')); ?>';
-               alert(msg);
-            }
-            newContainer.querySelectorAll('.nextool-licensing-pay-btn').forEach(function(b) { b.disabled = false; });
-            if (statusEl) statusEl.classList.add('d-none');
-         })
-         .catch(function () {
-            alert('<?php echo Html::entities_deep(__('Falha na comunicação com o servidor.', 'nextool')); ?>');
-            newContainer.querySelectorAll('.nextool-licensing-pay-btn').forEach(function(b) { b.disabled = false; });
-            if (statusEl) statusEl.classList.add('d-none');
-         });
-      });
-   }
-
-   bootstrap.Modal.getOrCreateInstance(modalEl).show();
-}
-
 // --- Executa ação de módulo via AJAX ---
 function nextoolExecuteModuleAction(btn, action, moduleKey, endpoint) {
    var csrfToken = nextoolGetAjaxCsrfToken();
@@ -483,13 +348,6 @@ function nextoolInitModuleActions() {
       var action = (btn.dataset && btn.dataset.action) ? String(btn.dataset.action) : '';
       var moduleKey = (btn.dataset && btn.dataset.module) ? String(btn.dataset.module) : '';
       if (action === '' || moduleKey === '') return;
-
-      // Licensing: abrir modal de licenciamento em vez de AJAX action
-      if (action === 'licensing') {
-         var moduleName = (btn.dataset && btn.dataset.moduleName) ? String(btn.dataset.moduleName) : moduleKey;
-         nextoolShowLicensingModal(moduleKey, moduleName);
-         return;
-      }
 
       var confirmMsg = (btn.dataset && btn.dataset.confirm) ? String(btn.dataset.confirm) : '';
       var confirmType = (btn.dataset && btn.dataset.confirmType) ? String(btn.dataset.confirmType) : '';
