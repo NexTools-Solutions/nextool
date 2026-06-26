@@ -37,11 +37,45 @@ $baseUrl    = trim((string) ($settings['base_url'] ?? ''));
 $identifier = trim((string) ($settings['client_identifier'] ?? ''));
 $secret     = trim((string) ($settings['client_secret'] ?? ''));
 
+// Fluxo vinculo-first: "Gerar codigo" e o gatilho de identificacao. Se o ambiente ainda nao foi
+// identificado (install novo), enrola sob demanda (cunha NX2-+segredo) ANTES de gerar o codigo de
+// vinculo -- o aceite formal dos termos acontece no PORTAL, no momento do vinculo. So a base_url e
+// pre-requisito real. As acoes refresh_status/unlink seguem exigindo ambiente ja identificado.
+if ($action === 'generate_link_code' && ($identifier === '' || $secret === '')) {
+   if ($baseUrl === '') {
+      http_response_code(409);
+      echo json_encode(['success' => false, 'message' => __('Configure a URL do ContainerAPI antes de vincular a conta.', 'nextool')]);
+      exit;
+   }
+   $prov = PluginNextoolDistributionClient::enrollAndPersist($baseUrl);
+   if (empty($prov['success'])) {
+      http_response_code(502);
+      echo json_encode(['success' => false, 'message' => $prov['message'] ?? __('Não foi possível identificar o ambiente. Tente novamente em instantes.', 'nextool')]);
+      exit;
+   }
+   // Identidade cunhada -> marca o ambiente como ativado (para a UI nao pedir ativacao de novo) e
+   // sincroniza o catalogo (libera os modulos). O aceite FORMAL dos termos e registrado no PORTAL.
+   require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
+   PluginNextoolLicenseConfig::resetCache(['policies_accepted_at' => date('Y-m-d H:i:s')]);
+   require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
+   PluginNextoolLicenseValidator::validateLicense(['force_refresh' => true, 'context' => ['origin' => 'account_link_enroll']]);
+   $settings   = PluginNextoolConfig::getDistributionSettings();
+   $identifier = trim((string) ($settings['client_identifier'] ?? ''));
+   $secret     = trim((string) ($settings['client_secret'] ?? ''));
+}
+
+// Ambiente cru: refresh_status NAO e erro -- so ainda nao ha vinculo. Responde "nao vinculado"
+// para o modal abrir limpo (com o botao "Gerar codigo" disponivel, que e quem dispara o enroll).
+if ($action === 'refresh_status' && ($identifier === '' || $secret === '')) {
+   echo json_encode(['success' => true, 'linked' => false, 'environment_id' => '']);
+   exit;
+}
+
 if ($baseUrl === '' || $identifier === '' || $secret === '') {
    http_response_code(409);
    echo json_encode([
       'success' => false,
-      'message' => __('Ambiente ainda não provisionado. Sincronize a licença primeiro.', 'nextool'),
+      'message' => __('Ambiente ainda não identificado. Tente vincular a conta novamente.', 'nextool'),
    ]);
    exit;
 }
