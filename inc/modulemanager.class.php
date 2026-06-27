@@ -1482,10 +1482,24 @@ class PluginNextoolModuleManager {
          }
       }
 
-      // Fallback: convenção de nome — tabelas com prefixo glpi_plugin_nextool_{moduleKey}_
-      // Permite funcionar mesmo se o módulo não sobrescreveu getDataTables()
-      $this->moduleDataTablesCache[$moduleKey] = [];
-      return [];
+      // Fallback: convenção de nome — tabelas com prefixo glpi_plugin_nextool_{moduleKey}_.
+      // Permite limpar corretamente módulos que não sobrescreveram getDataTables() (senão suas
+      // tabelas ficariam órfãs no purge/uninstall). O '_' é wildcard no LIKE de listTables(),
+      // então o prefixo fixo e a moduleKey são escapados; o sufixo '_' literal evita casar
+      // chaves que sejam prefixo de outra (ex.: "mail" não captura "mailanalyzer").
+      global $DB;
+      $tables = [];
+      if (isset($DB) && $moduleKey !== '') {
+         $likeModule = str_replace(['_', '%'], ['\\_', '\\%'], $moduleKey);
+         $pattern = 'glpi\\_plugin\\_nextool\\_' . $likeModule . '\\_%';
+         foreach ($DB->listTables($pattern) as $row) {
+            if (!empty($row['TABLE_NAME'])) {
+               $tables[] = $row['TABLE_NAME'];
+            }
+         }
+      }
+      $this->moduleDataTablesCache[$moduleKey] = $tables;
+      return $tables;
    }
 
    private function moduleDirectoryExists(string $moduleKey): bool {
