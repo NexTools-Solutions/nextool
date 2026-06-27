@@ -68,7 +68,14 @@ class PluginNextoolConfigViewState {
       $hasValidatedPlan = ($licenseTier !== 'UNKNOWN');
       $hasAssignedLicense = !empty($licensesSnapshot);
 
-      $hasAcceptedPolicies = !empty($licenseConfig['policies_accepted_at'] ?? null);
+      // Conta vinculada ao portal conta como aceite implícito ("Ao vincular, você concorda com os
+      // Termos de Uso e a Política de Privacidade"). Sem isto, um ambiente já identificado mas sem
+      // policies_accepted_at local (ex.: vinculado pelo admin via admin-link, ou identificado antes
+      // de aceitar) ficaria preso no banner de vínculo com os módulos escondidos, e "Vincular conta"
+      // não o liberaria (o enroll que grava o aceite só roda em ambiente ainda cru).
+      $accountLinkState = Config::getConfigurationValues('plugin:nextool_account_link');
+      $accountLinked = ((string) ($accountLinkState['linked'] ?? '0')) === '1';
+      $hasAcceptedPolicies = !empty($licenseConfig['policies_accepted_at'] ?? null) || $accountLinked;
 
       return [
          'licenseStatusCode'        => $licenseStatusCode,
