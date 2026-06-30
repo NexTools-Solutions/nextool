@@ -1237,21 +1237,27 @@ class PluginNextoolModuleManager {
          return;
       }
 
+      // Evita N+1: 1 query bulk (map em memoria) em vez de 1 SELECT por modulo.
+      // Este metodo roda em todo boot; com N modulos eram N queries. O map e local
+      // ao metodo (nao toca getModuleRow, usado em muitos lugares sem cache no G10).
+      $rowsByKey = [];
+      foreach ($DB->request(['FROM' => 'glpi_plugin_nextool_main_modules']) as $r) {
+         $k = (string)($r['module_key'] ?? '');
+         if ($k !== '') {
+            $rowsByKey[$k] = $r;
+         }
+      }
+
       foreach ($this->modules as $moduleKey => $module) {
          $diskVersion = $module->getVersion();
          if ($diskVersion === null || $diskVersion === '') {
             continue;
          }
 
-         $iterator = $DB->request([
-            'FROM'  => 'glpi_plugin_nextool_main_modules',
-            'WHERE' => ['module_key' => $moduleKey, 'is_installed' => 1],
-            'LIMIT' => 1,
-         ]);
-         if (!count($iterator)) {
+         $row = $rowsByKey[$moduleKey] ?? null;
+         if ($row === null || (int)($row['is_installed'] ?? 0) !== 1) {
             continue;
          }
-         $row = $iterator->current();
 
          $dbVersion = $row['version'] ?? null;
          if ($dbVersion === $diskVersion) {
