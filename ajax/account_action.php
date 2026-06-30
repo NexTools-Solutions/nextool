@@ -65,12 +65,15 @@ if ($action === 'generate_link_code' && ($identifier === '' || $secret === '')) 
       echo json_encode(['success' => false, 'message' => $prov['message'] ?? __('Não foi possível identificar o ambiente. Tente novamente em instantes.', 'nextool')]);
       exit;
    }
-   // Identidade cunhada -> marca o ambiente como ativado (para a UI nao pedir ativacao de novo) e
-   // sincroniza o catalogo (libera os modulos). O aceite FORMAL dos termos e registrado no PORTAL.
+   // Identidade cunhada -> marca o ambiente como ativado (para a UI nao pedir ativacao de novo).
+   // NAO sincronizamos a licenca aqui: validateLicense(force_refresh) e a chamada mais cara do fluxo
+   // e NAO e pre-requisito para emitir o link-code. Encadea-la entre o enroll e o requestLinkCode
+   // tornava a 1a instalacao lenta/fragil (enroll + validate + link-code numa unica requisicao) --
+   // o reload "resolvia" justamente por pular este bloco inteiro. O catalogo/licenca sincroniza no
+   // fluxo normal de validate (refresh_status pos-vinculo, botao Sincronizar ou proximo load).
+   // O aceite FORMAL dos termos e registrado no PORTAL.
    require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
    PluginNextoolLicenseConfig::resetCache(['policies_accepted_at' => date('Y-m-d H:i:s')]);
-   require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
-   PluginNextoolLicenseValidator::validateLicense(['force_refresh' => true, 'context' => ['origin' => 'account_link_enroll']]);
    $settings   = PluginNextoolConfig::getDistributionSettings();
    $identifier = trim((string) ($settings['client_identifier'] ?? ''));
    $secret     = trim((string) ($settings['client_secret'] ?? ''));

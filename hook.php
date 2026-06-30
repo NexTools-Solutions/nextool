@@ -184,32 +184,25 @@ function plugin_nextool_uninstall() {
    global $DB;
 
    $manager = PluginNextoolModuleManager::getInstance();
-   $modulesTable = 'glpi_plugin_nextool_main_modules';
-   if ($DB->tableExists($modulesTable)) {
-      $iterator = $DB->request([
-         'FROM'  => $modulesTable,
-         'WHERE' => ['is_installed' => 1]
-      ]);
-      foreach ($iterator as $row) {
-         $moduleKey = $row['module_key'] ?? '';
-         if ($moduleKey !== '') {
-            try {
-               $manager->uninstallModule($moduleKey);
-            } catch (Throwable $e) {
-               Toolbox::logInFile('plugin_nextool', sprintf('Falha ao desinstalar módulo %s durante plugin_uninstall: %s', $moduleKey, $e->getMessage()));
-            }
-         }
-      }
-   }
+   // ATENÇÃO: NÃO desinstalamos os módulos aqui. Desinstalar o plugin base preserva os
+   // módulos INTEGRALMENTE -- registro em glpi_plugin_nextool_main_modules (is_installed/
+   // is_enabled/config), tabelas de dados e arquivos no runtime -- para que reinstalar o
+   // base no mesmo GLPI traga os módulos de volta exatamente como estavam, sem reativação
+   // manual. A remoção real de um módulo (tabelas + arquivos) é exclusiva do botão
+   // "Apagar dados" por módulo (purgeModuleData), nunca do uninstall do plugin base.
 
    $sqlfile = NEXTOOL_PHP_DIR . '/sql/uninstall.sql';
    if (file_exists($sqlfile)) {
       $DB->runFile($sqlfile);
    }
 
-   // Remove diretório de dados do plugin em files/_plugins/nextool (módulos baixados; dados continuarão no banco)
-   if (is_dir(NEXTOOL_DOC_DIR)) {
-      nextool_delete_dir(NEXTOOL_DOC_DIR);
+   // PRESERVA a pasta de módulos (NEXTOOL_DOC_DIR/modules) e tudo dentro dela. O uninstall
+   // do base limpa APENAS o staging do self-updater (core-update/), que é transitório e
+   // carrega o flag .maintenance -- deixá-lo poderia travar o plugin em manutenção no
+   // reinstall. A pasta de módulos NUNCA é apagada aqui (só via "Apagar dados" por módulo).
+   $coreUpdateStaging = rtrim(NEXTOOL_DOC_DIR, '/') . '/core-update';
+   if (is_dir($coreUpdateStaging)) {
+      nextool_delete_dir($coreUpdateStaging);
    }
 
    // Remove cache de descoberta de módulos e diretório temporário de downloads
@@ -230,7 +223,7 @@ function plugin_nextool_uninstall() {
    // do bootstrap (identifier_already_provisioned). Reset intencional é via
    // "Desvincular ambiente" (cliente) ou "Resetar provisionamento" (admin), nunca no uninstall.
 
-   Toolbox::logInFile('plugin_nextool', 'Plugin desinstalado: módulos removidos, caches limpos e diretórios temporários apagados.');
+   Toolbox::logInFile('plugin_nextool', 'Plugin base desinstalado: tabelas-base removidas; MÓDULOS (registro, tabelas e arquivos), pasta de módulos e vínculo de provisionamento PRESERVADOS.');
 
    PluginNextoolPermissionManager::removeRights();
 
