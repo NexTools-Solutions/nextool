@@ -1333,21 +1333,22 @@ class PluginNextoolModuleManager {
          return;
       }
 
+      // Evita N+1: 1 query bulk e leitura do cache, em vez de 1 SELECT por modulo.
+      // Antes, este metodo (chamado em TODO boot) fazia ~1 query por modulo (~42/boot,
+      // 71% das queries do request). preloadModuleRowCache() e idempotente; getModuleRow()
+      // passa a responder da memoria (achado de perf 2026-06-30).
+      $this->preloadModuleRowCache();
+
       foreach ($this->modules as $moduleKey => $module) {
          $diskVersion = $module->getVersion();
          if ($diskVersion === null || $diskVersion === '') {
             continue;
          }
 
-         $iterator = $DB->request([
-            'FROM'  => 'glpi_plugin_nextool_main_modules',
-            'WHERE' => ['module_key' => $moduleKey, 'is_installed' => 1],
-            'LIMIT' => 1,
-         ]);
-         if (!count($iterator)) {
+         $row = $this->getModuleRow($moduleKey);
+         if ($row === null || (int) ($row['is_installed'] ?? 0) !== 1) {
             continue;
          }
-         $row = $iterator->current();
 
          $dbVersion = $row['version'] ?? null;
          if ($dbVersion === $diskVersion) {
