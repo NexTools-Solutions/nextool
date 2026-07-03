@@ -52,6 +52,16 @@ $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 // Remove query string se vier colada no file (ex.: file=config.form.php?id=1)
 $filename = basename(explode('?', $filename)[0]);
 
+// Bloqueia parciais de include (*.inc.php): são fragmentos renderizados DENTRO de um
+// ponto de entrada (config.php / classe de config) que já validou permissão, nunca
+// endpoints próprios. Servi-los pelo roteador furava o gate de permissão do módulo
+// (o parcial só se protegia com `if (!defined('GLPI_ROOT'))`, que o roteador satisfaz),
+// permitindo a qualquer usuário logado ler conteúdo sensível (ex.: token de API).
+if (preg_match('/\.inc\.php$/', $filename)) {
+   http_response_code(404);
+   die("Recurso não encontrado.");
+}
+
 // Verifica se módulo existe
 require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
 $modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;

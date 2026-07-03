@@ -68,6 +68,20 @@ if (empty($moduleKey) || empty($filename)) {
 $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename($filename); // Remove caminhos
 
+// Bloqueia parciais de include (*.inc.php): são fragmentos require_once'd por handlers
+// reais (ex.: aiassist.chat.boot.inc.php), nunca endpoints próprios. Servi-los pelo
+// roteador executaria lógica de boot fora de contexto e furaria o gate de permissão.
+if (preg_match('/\.inc\.php$/', $filename)) {
+   http_response_code(404);
+   header('Content-Type: application/json; charset=UTF-8');
+   echo json_encode([
+      'error'   => true,
+      'title'   => __('Item não encontrado', 'nextool'),
+      'message' => __('Recurso não encontrado.', 'nextool'),
+   ]);
+   exit;
+}
+
 $modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
 $filePath = $modulePath . '/ajax/' . $filename;
 
