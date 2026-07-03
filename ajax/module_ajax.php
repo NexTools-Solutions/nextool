@@ -64,6 +64,20 @@ if (empty($moduleKey) || empty($filename)) {
 $moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename($filename); // Remove caminhos
 
+// Bloqueia parciais de include (*.inc.php): são fragmentos require_once'd por handlers
+// reais, nunca endpoints próprios. Servi-los pelo roteador executaria lógica fora de
+// contexto e furaria o gate de permissão do módulo.
+if (preg_match('/\.inc\.php$/', $filename)) {
+   http_response_code(404);
+   header('Content-Type: application/json; charset=UTF-8');
+   echo json_encode([
+      'error'   => true,
+      'title'   => 'Item não encontrado',
+      'message' => 'Recurso não encontrado.',
+   ]);
+   exit;
+}
+
 $modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
 $filePath = $modulePath . '/ajax/' . $filename;
 
