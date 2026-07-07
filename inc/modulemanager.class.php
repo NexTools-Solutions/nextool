@@ -938,14 +938,26 @@ class PluginNextoolModuleManager {
 
       $newModule = $this->getModule($moduleKey);
       if ($newModule !== null) {
-         $DB->update(
-            'glpi_plugin_nextool_main_modules',
-            [
-               'version'  => $newModule->getVersion(),
-               'date_mod' => date('Y-m-d H:i:s'),
-            ],
-            ['module_key' => $moduleKey]
-         );
+         $newVersion = $newModule->getVersion();
+         // discoverModules(true) acima já roda o guard de schema-drift (migra+marca).
+         // Ainda assim honramos "nunca bumpar sem upgrade bem-sucedido": rodamos a
+         // migração idempotente antes do bump explícito. Só bumpa se convergir.
+         if ($this->runModuleUpgradeSafely($newModule, $row['version'] ?? null, $newVersion, $moduleKey)) {
+            $DB->update(
+               'glpi_plugin_nextool_main_modules',
+               [
+                  'version'  => $newVersion,
+                  'date_mod' => date('Y-m-d H:i:s'),
+               ],
+               ['module_key' => $moduleKey]
+            );
+            $this->writeSchemaMarker($moduleKey, (string) $newVersion);
+         } else {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               "[ModuleManager] redownloadModule: upgrade de %s falhou pós-download; version NÃO bumpada\n",
+               $moduleKey
+            ));
+         }
 
          if ($wasEnabled) {
             $newModule->onEnable();
@@ -996,15 +1008,24 @@ class PluginNextoolModuleManager {
                   $baseContext
                );
             }
+            // Módulo estava BLOQUEADO -> não entrava em $this->modules, então o
+            // guard de schema-drift o ignorava. Rodamos a migração idempotente
+            // explicitamente ANTES de bumpar (regra "nunca bumpar sem upgrade").
+            $unblockedVersion = $module->getVersion();
+            if (!$this->runModuleUpgradeSafely($module, $row['version'] ?? null, $unblockedVersion, $moduleKey)) {
+               return $this->buildModuleActionResult($moduleKey, $action, false,
+                  __('Falha ao aplicar rotinas de upgrade do módulo.', 'nextool'), $baseContext);
+            }
             $DB->update(
                'glpi_plugin_nextool_main_modules',
                [
-                  'version'           => $module->getVersion(),
-                  'available_version' => $download['version'] ?? $module->getVersion(),
+                  'version'           => $unblockedVersion,
+                  'available_version' => $download['version'] ?? $unblockedVersion,
                   'date_mod'          => date('Y-m-d H:i:s'),
                ],
                ['module_key' => $moduleKey]
             );
+            $this->writeSchemaMarker($moduleKey, (string) $unblockedVersion);
             $this->clearCache();
             return $this->buildModuleActionResult($moduleKey, $action, true,
                __('Módulo atualizado com sucesso (compatibilidade restaurada).', 'nextool'),
@@ -1075,6 +1096,15 @@ class PluginNextoolModuleManager {
       $availableVersion = $row['available_version'] ?? null;
       $localVersion = $module->getVersion();
       if ($localVersion !== null && $availableVersion !== null && version_compare($localVersion, $availableVersion, '>=')) {
+         // Se o banco estava ATRÁS do disco, migrar ANTES de registrar a versão
+         // local -- senão repetimos a brecha do drift silencioso. Idempotente.
+         if (
+            $currentVersion !== null && $currentVersion !== ''
+            && version_compare($localVersion, $currentVersion, '>')
+            && !$this->runModuleUpgradeSafely($module, $currentVersion, $localVersion, $moduleKey)
+         ) {
+            return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao aplicar rotinas de upgrade do módulo.', 'nextool'), $baseContext);
+         }
          $DB->update(
             'glpi_plugin_nextool_main_modules',
             [
@@ -1084,6 +1114,7 @@ class PluginNextoolModuleManager {
             ],
             ['module_key' => $moduleKey]
          );
+         $this->writeSchemaMarker($moduleKey, $localVersion);
          $this->clearCache();
          $this->refreshModules();
          return $this->buildModuleActionResult($moduleKey, $action, true, __('Versão local já é a mais recente. Sincronização concluída.', 'nextool'), $baseContext);
@@ -1138,6 +1169,7 @@ class PluginNextoolModuleManager {
          ],
          ['module_key' => $moduleKey]
       );
+      $this->writeSchemaMarker($moduleKey, (string) $targetVersion);
 
       $this->clearCache();
       $this->refreshModules();
@@ -1224,11 +1256,75 @@ class PluginNextoolModuleManager {
    }
 
    /**
-    * Sincroniza banco.version com $module->getVersion() (disco) para módulos instalados.
+    * Caminho do marker de "schema aplicado" de um módulo numa versão.
+    *
+    * A PRESENÇA do marker significa que as migrações idempotentes do módulo
+    * (upgrade()/runMigrations) já foram confirmadas com sucesso para AQUELA
+    * versão de disco. Fica FORA do nextool_modules.cache: o clearCache() só
+    * apaga o cache de módulos, então toggles (install/enable/update) NÃO forçam
+    * re-migração desnecessária. Um purge manual do diretório de cache apenas
+    * dispara uma reverificação idempotente no próximo boot (feature, não bug).
+    */
+   private function schemaMarkerPath(string $moduleKey, string $version): string {
+      $safe = preg_replace('/[^A-Za-z0-9_.-]/', '_', $moduleKey . '_' . $version);
+      return $this->cachePath . '/nextool_modschema_' . $safe;
+   }
+
+   private function hasSchemaMarker(string $moduleKey, string $version): bool {
+      return is_file($this->schemaMarkerPath($moduleKey, $version));
+   }
+
+   private function writeSchemaMarker(string $moduleKey, string $version): void {
+      @file_put_contents($this->schemaMarkerPath($moduleKey, $version), date('c'), LOCK_EX);
+   }
+
+   /**
+    * Roda o upgrade() idempotente do módulo capturando exceções.
+    *
+    * Contrato: retorna true SÓ se a migração convergiu. Quem chama NUNCA deve
+    * bumpar version se este método retornar false -- é a regra "nunca bumpar sem
+    * upgrade bem-sucedido" que fecha a classe do drift silencioso.
+    *
+    * @return bool true se upgrade() convergiu (não lançou e não retornou false)
+    */
+   private function runModuleUpgradeSafely(
+      PluginNextoolBaseModule $module,
+      ?string $from,
+      ?string $to,
+      string $moduleKey
+   ): bool {
+      try {
+         return $module->upgrade($from, $to) !== false;
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[ModuleManager] upgrade idempotente de %s (%s -> %s) FALHOU: %s\n",
+            $moduleKey, $from ?? 'null', $to ?? 'null', $e->getMessage()
+         ));
+         return false;
+      }
+   }
+
+   /**
+    * Sincroniza banco.version com $module->getVersion() (disco) para módulos instalados,
+    * garantindo CONVERGÊNCIA DE SCHEMA (guard de schema-drift).
+    *
     * Disco é a fonte de verdade do que está realmente carregado pelo plugin. Quando
     * o registro do banco fica defasado (redeploy, FTP, install manual fora do UI), o
     * UI mostra "Atualizar" e o backend rejeita por já estar na versão alvo. Esta
     * sincronização lazy evita essa incoerência.
+    *
+    * GUARD DE SCHEMA-DRIFT (2026-07, paridade com o G11): o G10 NUNCA teve nem o
+    * migrate-before-bump (CAMINHO B). Antes, este método (a) bumpava version SEM
+    * rodar upgrade() quando disco>banco e (b) dava 'continue' cego quando iguais.
+    * Se um caminho não-guardado bumpasse a version até igualar o disco sem migrar
+    * (reinstall sobre schema antigo, redownload/blocked-update com bump direto, FTP,
+    * SQL manual, restore), o schema ficava atrás e o guard DORMIA para sempre --
+    * drift permanente e silencioso: a version "mente" sobre o schema (Unknown column
+    * na UI). Agora: CAMINHO B migra ANTES de bumpar; CAMINHO A (version==disco) roda
+    * SÓ runMigrations() idempotente uma vez por versão de disco (gated por marker de
+    * arquivo -> custo em regime = 1 is_file/módulo/boot), AUTO-CURANDO ambientes já
+    * dessincronizados no próximo boot. install() re-semeia singletons/cron, por isso
+    * NÃO é chamado aqui -- só runMigrations (schema puro, sem ruído).
     */
    private function syncInstalledVersionsFromDisk(): void {
       global $DB;
@@ -1260,7 +1356,54 @@ class PluginNextoolModuleManager {
          }
 
          $dbVersion = $row['version'] ?? null;
+
+         // ----------------------------------------------------------------
+         // CAMINHO A: banco JÁ em dia com o disco (version igual).
+         // A única classe de drift possível é coluna/índice incremental de
+         // runMigrations() cuja migração nunca rodou. Roda SÓ runMigrations()
+         // (não upgrade()/install() -- evita re-seed/cron e custo), gated por
+         // marker: regime permanente custa 1 is_file/módulo. Módulo SEM
+         // runMigrations() tem o schema todo no install.sql: nada a curar.
+         // ----------------------------------------------------------------
          if ($dbVersion === $diskVersion) {
+            if ($this->hasSchemaMarker($moduleKey, $diskVersion)) {
+               continue;
+            }
+            $healed = true;
+            if (method_exists($module, 'runMigrations')) {
+               try {
+                  $module->runMigrations();
+                  Toolbox::logInFile('plugin_nextool', sprintf(
+                     "[ModuleManager] schema-drift guard: %s v%s reconciliado (runMigrations idempotente aplicado)\n",
+                     $moduleKey, $diskVersion
+                  ));
+               } catch (\Throwable $e) {
+                  $healed = false;
+                  Toolbox::logInFile('plugin_nextool', sprintf(
+                     "[ModuleManager] schema-drift guard: %s v%s NÃO reconciliado (runMigrations falhou: %s) -- schema pode estar ATRÁS da versão registrada\n",
+                     $moduleKey, $diskVersion, $e->getMessage()
+                  ));
+               }
+            }
+            if ($healed) {
+               $this->writeSchemaMarker($moduleKey, $diskVersion);
+            }
+            continue;
+         }
+
+         // ----------------------------------------------------------------
+         // CAMINHO B: disco DIVERGE do banco. Se disco > banco, migrar ANTES
+         // de registrar a nova versão (upgrade() idempotente). Sem isso, apenas
+         // bumpar "mente" o estado -> Unknown column em runtime.
+         // ----------------------------------------------------------------
+         $isUpgrade = ($dbVersion !== null && $dbVersion !== '')
+            ? version_compare($diskVersion, $dbVersion, '>')
+            : true;
+         if ($isUpgrade && !$this->runModuleUpgradeSafely($module, $dbVersion, $diskVersion, $moduleKey)) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               "[ModuleManager] syncInstalledVersionsFromDisk: upgrade(%s: %s -> %s) FALHOU, versão NÃO sincronizada\n",
+               $moduleKey, $dbVersion ?? 'null', $diskVersion
+            ));
             continue;
          }
 
@@ -1272,12 +1415,19 @@ class PluginNextoolModuleManager {
             ],
             ['id' => (int)$row['id']]
          );
+         if ($isUpgrade) {
+            $this->writeSchemaMarker($moduleKey, $diskVersion);
+         }
+         if ($dbVersion !== null && $dbVersion !== '' && $dbVersion !== $diskVersion) {
+            @unlink($this->schemaMarkerPath($moduleKey, $dbVersion));
+         }
 
          Toolbox::logInFile('plugin_nextool', sprintf(
-            "[ModuleManager] syncInstalledVersionsFromDisk: %s banco=%s -> disco=%s\n",
+            "[ModuleManager] syncInstalledVersionsFromDisk: %s banco=%s -> disco=%s%s\n",
             $moduleKey,
             $dbVersion ?? 'null',
-            $diskVersion
+            $diskVersion,
+            $isUpgrade ? ' (migração aplicada)' : ''
          ));
       }
    }
