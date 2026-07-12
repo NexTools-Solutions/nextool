@@ -36,7 +36,7 @@ require_once __DIR__ . '/inc/nextoolmainconfig.class.php';
  * Só é invocado para os itemtypes declarados em $PLUGIN_HOOKS['use_rules']['nextool'].
  *
  * @param array $params ['rule_itemtype' => string, 'values' => array]
- * @return array [actionKey => definição] — vazio se nenhum módulo contribuir
+ * @return array [actionKey => definição] - vazio se nenhum módulo contribuir
  */
 function plugin_nextool_getRuleActions($params) {
    if (!class_exists('PluginNextoolHookDispatcher')) {
@@ -307,7 +307,7 @@ function plugin_nextool_redefine_menus($menu) {
 }
 
 /**
- * Construção efetiva dos menus NexTool — extraído de plugin_nextool_redefine_menus
+ * Construção efetiva dos menus NexTool - extraído de plugin_nextool_redefine_menus
  * para isolar o corpo em try/catch sem duplicar o guard helpdesk.
  *
  * @param array $menu Menu atual do GLPI (não-vazio, interface !== helpdesk)
@@ -355,7 +355,7 @@ function _plugin_nextool_build_menus($menu) {
          $modManager = PluginNextoolModuleManager::getInstance();
       }
    } catch (Throwable $e) {
-      // Silenciar — ModuleManager pode não estar disponível durante instalação/desinstalação do plugin
+      // Silenciar - ModuleManager pode não estar disponível durante instalação/desinstalação do plugin
    }
 
    // Abas dinâmicas: cada módulo instalado com config (exceto standalone)

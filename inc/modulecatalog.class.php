@@ -6,7 +6,7 @@ declare(strict_types=1);
  * -------------------------------------------------------------------------
  * Catálogo lê exclusivamente de glpi_plugin_nextool_main_modules (banco).
  * A tabela é populada pela sincronização com o ContainerAPI (aceite dos termos
- * ou botão Sincronizar). Não há lista chumbada no código — novos módulos
+ * ou botão Sincronizar). Não há lista chumbada no código - novos módulos
  * passam a aparecer após atualização do catálogo no ritecadmin/ContainerAPI
  * e nova sincronização, sem precisar atualizar o plugin.
  * -------------------------------------------------------------------------

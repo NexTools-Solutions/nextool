@@ -450,7 +450,7 @@ declare(strict_types=1);
       color: #fff !important;
    }
 
-   /* Estado ativo — ring para indicar seleção */
+   /* Estado ativo - ring para indicar seleção */
    #nextool-config-form .nextool-filter-chip.active {
       box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor;
    }

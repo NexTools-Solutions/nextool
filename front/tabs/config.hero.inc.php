@@ -231,6 +231,29 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                <i class="ti ti-key me-1"></i><?php echo __('Gerar código', 'nextool'); ?>
             </button>
          </div>
+
+         <?php // View celebrativa: aparece SÓ no momento em que o vínculo é confirmado (esconde
+               // header/body/footer normais). Resetada em nextoolRefreshLinkStatus() a cada abertura. ?>
+         <div id="nextool-account-link-success" class="d-none">
+            <div class="text-center text-white p-4"
+                 style="background:linear-gradient(135deg,#2fb344,#1a7a35);border-top-left-radius:var(--bs-modal-inner-border-radius,.5rem);border-top-right-radius:var(--bs-modal-inner-border-radius,.5rem);">
+               <div class="mx-auto mb-2 d-flex align-items-center justify-content-center rounded-circle"
+                    style="width:64px;height:64px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);">
+                  <i class="ti ti-check" style="font-size:32px;"></i>
+               </div>
+               <h4 class="mb-1 text-white fw-bold"><?php echo __('Vínculo concluído!', 'nextool'); ?></h4>
+               <div class="small opacity-75"><?php echo __('Ambiente conectado à sua conta NexTool.', 'nextool'); ?></div>
+            </div>
+            <div class="p-4 text-center">
+               <p class="text-muted small mb-3">
+                  <?php echo __('Este ambiente já pode baixar os módulos gratuitos e os que estão licenciados na sua conta. Recarregue a página para atualizar a lista.', 'nextool'); ?>
+               </p>
+               <button type="button" class="btn btn-success w-100" onclick="window.location.reload();">
+                  <i class="ti ti-refresh me-1"></i><?php echo __('Recarregar agora', 'nextool'); ?>
+               </button>
+               <button type="button" class="btn btn-link btn-sm text-muted mt-2" data-bs-dismiss="modal"><?php echo __('Fechar', 'nextool'); ?></button>
+            </div>
+         </div>
       </div>
    </div>
 </div>

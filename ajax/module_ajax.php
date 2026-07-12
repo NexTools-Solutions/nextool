@@ -128,12 +128,12 @@ Session::checkLoginUser();
 // Libera o lock de sessão para requests de LEITURA (GET/HEAD) antes de incluir
 // o handler (paridade com o GLPI 11, 2026-06-10): endpoints de polling seguravam
 // o lock exclusivo do PHP e serializavam os demais requests da mesma sessão.
-// Handlers que ESCREVEM sessão (rotação de token CSRF) são POST-only —
+// Handlers que ESCREVEM sessão (rotação de token CSRF) são POST-only -
 // auditado: aiassist.action exige POST (linha ~129).
 //
 // RETROCOMPAT (incidente portfolio 2026-06-11, paridade GLPI 11): módulos
 // ANTIGOS rotacionam token CSRF também em GET. Com a sessão já fechada, o
-// token novo ia pro JSON mas NÃO persistia — o JS trocava o token global da
+// token novo ia pro JSON mas NÃO persistia - o JS trocava o token global da
 // página pelo token-fantasma e TODO POST seguinte virava 403. Defesa:
 // snapshot dos tokens antes do write_close + shutdown function (roda mesmo
 // com exit no handler) que re-persiste tokens novos reabrindo a sessão
@@ -148,7 +148,7 @@ if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION
       }
       $newTokens = array_diff_key($memTokens, is_array($nxPreCloseTokens) ? $nxPreCloseTokens : []);
       if ($newTokens === []) {
-         return; // caminho comum (handler não gerou token) — custo zero
+         return; // caminho comum (handler não gerou token) - custo zero
       }
       if (session_id() === '' || session_status() === PHP_SESSION_ACTIVE) {
          return; // sem sessão para reabrir, ou já reaberta por outrem

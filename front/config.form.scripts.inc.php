@@ -660,7 +660,7 @@ function nextoolInitCoreUpdateModal() {
             }
          }
 
-         // After apply success with needs_reload — redirect to plugins page (safe core page)
+         // After apply success with needs_reload - redirect to plugins page (safe core page)
          if (stepIndex === 2 && payload && payload.data && payload.data.needs_reload) {
             if (actionBtn) { actionBtn.disabled = true; actionBtn.innerHTML = LABEL_DONE; }
             if (alertEl) {
@@ -1098,7 +1098,7 @@ if (document.readyState === 'loading') {
 }
 document.addEventListener('glpi.load', _nextoolInitContactAll);
 
-// ─── Module Filter/Search (event delegation — robusto para AJAX) ────────────
+// ─── Module Filter/Search (event delegation - robusto para AJAX) ────────────
 (function() {
    if (document.documentElement.dataset.nextoolModuleFiltersBound === '1') return;
    document.documentElement.dataset.nextoolModuleFiltersBound = '1';
@@ -1367,7 +1367,7 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
       observer.observe(document.body, { childList: true, subtree: true });
    }
 
-   // Event delegation no document — funciona mesmo após replace do DOM via AJAX
+   // Event delegation no document - funciona mesmo após replace do DOM via AJAX
    document.addEventListener('input', function(e) {
       if (e.target && e.target.id === 'nextool-module-search') {
          clearTimeout(debounceTimer);
@@ -1552,7 +1552,21 @@ function nextoolAccountLinkAlert(type, msg) {
    box.classList.remove('d-none');
 }
 
+function nextoolResetLinkSuccessView() {
+   // Restaura o modal normal (header/body/footer) e esconde a view celebrativa.
+   // Chamado a cada abertura para que reabrir volte à view de vincular/gerenciar.
+   var mc = document.querySelector('#nextool-account-link-modal .modal-content');
+   var successView = document.getElementById('nextool-account-link-success');
+   if (successView) { successView.classList.add('d-none'); }
+   if (mc) {
+      ['.modal-header', '.modal-body', '.modal-footer'].forEach(function (sel) {
+         var el = mc.querySelector(sel);
+         if (el) { el.classList.remove('d-none'); }
+      });
+   }
+}
 function nextoolRefreshLinkStatus() {
+   nextoolResetLinkSuccessView();
    var statusBox = document.getElementById('nextool-account-link-status');
    var unlinkBtn = document.getElementById('nextool-account-link-unlink-btn');
    var codeBox = document.getElementById('nextool-account-link-code-box');
@@ -1660,18 +1674,26 @@ function nextoolStartLinkPolling() {
          var d = res.data || {};
          if (res.ok && d.success && d.linked) {
             nextoolStopLinkPolling();
-            var codeBox = document.getElementById('nextool-account-link-code-box');
-            if (codeBox) { codeBox.classList.add('d-none'); }
-            var genBtn = document.getElementById('nextool-account-link-generate-btn');
-            if (genBtn) { genBtn.classList.add('d-none'); }
-            // Vinculo recem-confirmado: o catalogo/modulos so aparecem apos recarregar a pagina.
-            var statusBox = document.getElementById('nextool-account-link-status');
-            if (statusBox) {
-               statusBox.className = 'alert alert-success mb-3';
-               statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i> '
-                  + <?php echo json_encode(__('Conta vinculada com sucesso! Recarregue a página para liberar os módulos.', 'nextool')); ?>
-                  + ' <button type="button" class="btn btn-sm btn-success ms-2" onclick="window.location.reload();"><i class="ti ti-refresh me-1"></i>'
-                  + <?php echo json_encode(__('Recarregar agora', 'nextool')); ?> + '</button>';
+            // Vinculo recem-confirmado: mostra a view celebrativa (esconde o modal normal).
+            // O catalogo/modulos so aparecem apos recarregar a pagina.
+            var mc = document.querySelector('#nextool-account-link-modal .modal-content');
+            var successView = document.getElementById('nextool-account-link-success');
+            if (mc && successView) {
+               ['.modal-header', '.modal-body', '.modal-footer'].forEach(function (sel) {
+                  var el = mc.querySelector(sel);
+                  if (el) { el.classList.add('d-none'); }
+               });
+               successView.classList.remove('d-none');
+            } else {
+               // Fallback: se a view nao existir, mantem a confirmacao simples no status.
+               var statusBox = document.getElementById('nextool-account-link-status');
+               if (statusBox) {
+                  statusBox.className = 'alert alert-success mb-3';
+                  statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i> '
+                     + <?php echo json_encode(__('Conta vinculada. Recarregue a página para atualizar a lista.', 'nextool')); ?>
+                     + ' <button type="button" class="btn btn-sm btn-success ms-2" onclick="window.location.reload();"><i class="ti ti-refresh me-1"></i>'
+                     + <?php echo json_encode(__('Recarregar agora', 'nextool')); ?> + '</button>';
+               }
             }
          }
       });

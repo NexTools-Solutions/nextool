@@ -81,7 +81,7 @@ class PluginNextoolModuleCardHelper {
             $primary = self::renderBadge(__('Download bloqueado: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
          } else {
             $canDownload = !empty($state['can_download_module'] ?? $state['can_use_module']);
-            // Gate de versão mínima do plugin base — mesmo critério do caminho de
+            // Gate de versão mínima do plugin base - mesmo critério do caminho de
             // UPDATE (abaixo): sem o base mínimo, o ContainerAPI recusaria o
             // manifesto (nextool_upgrade_required); exibir o botão Download só
             // prometia um erro. Etiqueta âmbar no lugar (paridade GLPI 11, 2026-06-10).
@@ -245,7 +245,7 @@ class PluginNextoolModuleCardHelper {
    /**
     * Verifica se o módulo é compatível com a versão atual do GLPI a partir do
     * CSV compat_glpi_majors. Quando o campo está vazio (catálogo antigo sem
-    * platforms), assume compatibilidade — fallback retrocompat.
+    * platforms), assume compatibilidade - fallback retrocompat.
     */
    private static function isCompatibleWithCurrentGlpi(array $state): bool {
       $csv = isset($state['compat_glpi_majors']) ? trim((string) $state['compat_glpi_majors']) : '';

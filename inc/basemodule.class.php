@@ -56,7 +56,7 @@ abstract class PluginNextoolBaseModule {
     * Versão do módulo, lida do module.json (fonte única de verdade).
     *
     * Módulos NÃO devem sobrescrever este método nem declarar versão hardcoded em
-    * PHP — o module.json é o único lugar onde a versão vive. O pipeline de release
+    * PHP - o module.json é o único lugar onde a versão vive. O pipeline de release
     * atualiza apenas o module.json e tudo flui daí. Sobrescrever só é justificável
     * para módulos com lógica de versionamento dinâmica (raro).
     *
@@ -211,7 +211,31 @@ abstract class PluginNextoolBaseModule {
       if (!class_exists('PluginNextoolPermissionManager')) {
          return false;
       }
-      return PluginNextoolPermissionManager::canManageModule($this->getModuleKey());
+      // Gate de EDITAR a config = bit CONFIGURE (usado no render p/ disabled dos campos).
+      // NAO gateia toggle/gerenciar itens: essas acoes tem os proprios bits (TOGGLE,
+      // MANAGE_ITEMS) checados nos handlers - nunca condicionar aquelas ao CONFIGURE.
+      return PluginNextoolPermissionManager::canAdmin(
+         $this->getModuleKey(),
+         PluginNextoolPermissionManager::CONFIGURE
+      );
+   }
+
+   /**
+    * Verifica se o usuário pode ATIVAR/DESATIVAR o módulo (o toggle).
+    * Gate = bit TOGGLE, distinto de CONFIGURE. Deve gatear o RENDER do botão
+    * "Ativar/Desativar" nos config.tab -- o handler `toggle_enabled` já exige
+    * TOGGLE via assertCanAdmin, então render e handler ficam alinhados.
+    *
+    * @return bool
+    */
+   public function canToggle() {
+      if (!class_exists('PluginNextoolPermissionManager')) {
+         return false;
+      }
+      return PluginNextoolPermissionManager::canAdmin(
+         $this->getModuleKey(),
+         PluginNextoolPermissionManager::TOGGLE
+      );
    }
 
    /**
@@ -335,8 +359,29 @@ abstract class PluginNextoolBaseModule {
     *
     * @return array<int,string> Mapa direito-bit => rótulo (ex.: [READ => __('Ler', 'nextool')])
     */
+   public function hasCatalog(): bool {
+      return false;
+   }
+
+   /**
+    * Declara os bits de USABILIDADE deste módulo (colunas à esquerda na matriz, azuis).
+    * Default: apenas ACCESS ("Acessar o recurso"). Cada módulo sobrescreve ESTE método
+    * para adicionar suas ações de uso (faixa 1<<10 .. 1<<19) e/ou renomear o rótulo do
+    * ACCESS, aplicando a regra do "Ver". Ver spec: plugins/nextool/PERMISSIONS.md.
+    */
+   public function getUsabilityRights(): array {
+      return [PluginNextoolPermissionManager::ACCESS => __('Acessar o recurso', 'nextool')];
+   }
+
+   /**
+    * Colunas (bits) do direito deste módulo na tela de perfil (formato P1):
+    * USABILIDADE (esquerda, azul) + ADMINISTRAÇÃO fixa (direita, âmbar). NÃO sobrescreva
+    * este método: declare a usabilidade em getUsabilityRights() e, se o módulo tem catálogo
+    * próprio, hasCatalog(). A ordem uso|admin e o bloco de administração vêm da base.
+    */
    public function getProfileRights(): array {
-      return [READ => __('Ler', 'nextool')];
+      return $this->getUsabilityRights()
+         + PluginNextoolPermissionManager::getAdminRightLabels($this->hasCatalog());
    }
 
    /**
@@ -443,15 +488,22 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
-    * Salva configuração do módulo
-    * 
-    * @param array $config Configuração a salvar
+    * Salva configuração do módulo.
+    *
+    * Por padrão faz MERGE (PATCH): chaves passadas sobrescrevem, chaves ausentes
+    * permanecem. Corrige a perda de dados de módulos multi-aba (salvar uma aba
+    * zerava as chaves da outra, pois json_encode substituía a coluna inteira). O
+    * merge e sobre o config PERSISTIDO cru, nao sobre getConfig(), para preservar
+    * a semântica de "defaults por baixo" e nao congelar defaults no banco.
+    *
+    * @param array $config  Configuração a salvar (parcial ou completa)
+    * @param bool  $replace true substitui tudo (comportamento antigo); default false (merge)
     * @return bool True se salvou com sucesso
     */
-   public function saveConfig($config) {
+   public function saveConfig($config, $replace = false) {
       global $DB;
 
-      // Invalida o cache per-request de getConfig() — a próxima leitura
+      // Invalida o cache per-request de getConfig() - a próxima leitura
       // reflete imediatamente o que foi salvo neste mesmo request.
       unset(self::$configCache[$this->getModuleKey()]);
 
@@ -467,6 +519,12 @@ abstract class PluginNextoolBaseModule {
 
       $now = date('Y-m-d H:i:s');
       if (count($iterator)) {
+         if (!$replace) {
+            // Merge sobre o persistido cru: preserva chaves de outras abas/handlers.
+            $row       = $iterator->current();
+            $persisted = json_decode($row['config'] ?? '{}', true);
+            $config    = array_merge(is_array($persisted) ? $persisted : [], $config);
+         }
          return $DB->update(
             'glpi_plugin_nextool_main_modules',
             [

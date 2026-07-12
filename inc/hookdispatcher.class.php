@@ -357,7 +357,7 @@ class PluginNextoolHookDispatcher {
     * Registra um provider de ações para um tipo de regra.
     *
     * @param string   $ruleItemtype Ex.: 'RuleRight'
-    * @param callable $provider     fn(array $params): array — devolve [actionKey => definição]
+    * @param callable $provider     fn(array $params): array - devolve [actionKey => definição]
     */
    public static function registerRuleActions(string $ruleItemtype, callable $provider): void {
       if (!isset(self::$ruleActions[$ruleItemtype])) {
@@ -371,7 +371,7 @@ class PluginNextoolHookDispatcher {
     * de todos os providers registrados para aquele itemtype.
     *
     * @param array $params Payload do hook: ['rule_itemtype' => string, 'values' => array]
-    * @return array [actionKey => definição] — vazio se não houver provider
+    * @return array [actionKey => definição] - vazio se não houver provider
     */
    public static function dispatchRuleActions(array $params): array {
       $itemtype = $params['rule_itemtype'] ?? '';

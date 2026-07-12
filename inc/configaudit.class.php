@@ -64,7 +64,7 @@ class PluginNextoolConfigAudit extends CommonDBTM {
             [
                0,
                '',
-               sprintf('[%s] %s — %s',
+               sprintf('[%s] %s - %s',
                   strtoupper($data['section'] ?? ''),
                   $data['action'] ?? '',
                   mb_substr($data['message'] ?? '', 0, 180)

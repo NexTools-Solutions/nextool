@@ -63,7 +63,7 @@ class PluginNextoolConfigViewState {
 
       $isLicenseActive = ($licenseStatusCode === 'ACTIVE');
       $isSuspended = ($licenseStatusCode === 'SUSPENDED');
-      // SUSPENDED com plano pago NÃO é free tier — módulos já baixados permanecem operáveis
+      // SUSPENDED com plano pago NÃO é free tier - módulos já baixados permanecem operáveis
       $isFreeTier = ($licenseTier === 'FREE') || (!$isLicenseActive && !$isSuspended);
       $hasValidatedPlan = ($licenseTier !== 'UNKNOWN');
       $hasAssignedLicense = !empty($licensesSnapshot);

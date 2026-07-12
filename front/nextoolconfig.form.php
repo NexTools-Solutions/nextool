@@ -72,7 +72,7 @@ $policiesAcceptedAt = $licenseConfig['policies_accepted_at'] ?? null;
 $hasAcceptedPolicies = !empty($policiesAcceptedAt);
 
 // Define version vars for JS before scripts load (scripts are in the main page,
-// but the modal HTML comes via AJAX tab — so these must be set here, not inside the tab).
+// but the modal HTML comes via AJAX tab - so these must be set here, not inside the tab).
 $_nxCurrentVersion = '-';
 if (function_exists('plugin_version_nextool')) {
    $info = plugin_version_nextool();

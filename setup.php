@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '5.2.5');
+define('PLUGIN_NEXTOOL_VERSION', '5.3.0');
 
 /** GLPI mínimo e máximo suportados */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -62,7 +62,7 @@ function plugin_version_nextool() {
  *
  * NÃO registra module_ajax.php como stateless no SessionManager. Se registrado,
  * o GLPI desabilita cookies (ini_set('session.use_cookies', '0')) e cria sessão
- * vazia a cada requisição — causando 401 "Sessão inválida" em todos os módulos
+ * vazia a cada requisição - causando 401 "Sessão inválida" em todos os módulos
  * que precisam de autenticação (geolocation, aiassist, etc.).
  *
  * A decisão stateless é feita internamente pelo module_ajax.php via
@@ -93,12 +93,12 @@ function plugin_init_nextool() {
    global $PLUGIN_HOOKS, $CFG_GLPI;
 
    // csrf_compliant PRIMEIRO, incondicionalmente: se qualquer coisa abaixo
-   // lançar (ex.: Plugin::install do pending_apply falhando), o init morre —
+   // lançar (ex.: Plugin::install do pending_apply falhando), o init morre -
    // e sem esta flag TODO POST do plugin vira 403, travando o GLPI do cliente
    // em loop. Paridade GLPI 11 (incidente do portfolio, 2026-06-10).
    $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
 
-   // Maintenance mode: apply em andamento — skip init para evitar carregar código inconsistente
+   // Maintenance mode: apply em andamento - skip init para evitar carregar código inconsistente
    if (defined('NEXTOOL_DOC_DIR')) {
       $maintenanceFlag = rtrim(NEXTOOL_DOC_DIR, '/') . '/core-update/.maintenance';
       if (is_file($maintenanceFlag)) {
@@ -107,7 +107,7 @@ function plugin_init_nextool() {
             $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
             return;
          }
-         // Flag expirado (> 5 min) — remover e continuar normalmente
+         // Flag expirado (> 5 min) - remover e continuar normalmente
          @unlink($maintenanceFlag);
       }
    }
@@ -117,9 +117,9 @@ function plugin_init_nextool() {
    $pendingVersion = $coreUpdateState['pending_apply_version'] ?? null;
    if ($pendingVersion !== null && $pendingVersion !== '') {
       // try/catch OBRIGATÓRIO (paridade GLPI 11): exceção aqui matava o init
-      // em todo request — POSTs 403 e estado de update preso. Em falha: limpa
+      // em todo request - POSTs 403 e estado de update preso. Em falha: limpa
       // o pending (sai do loop), loga e segue; update re-tentável pela UI.
-      // BOOT-SAFE: escrita DIRETA em glpi_configs — NUNCA Config::setConfigurationValues()
+      // BOOT-SAFE: escrita DIRETA em glpi_configs - NUNCA Config::setConfigurationValues()
       // durante o boot. setConfigurationValues() dispara CommonDBTM->update → logConfigChange
       // → Log::constructHistory → SearchOption::getOptionsForItemtype('Config') →
       // plugin_<x>_getAddSearchOptions() (ex.: Fields) que referencia uma classe ainda não
@@ -258,7 +258,7 @@ function plugin_init_nextool() {
             // KB #26: PluginNextoolProfile retorna glpi_profiles). Se
             // getTableForItemType() resolve a classe do plugin ANTES do core,
             // o Search da lista de perfis monta os links das células para
-            // /plugins/nextool/front/profile.form.php — clicar num perfil cai
+            // /plugins/nextool/front/profile.form.php - clicar num perfil cai
             // no central. Paridade com o fix GLPI 11 (2026-06-10).
             $CFG_GLPI['glpiitemtypetables']['glpi_profiles'] = 'Profile';
             $CFG_GLPI['glpitablesitemtype']['Profile']       = 'glpi_profiles';

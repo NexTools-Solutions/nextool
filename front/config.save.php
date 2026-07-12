@@ -304,7 +304,7 @@ if ($action === 'accept_policies') {
          Session::addMessageAfterRedirect($errorMessage, false, WARNING);
 
          Toolbox::logInFile('plugin_nextool', sprintf(
-            'Bootstrap falhou durante aceite de políticas — error: %s, http_code: %d, message: %s',
+            'Bootstrap falhou durante aceite de políticas - error: %s, http_code: %d, message: %s',
             $bootstrap['error'] ?? '(unknown)',
             $bootstrap['http_code'] ?? 0,
             $bootstrap['error_message'] ?? '(none)'
@@ -508,7 +508,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
          Session::addMessageAfterRedirect($errorMessage, false, WARNING);
 
          Toolbox::logInFile('plugin_nextool', sprintf(
-            'Bootstrap falhou durante validação de licença — error: %s, http_code: %d, message: %s',
+            'Bootstrap falhou durante validação de licença - error: %s, http_code: %d, message: %s',
             $bootstrap['error'] ?? '(unknown)',
             $bootstrap['http_code'] ?? 0,
             $bootstrap['error_message'] ?? '(none)'

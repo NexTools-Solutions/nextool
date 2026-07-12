@@ -417,6 +417,11 @@ class PluginNextoolModuleManager {
          return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao executar desinstalação do módulo', 'nextool'), $baseContext);
       }
 
+      // Remove o direito único do módulo da matriz de perfil (senão fica órfão quando o
+      // módulo sai). Os dados/tabelas do módulo permanecem no banco (design de uninstall);
+      // só a permissão é removida. Reinstalar recria o direito via syncModuleRights.
+      PluginNextoolPermissionManager::removeModuleRight($moduleKey);
+
       // Marca como não instalado; dados e tabelas do módulo permanecem no banco
       $result = $DB->update(
          'glpi_plugin_nextool_main_modules',
@@ -1201,7 +1206,7 @@ class PluginNextoolModuleManager {
    }
 
    public function getBillingTier(string $moduleKey): string {
-      // Prioridade 1: banco (sincronizado do ContainerAPI) — fonte de verdade
+      // Prioridade 1: banco (sincronizado do ContainerAPI) - fonte de verdade
       $row = $this->getModuleRow($moduleKey);
       if ($row !== null && isset($row['billing_tier']) && $row['billing_tier'] !== '') {
          return strtoupper(trim((string)$row['billing_tier']));
@@ -1512,7 +1517,7 @@ class PluginNextoolModuleManager {
          }
       }
 
-      // Fallback: convenção de nome — tabelas com prefixo glpi_plugin_nextool_{moduleKey}_.
+      // Fallback: convenção de nome - tabelas com prefixo glpi_plugin_nextool_{moduleKey}_.
       // Permite limpar corretamente módulos que não sobrescreveram getDataTables() (senão suas
       // tabelas ficariam órfãs no purge/uninstall). O '_' é wildcard no LIKE de listTables(),
       // então o prefixo fixo e a moduleKey são escapados; o sufixo '_' literal evita casar
