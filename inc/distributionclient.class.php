@@ -94,7 +94,7 @@ class PluginNextoolDistributionClient {
          };
 
          Toolbox::logInFile('plugin_nextool', sprintf(
-            'Bootstrap HMAC falhou — erro de rede (curl errno %d): %s',
+            'Bootstrap HMAC falhou - erro de rede (curl errno %d): %s',
             $curlErrno,
             $curlError
          ));
@@ -130,7 +130,7 @@ class PluginNextoolDistributionClient {
          };
 
          Toolbox::logInFile('plugin_nextool', sprintf(
-            'Bootstrap HMAC falhou — HTTP %d, error: %s, message: %s',
+            'Bootstrap HMAC falhou - HTTP %d, error: %s, message: %s',
             $httpCode,
             $serverError ?? '(none)',
             $serverMessage ?? '(none)'
@@ -157,7 +157,7 @@ class PluginNextoolDistributionClient {
             $contentHint = 'conteúdo não-JSON (json_last_error: ' . json_last_error_msg() . ')';
          }
          Toolbox::logInFile('plugin_nextool', sprintf(
-            'Bootstrap HMAC falhou — %s (HTTP %d). Body: %s',
+            'Bootstrap HMAC falhou - %s (HTTP %d). Body: %s',
             $contentHint,
             $httpCode,
             $snippet
@@ -175,7 +175,7 @@ class PluginNextoolDistributionClient {
       $secret = $data['client_secret'] ?? null;
       if (!is_string($secret) || $secret === '') {
          Toolbox::logInFile('plugin_nextool', sprintf(
-            'Bootstrap HMAC falhou — resposta JSON sem client_secret (HTTP %d): %s',
+            'Bootstrap HMAC falhou - resposta JSON sem client_secret (HTTP %d): %s',
             $httpCode,
             substr(json_encode($data), 0, 500)
          ));
@@ -340,7 +340,7 @@ class PluginNextoolDistributionClient {
       require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
 
       if (str_ends_with($filePath, '.tar.gz')) {
-         // Formato preferencial — PharData (built-in, sem dependência externa)
+         // Formato preferencial - PharData (built-in, sem dependência externa)
          try {
             $phar = new PharData($filePath);
             PluginNextoolFileHelper::assertSecureArchiveEntries(
@@ -358,7 +358,7 @@ class PluginNextoolDistributionClient {
             ));
          }
       } elseif (str_ends_with($filePath, '.zip')) {
-         // Fallback — ZipArchive (requer ext-zip)
+         // Fallback - ZipArchive (requer ext-zip)
          if (!class_exists('ZipArchive')) {
             @unlink($filePath);
             throw new RuntimeException(
@@ -752,7 +752,7 @@ class PluginNextoolDistributionClient {
       curl_close($ch);
 
       if ($response === false) {
-         Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou — erro de rede (curl errno %d): %s', $curlErrno, $curlError));
+         Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou - erro de rede (curl errno %d): %s', $curlErrno, $curlError));
          return [
             'environment_id' => null, 'client_secret' => null,
             'error' => 'network_error', 'http_code' => 0,
@@ -765,7 +765,7 @@ class PluginNextoolDistributionClient {
 
       if ($httpCode >= 300) {
          $retryAfter = is_array($data) && isset($data['retry_after']) ? (int) $data['retry_after'] : null;
-         Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou — HTTP %d: %s', $httpCode, substr((string) $response, 0, 300)));
+         Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou - HTTP %d: %s', $httpCode, substr((string) $response, 0, 300)));
          $userMessage = $httpCode === 429
             ? sprintf(__('O servidor de licenciamento está limitando requisições. Tente novamente em %d segundos.', 'nextool'), $retryAfter ?? 60)
             : __('Não foi possível registrar o ambiente no servidor de licenciamento. Tente novamente em instantes.', 'nextool');
@@ -779,7 +779,7 @@ class PluginNextoolDistributionClient {
       $environmentId = is_array($data) ? ($data['environment_id'] ?? null) : null;
       $secret        = is_array($data) ? ($data['client_secret'] ?? null) : null;
       if (!is_string($environmentId) || $environmentId === '' || !is_string($secret) || $secret === '') {
-         Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou — resposta sem environment_id/client_secret (HTTP %d)', $httpCode));
+         Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou - resposta sem environment_id/client_secret (HTTP %d)', $httpCode));
          return [
             'environment_id' => null, 'client_secret' => null,
             'error' => 'invalid_response', 'http_code' => $httpCode,
@@ -896,12 +896,12 @@ class PluginNextoolDistributionClient {
       curl_close($ch);
 
       if ($response === false) {
-         Toolbox::logInFile('plugin_nextool', sprintf('Migrate falhou — erro de rede: %s', $curlError));
+         Toolbox::logInFile('plugin_nextool', sprintf('Migrate falhou - erro de rede: %s', $curlError));
          return $fail('network_error');
       }
       $data = json_decode($response, true);
       if ($httpCode >= 300 || !is_array($data)) {
-         Toolbox::logInFile('plugin_nextool', sprintf('Migrate falhou — HTTP %d: %s', $httpCode, substr((string) $response, 0, 300)));
+         Toolbox::logInFile('plugin_nextool', sprintf('Migrate falhou - HTTP %d: %s', $httpCode, substr((string) $response, 0, 300)));
          return $fail(is_array($data) ? (string) ($data['error'] ?? 'http_error') : 'http_error', $httpCode);
       }
 

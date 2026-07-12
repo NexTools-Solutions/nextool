@@ -76,7 +76,7 @@ if (!file_exists($filePath)) {
 $extension = pathinfo($filename, PATHINFO_EXTENSION);
 $basename = pathinfo($filename, PATHINFO_FILENAME);
 
-// Arquivos CSS/JS (.css.php, .js.php) — servidos diretamente SEM o HTML do GLPI,
+// Arquivos CSS/JS (.css.php, .js.php) - servidos diretamente SEM o HTML do GLPI,
 // mas exigem sessão autenticada (mesmo padrão de module_assets.php).
 if (preg_match('/\.(css|js)\.php$/', $filename)) {
    require_once GLPI_ROOT . '/inc/includes.php';
@@ -89,7 +89,7 @@ if (preg_match('/\.(css|js)\.php$/', $filename)) {
    exit;
 }
 
-// Arquivos stateless (webhook.php) — usa whitelist do cache stateless
+// Arquivos stateless (webhook.php) - usa whitelist do cache stateless
 require_once NEXTOOL_PHP_DIR . '/inc/statelessmodules.inc.php';
 $statelessFiles = plugin_nextool_stateless_files();
 $isStateless = isset($statelessFiles[$moduleKey]) && in_array($filename, $statelessFiles[$moduleKey], true);

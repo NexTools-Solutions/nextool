@@ -14,10 +14,10 @@ declare(strict_types=1);
  *    módulo ativo em files/_plugins, arquivo existente em front/, extensão
  *    coerente com o type). Nada aqui dá acesso além do que o
  *    module_assets.php já serviria individualmente, com a MESMA autenticação.
- *  - h: hash composto dos fv= individuais — só cache-busting (não validado).
+ *  - h: hash composto dos fv= individuais - só cache-busting (não validado).
  *
  * Cache: private, max-age=3600. O conteúdo agrega assets que variam por
- * sessão (lang/interface/perfil/config — fatores já embutidos nos fv que
+ * sessão (lang/interface/perfil/config - fatores já embutidos nos fv que
  * compõem o h), então o cache é por browser/usuário.
  * -------------------------------------------------------------------------
  * @license GPLv3+
@@ -93,7 +93,7 @@ if (empty($resolved)) {
 
 // Concatena. ob_start garante que header() no FINAL ainda funcione mesmo que
 // os wrappers emitam headers próprios (os do bundle sobrescrevem por último).
-// Wrappers usam `return;` para early-exit (um `exit;` mataria o bundle — por
+// Wrappers usam `return;` para early-exit (um `exit;` mataria o bundle - por
 // isso a convenção exit->return nos assets bundláveis, 2026-06-10).
 ob_start();
 foreach ($resolved as $asset) {

@@ -22,7 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once __DIR__ . '/inc/modulespath.inc.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '5.2.5');
+define('PLUGIN_NEXTOOL_VERSION', '5.3.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '11.0.0');
@@ -95,7 +95,7 @@ function plugin_nextool_boot() {
          );
       }
    } catch (\Throwable $e) {
-      // NUNCA crashar o GLPI — log silencioso
+      // NUNCA crashar o GLPI - log silencioso
       error_log('[NexTool] boot error: ' . $e->getMessage());
    }
 }
@@ -107,13 +107,13 @@ function plugin_init_nextool() {
    global $PLUGIN_HOOKS, $CFG_GLPI;
 
    // csrf_compliant PRIMEIRO, incondicionalmente: se qualquer coisa abaixo
-   // lançar (ex.: Plugin::install do pending_apply falhando), o init morre —
+   // lançar (ex.: Plugin::install do pending_apply falhando), o init morre -
    // e sem esta flag TODO POST do plugin vira 403 "A ação que você requisitou
    // não é permitida" (module_action, Sincronizar, etc.), travando o GLPI do
    // cliente em loop. Incidente do portfolio em 2026-06-10 (update 4.3.0).
    $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
 
-   // Maintenance mode: apply em andamento — skip init para evitar carregar código inconsistente
+   // Maintenance mode: apply em andamento - skip init para evitar carregar código inconsistente
    if (defined('NEXTOOL_DOC_DIR')) {
       $maintenanceFlag = rtrim(NEXTOOL_DOC_DIR, '/') . '/core-update/.maintenance';
       if (is_file($maintenanceFlag)) {
@@ -122,7 +122,7 @@ function plugin_init_nextool() {
             $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
             return;
          }
-         // Flag expirado (> 5 min) — remover e continuar normalmente
+         // Flag expirado (> 5 min) - remover e continuar normalmente
          @unlink($maintenanceFlag);
       }
    }
@@ -136,9 +136,9 @@ function plugin_init_nextool() {
    if ($pendingApplyFlag !== null && is_file($pendingApplyFlag)) {
       // try/catch OBRIGATÓRIO: uma exceção aqui (install de módulo antigo
       // incompatível, permissão de arquivo, etc.) matava o init em TODO
-      // request — plugin sem hooks, POSTs 403 e flag/update_available presos
+      // request - plugin sem hooks, POSTs 403 e flag/update_available presos
       // para sempre (incidente do portfolio, 2026-06-10). Em falha: remove o
-      // flag (sai do loop), loga o erro e segue o init — o update pode ser
+      // flag (sai do loop), loga o erro e segue o init - o update pode ser
       // re-tentado pela UI com o GLPI utilizável.
       try {
          global $DB;
@@ -149,12 +149,12 @@ function plugin_init_nextool() {
             if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
                $plugin->activate($plugin->fields['id']);
             }
-            // BOOT-SAFE: escrita DIRETA em glpi_configs — NUNCA Config::setConfigurationValues()
+            // BOOT-SAFE: escrita DIRETA em glpi_configs - NUNCA Config::setConfigurationValues()
             // aqui. setConfigurationValues() → CommonDBTM->update → post_updateItem →
             // logConfigChange → Log::constructHistory → SearchOption::getOptionsForItemtype('Config')
             // → plugin_fields_getAddSearchOptions() → "Class PluginFieldsContainer not found"
             // quando o plugin Fields ainda não foi carregado NESTE boot dos plugins. Essa
-            // exceção matava o plugin_init e — no 4.3.0, antes do csrf_compliant — virava 403
+            // exceção matava o plugin_init e - no 4.3.0, antes do csrf_compliant - virava 403
             // ("A ação que você requisitou não é permitida") em TODO POST, travando o cliente
             // em loop. getConfigurationValues() lê direto do DB (sem cache), então o reset é
             // visto no mesmo request. Incidente portfolio 2026-06-10 (stack real:
@@ -274,7 +274,7 @@ function plugin_init_nextool() {
             $manager->loadActiveModules();
 
             // Bundle de assets: colapsa os N registros de module_assets.php
-            // feitos pelos onInit acima em 1 URL por tipo (css/js) — reduz
+            // feitos pelos onInit acima em 1 URL por tipo (css/js) - reduz
             // ~16-27 requests com bootstrap completo por page load para 2.
             // Entradas com &nobundle=1 e assets fora do module_assets ficam
             // intactos. Ver inc/assetbundler.class.php.
@@ -291,7 +291,7 @@ function plugin_init_nextool() {
             // plugin ANTES do core, DbUtils grava glpiitemtypetables
             // [glpi_profiles] = PluginNextool... e o Search da lista de perfis
             // monta os links das células para /plugins/nextool/front/
-            // profile.form.php — clicar num perfil cai no central (bug
+            // profile.form.php - clicar num perfil cai no central (bug
             // 2026-06-10). A pinagem garante o itemtype canônico.
             $CFG_GLPI['glpiitemtypetables']['glpi_profiles'] = 'Profile';
             $CFG_GLPI['glpitablesitemtype']['Profile']       = 'glpi_profiles';
@@ -433,7 +433,7 @@ function plugin_init_nextool() {
                      }
                      // Registra no hook menu_toadd (exceto módulos que usam redefine_menus).
                      // Acumula em array por seção: vários módulos podem registrar na mesma
-                     // seção (ex.: 'management' — digitalsignature + autentique). O core
+                     // seção (ex.: 'management' - digitalsignature + autentique). O core
                      // (Html.php) aceita array de classes por seção do menu_toadd.
                      if (empty($reg['uses_redefine_menus'])) {
                         if (!isset($PLUGIN_HOOKS['menu_toadd']['nextool'])) {

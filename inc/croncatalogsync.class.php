@@ -52,7 +52,7 @@ class PluginNextoolCronCatalogSync {
       $identifier = trim((string) ($settings['client_identifier'] ?? ''));
       $secret     = trim((string) ($settings['client_secret'] ?? ''));
       if ($baseUrl === '' || $identifier === '' || $secret === '') {
-         $task->log('catalog_sync: ambiente não provisionado — sync ignorado.');
+         $task->log('catalog_sync: ambiente não provisionado - sync ignorado.');
          return 0;
       }
 

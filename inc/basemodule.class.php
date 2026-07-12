@@ -57,7 +57,7 @@ abstract class PluginNextoolBaseModule {
     * Versão do módulo, lida do module.json (fonte única de verdade).
     *
     * Módulos NÃO devem sobrescrever este método nem declarar versão hardcoded em
-    * PHP — o module.json é o único lugar onde a versão vive. O pipeline de release
+    * PHP - o module.json é o único lugar onde a versão vive. O pipeline de release
     * atualiza apenas o module.json e tudo flui daí. Sobrescrever só é justificável
     * para módulos com lógica de versionamento dinâmica (raro).
     *
@@ -212,7 +212,31 @@ abstract class PluginNextoolBaseModule {
       if (!class_exists('PluginNextoolPermissionManager')) {
          return false;
       }
-      return PluginNextoolPermissionManager::canManageModule($this->getModuleKey());
+      // Gate de EDITAR a config = bit CONFIGURE (usado no render p/ disabled dos campos).
+      // NAO gateia toggle/gerenciar itens: essas acoes tem os proprios bits (TOGGLE,
+      // MANAGE_ITEMS) checados nos handlers - nunca condicionar aquelas ao CONFIGURE.
+      return PluginNextoolPermissionManager::canAdmin(
+         $this->getModuleKey(),
+         PluginNextoolPermissionManager::CONFIGURE
+      );
+   }
+
+   /**
+    * Verifica se o usuário pode ATIVAR/DESATIVAR o módulo (o toggle).
+    * Gate = bit TOGGLE, distinto de CONFIGURE. Deve gatear o RENDER do botão
+    * "Ativar/Desativar" nos config.tab -- o handler `toggle_enabled` já exige
+    * TOGGLE via assertCanAdmin, então render e handler ficam alinhados.
+    *
+    * @return bool
+    */
+   public function canToggle() {
+      if (!class_exists('PluginNextoolPermissionManager')) {
+         return false;
+      }
+      return PluginNextoolPermissionManager::canAdmin(
+         $this->getModuleKey(),
+         PluginNextoolPermissionManager::TOGGLE
+      );
    }
 
    /**
@@ -321,24 +345,54 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
-    * Declara quais ações da matriz CRUD de permissões são FUNCIONAIS para este módulo.
+    * Indica se o módulo tem catálogo próprio (CRUD de itens de configuração).
+    * Quando true, a coluna "Gerenciar itens" aparece na matriz de administração.
+    * Módulos com registros próprios (contratos, instâncias, sinônimos...) sobrescrevem.
     *
-    * O plugin base consome este método ao montar a matriz de permissões por perfil
-    * (PluginNextoolProfile), passando o resultado como 'rights' por linha. Assim o
-    * base NUNCA precisa ser editado por módulo: cada módulo declara o que aparece.
+    * @return bool
+    */
+   public function hasCatalog(): bool {
+      return false;
+   }
+
+   /**
+    * Declara os bits de USABILIDADE deste módulo (colunas à esquerda na matriz, azuis).
+    * Ver spec normativa: plugins/nextool/PERMISSIONS.md.
     *
-    * Default = somente READ (a esmagadora maioria dos módulos é "ver módulo/aba"; o
-    * gerenciamento administrativo é coberto pelo direito global "Módulos do NexTool").
-    * Módulos com CRUD próprio (records/entidades) devem sobrescrever e incluir
-    * CREATE/UPDATE/DELETE conforme o que realmente consomem.
+    * Default = apenas ACCESS ("Acessar o recurso"). Cada módulo sobrescreve ESTE método
+    * para adicionar suas ações de uso (faixa 1<<10 .. 1<<19) e/ou renomear o rótulo do
+    * ACCESS, aplicando a regra do "Ver" (nunca genérico). A ordem declarada aqui é a
+    * ordem das colunas de usabilidade na tela.
     *
-    * Os rótulos DEVEM ser idênticos aos de PluginNextoolProfile::getRights() para que
-    * o core do GLPI funda as colunas (a matriz é a união dos rights de todas as linhas).
+    *   public const REGISTER = 1 << 10;
+    *   public function getUsabilityRights(): array {
+    *      return [
+    *         PluginNextoolPermissionManager::ACCESS => __('Ver estoque', 'nextool_x'),
+    *         self::REGISTER => __('Registrar saída', 'nextool_x'),
+    *      ];
+    *   }
     *
-    * @return array<int,string> Mapa direito-bit => rótulo (ex.: [READ => __('Ler', 'nextool')])
+    * @return array<int,string|array{short:string,long:string}> Mapa bit => rótulo
+    */
+   public function getUsabilityRights(): array {
+      return [PluginNextoolPermissionManager::ACCESS => __('Acessar o recurso', 'nextool')];
+   }
+
+   /**
+    * Colunas (bits) do direito deste módulo na tela de perfil (formato P1):
+    * USABILIDADE (esquerda, azul) + ADMINISTRAÇÃO fixa (direita, âmbar).
+    * Ver spec normativa: plugins/nextool/PERMISSIONS.md.
+    *
+    * NÃO sobrescreva este método: declare a usabilidade em getUsabilityRights() e,
+    * se o módulo tem catálogo próprio, hasCatalog(). A ordem uso|admin e o contrato
+    * de administração (Configurar, [Gerenciar itens], Ativar/Desativar, Atualizar,
+    * Desinstalar, Ver logs, Apagar dados) ficam garantidos aqui para os 36 módulos.
+    *
+    * @return array<int,string|array{short:string,long:string}> Mapa bit => rótulo
     */
    public function getProfileRights(): array {
-      return [READ => __('Ler', 'nextool')];
+      return $this->getUsabilityRights()
+         + PluginNextoolPermissionManager::getAdminRightLabels($this->hasCatalog());
    }
 
    /**
@@ -413,7 +467,7 @@ abstract class PluginNextoolBaseModule {
     * Obtém configuração atual do módulo
     *
     * Memoizado por request: getConfig() é chamado em múltiplos pontos do mesmo
-    * request (onInit, assets .js.php, handlers AJAX) — sem cache, cada chamada
+    * request (onInit, assets .js.php, handlers AJAX) - sem cache, cada chamada
     * repete o mesmo SELECT em glpi_plugin_nextool_main_modules. Mesmo padrão do
     * getEnabledFeaturesCache do módulo fixes. Invalidado em saveConfig().
     *
@@ -450,19 +504,30 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
-    * Salva configuração do módulo
-    * 
-    * @param array $config Configuração a salvar
+    * Salva configuração do módulo.
+    *
+    * Por padrão faz MERGE (PATCH): as chaves passadas em $config sobrescrevem as
+    * persistidas e as chaves NÃO passadas permanecem intactas. Isso corrige a perda
+    * de dados quando o módulo tem varias abas/handlers que salvam subconjuntos
+    * disjuntos da config (antes, salvar uma aba zerava as chaves da outra porque o
+    * json_encode substituía a coluna inteira). O merge é feito sobre o config
+    * PERSISTIDO cru, nao sobre getConfig(), para nao congelar os defaults no banco -
+    * a semântica de "defaults por baixo" do getConfig() e preservada.
+    *
+    * @param array $config  Configuração a salvar (parcial ou completa)
+    * @param bool  $replace true substitui a config inteira (comportamento antigo).
+    *                       Default false (merge). Nenhum handler atual precisa de
+    *                       replace; o parâmetro existe como válvula de escape.
     * @return bool True se salvou com sucesso
     */
-   public function saveConfig($config) {
+   public function saveConfig($config, $replace = false) {
       global $DB;
 
       if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
          return false;
       }
 
-      // Invalida o cache per-request de getConfig() — a próxima leitura
+      // Invalida o cache per-request de getConfig() - a próxima leitura
       // reflete imediatamente o que foi salvo neste mesmo request.
       unset(self::$configCache[$this->getModuleKey()]);
 
@@ -474,6 +539,12 @@ abstract class PluginNextoolBaseModule {
 
       $now = date('Y-m-d H:i:s');
       if (count($iterator)) {
+         if (!$replace) {
+            // Merge sobre o persistido cru: preserva chaves de outras abas/handlers.
+            $row       = $iterator->current();
+            $persisted = json_decode($row['config'] ?? '{}', true);
+            $config    = array_merge(is_array($persisted) ? $persisted : [], $config);
+         }
          return $DB->update(
             'glpi_plugin_nextool_main_modules',
             [
@@ -625,7 +696,7 @@ abstract class PluginNextoolBaseModule {
     *
     * $extraFactors: fatores ADICIONAIS de variação do conteúdo gerado (idioma, interface,
     * flags de config). Assets .js.php/.css.php que embutem strings i18n ou config DEVEM
-    * incluir esses fatores — a URL passa a mudar quando o conteúdo muda, o que permite
+    * incluir esses fatores - a URL passa a mudar quando o conteúdo muda, o que permite
     * `Cache-Control: max-age` longo sem servir conteúdo stale (padrão fixes HI-01).
     *
     * @param string $filename     Nome do arquivo (ex: '[module_key].js.php')
@@ -643,9 +714,9 @@ abstract class PluginNextoolBaseModule {
     * Fatores de variação por SESSÃO para assets que embutem strings i18n ou
     * dependem da interface/permissões do usuário: [idioma, interface, perfil].
     * O perfil ativo entra porque assets com gate de permissão server-side
-    * (ex.: timeline-button) geram conteúdo diferente por perfil — trocar de
+    * (ex.: timeline-button) geram conteúdo diferente por perfil - trocar de
     * perfil muda a URL e invalida o cache do browser na hora.
-    * Combinar com getAssetFv()/getJsPath() — ex.: getJsPath('x.js.php',
+    * Combinar com getAssetFv()/getJsPath() - ex.: getJsPath('x.js.php',
     * array_merge($this->getSessionAssetFactors(), [$flagDeConfig])).
     *
     * @return array{0: string, 1: string, 2: string}
@@ -665,7 +736,7 @@ abstract class PluginNextoolBaseModule {
     * ticket.form.php), evitando o bootstrap do request de asset em todas as
     * outras páginas. Os early-returns client-side dos JS continuam valendo
     * como cinto de segurança. Em contexto sem REQUEST_URI (CLI/cron) retorna
-    * false — assets de página não fazem sentido lá.
+    * false - assets de página não fazem sentido lá.
     *
     * @param array $needles Fragmentos de URI (ex.: ['ticket.form.php', '/Ticket/'])
     * @return bool

@@ -214,7 +214,7 @@ class PluginNextoolValidationAttempt extends PluginNextoolBaseAuditLog implement
          if ($plan === 'FREE') {
             return "<span class='badge text-white bg-teal'>" . __('Free Tier', 'nextool') . "</span>";
          }
-         // Servidor respondeu (2xx-4xx) mas sem licença ativa — comunicação OK, plano free liberado
+         // Servidor respondeu (2xx-4xx) mas sem licença ativa - comunicação OK, plano free liberado
          if ($httpCode >= 200 && $httpCode < 500) {
             return "<span class='badge text-white bg-orange'>" . __('Sem Licença', 'nextool') . "</span>";
          }

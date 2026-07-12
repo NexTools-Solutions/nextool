@@ -4,8 +4,13 @@ declare(strict_types=1);
  * -------------------------------------------------------------------------
  * NexTool Solutions - Profile
  * -------------------------------------------------------------------------
- * Adiciona aba na tela de Perfis do GLPI para configurar direitos do Nextool
- * por perfil (READ/UPDATE/DELETE/PURGE).
+ * Aba "NexTool" na tela de Perfis do GLPI. Renderiza, no modelo aprovado:
+ *   1) Super-direito "Administracao global" (nextool_admin_global).
+ *   2) Bloco base (nextool_base) - so interface central.
+ *   3) Um bloco por modulo instalado (central) / ativo (helpdesk), cada um
+ *      com as colunas declaradas em getProfileRights() do modulo (formato P1).
+ * As colunas sao coloridas por familia (usabilidade=azul, administracao=ambar)
+ * via CSS/JS aditivo sobre a matriz nativa. Ver spec: plugins/nextool/PERMISSIONS.md.
  * -------------------------------------------------------------------------
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @copyright 2025 Richard Loureiro
@@ -23,6 +28,9 @@ require_once __DIR__ . '/permissionmanager.class.php';
 class PluginNextoolProfile extends Profile {
 
    public static $rightname = 'profile';
+
+   /** @var array<string,array<int,string>> field => [bit => familia 'use'|'admin'|'global'] */
+   private array $ntFamilies = [];
 
    public static function getTable($classname = null) {
       return 'glpi_profiles';
@@ -43,119 +51,164 @@ class PluginNextoolProfile extends Profile {
       return true;
    }
 
+   /**
+    * Fallback generico (nao usado nas matrizes, que passam 'rights' explicito por linha).
+    */
    public function getRights($interface = 'central') {
-      $values = [
-         CREATE => __('Criar', 'nextool'),
+      return [
          READ   => __('Ler', 'nextool'),
          UPDATE => __('Atualizar', 'nextool'),
-         DELETE => __('Apagar', 'nextool'),
       ];
-      return $values;
    }
 
    private function showFormNextool(int $profiles_id): void {
+      // Carrega o perfil + seus profilerights em $this->fields (post_getFromDB).
       if (!$this->can($profiles_id, READ)) {
          return;
       }
 
-      $canEdit = Session::haveRight(self::$rightname, UPDATE);
+      $canEdit = (bool) Session::haveRight(self::$rightname, UPDATE);
+
+      // Garante que os direitos base/global/modulos existam em glpi_profilerights.
       PluginNextoolPermissionManager::syncModuleRights();
 
-      // Detecta se o perfil sendo editado é de interface simplificada (helpdesk)
-      $profile = new Profile();
-      $profile->getFromDB($profiles_id);
-      $isHelpdesk = ($profile->fields['interface'] ?? 'central') === 'helpdesk';
+      $isHelpdesk = ($this->fields['interface'] ?? 'central') === 'helpdesk';
+      $this->ntFamilies = [];
 
-      echo "<div class='spaced'>";
+      echo "<div class='spaced nextool-perms'>";
+      $this->renderPermLegend();
       if ($canEdit) {
          echo "<form method='post' action='" . static::getFormURL() . "'>";
       }
 
-      $matrixOptions = [
-         'title'   => __('Permissões NexTool', 'nextool'),
-         'canedit' => $canEdit,
-      ];
+      // 1) Super-direito global.
+      $this->renderBlock(
+         PluginNextoolPermissionManager::RIGHT_ADMIN_GLOBAL,
+         __('Super-direito', 'nextool'),
+         [
+            PluginNextoolPermissionManager::GLOBAL_BIT =>
+               __('Acesso total ao ecossistema NexTool (base + todos os modulos)', 'nextool'),
+         ],
+         $canEdit
+      );
 
-      $rights = [];
-
-      // Para perfis central: exibe tudo (módulos + abas admin + todos os módulos)
-      // Para perfis helpdesk: exibe apenas módulos ativos (sem abas admin, sem módulos inativos)
+      // 2) Bloco base (so interface central).
       if (!$isHelpdesk) {
-         $rights[] = [
-            'itemtype' => self::class,
-            'label'    => __('Módulos do NexTool', 'nextool'),
-            'field'    => PluginNextoolPermissionManager::RIGHT_MODULES,
-         ];
-         $rights[] = [
-            'itemtype' => self::class,
-            'label'    => __('Abas administrativas (Licença, Contato, Logs, Atualização)', 'nextool'),
-            'field'    => PluginNextoolPermissionManager::RIGHT_ADMIN_TABS,
-         ];
+         $this->renderBlock(
+            PluginNextoolPermissionManager::RIGHT_BASE,
+            __('NexTool - Plugin base', 'nextool'),
+            PluginNextoolPermissionManager::getBaseRights(),
+            $canEdit
+         );
       }
 
-      // Obter lista de módulos instalados (e ativos, para helpdesk) + instâncias
-      $installedModuleKeys = [];
-      $activeModuleKeys = [];
-      $moduleInstances = [];
+      // 3) Um bloco por modulo instalado (central) / ativo (helpdesk).
       if (class_exists('PluginNextoolModuleManager')) {
          try {
             $manager = PluginNextoolModuleManager::getInstance();
             foreach ($manager->getAllModules() as $mk => $mod) {
-               if ($mod->isInstalled()) {
-                  $installedModuleKeys[] = $mk;
-                  $moduleInstances[$mk] = $mod;
-                  if ($mod->isEnabled()) {
-                     $activeModuleKeys[] = $mk;
-                  }
+               if (!$mod->isInstalled()) {
+                  continue;
                }
+               if ($isHelpdesk && !$mod->isEnabled()) {
+                  continue;
+               }
+               $declared = method_exists($mod, 'getProfileRights') ? $mod->getProfileRights() : [];
+               if (empty($declared)) {
+                  continue;
+               }
+               $this->renderBlock(
+                  PluginNextoolPermissionManager::getModuleRightName((string) $mk),
+                  sprintf(__('Modulo: %s', 'nextool'), $mod->getName()),
+                  $declared,
+                  $canEdit
+               );
             }
          } catch (Throwable $e) {
-            // Fallback: sem filtro
+            Toolbox::logInFile('plugin_nextool', 'Profile: falha ao listar modulos - ' . $e->getMessage() . "\n");
          }
       }
-
-      $moduleRights = PluginNextoolPermissionManager::getModuleRightsMetadata();
-      foreach ($moduleRights as $moduleRight) {
-         // Exibir apenas módulos instalados
-         if (!empty($installedModuleKeys) && !in_array($moduleRight['key'], $installedModuleKeys, true)) {
-            continue;
-         }
-         // Para helpdesk: exibir apenas módulos ativos (instalados + habilitados)
-         if ($isHelpdesk && !in_array($moduleRight['key'], $activeModuleKeys, true)) {
-            continue;
-         }
-         $row = [
-            'itemtype' => self::class,
-            'label'    => sprintf(__('Módulo: %s', 'nextool'), $moduleRight['label']),
-            'field'    => $moduleRight['right'],
-         ];
-         // O MÓDULO declara quais colunas CRUD são funcionais (base consome do módulo).
-         // Linhas que declaram só READ renderizam checkbox apenas na coluna Ler; as
-         // demais ficam vazias (o core do GLPI suporta 'rights' por linha na matriz).
-         $instance = $moduleInstances[$moduleRight['key']] ?? null;
-         if ($instance !== null && method_exists($instance, 'getProfileRights')) {
-            $declared = $instance->getProfileRights();
-            if (!empty($declared)) {
-               $row['rights'] = $declared;
-            }
-         }
-         $rights[] = $row;
-      }
-
-      echo "<div id='nextool-rights-matrix'>";
-      $this->displayRightsChoiceMatrix($rights, $matrixOptions);
-      echo "</div>";
-
-      // Para perfis helpdesk: linhas administrativas já são ocultadas no PHP (acima).
-      // Todas as colunas CRUD ficam disponíveis para os módulos exibidos.
 
       if ($canEdit) {
          echo Html::hidden('id', ['value' => $profiles_id]);
-         echo "<div class='text-center'>";
-         echo Html::submit(_sx('button', 'Save'), ['name' => 'update']);
+         // Botao Salvar no padrao nativo das abas de perfil do GLPI:
+         // alinhado a direita, com borda superior e icone de disquete.
+         echo '<div class="mt-3 pt-3 border-top d-flex flex-row-reverse">';
+         echo '<button type="submit" name="update" value="1" class="btn btn-primary">'
+            . '<i class="ti ti-device-floppy me-1"></i>' . _sx('button', 'Save')
+            . '</button>';
          echo '</div>';
          Html::closeForm();
       }
       echo '</div>';
+      $this->renderPermColorScript();
+   }
+
+   /**
+    * Renderiza uma matriz (1 direito, 1 linha) num wrapper que permite colorir
+    * as colunas por familia, e registra o mapa bit=>familia para o script.
+    */
+   private function renderBlock(string $field, string $title, array $rights, bool $canEdit): void {
+      foreach (array_keys($rights) as $bit) {
+         $this->ntFamilies[$field][(int) $bit] = PluginNextoolPermissionManager::bitFamily($field, (int) $bit);
+      }
+      echo '<div class="nt-matrix" data-field="' . htmlspecialchars($field, ENT_QUOTES) . '">';
+      // Label da linha propositalmente vazio (um espaco): o titulo do bloco ja identifica o
+      // direito. Remover a redundancia libera espaco horizontal para as colunas de permissao.
+      // Espaco (nao vazio) e obrigatorio: displayRightsChoiceMatrix ignora linha com label vazio.
+      $this->displayRightsChoiceMatrix([
+         [
+            'itemtype' => self::class,
+            'label'    => ' ',
+            'field'    => $field,
+            'rights'   => $rights,
+         ],
+      ], ['title' => $title, 'canedit' => $canEdit]);
+      echo '</div>';
+   }
+
+   /** CSS de familia + legenda (uso=azul, admin=ambar). */
+   private function renderPermLegend(): void {
+      echo '<style>'
+         . '.nextool-perms .nt-legend{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:4px 0 14px;font-size:.85rem}'
+         . '.nextool-perms .nt-legend span{display:inline-flex;align-items:center;gap:6px}'
+         . '.nextool-perms .nt-legend i{width:14px;height:14px;border-radius:3px;display:inline-block}'
+         . '.nextool-perms .nt-matrix tbody td:first-child,.nextool-perms .nt-matrix thead tr:last-child th:first-child{width:1px;white-space:nowrap;padding-left:4px;padding-right:4px}'
+         . '.nextool-perms th.nt-use{background-color:rgba(37,96,201,.10);border-top:2px solid #2560c9}'
+         . '.nextool-perms th.nt-admin{background-color:rgba(179,114,12,.12);border-top:2px solid #b3720c}'
+         . '.nextool-perms th.nt-global{background-color:rgba(195,48,68,.14);border-top:2px solid #c33044}'
+         . '.nextool-perms td.nt-use{background-color:rgba(37,96,201,.05)}'
+         . '.nextool-perms td.nt-admin{background-color:rgba(179,114,12,.06)}'
+         . '.nextool-perms td.nt-global{background-color:rgba(195,48,68,.07)}'
+         . '</style>';
+      echo '<div class="nt-legend">'
+         . '<span><i style="background:#2560c9"></i>' . __s('Usabilidade (usar)', 'nextool') . '</span>'
+         . '<span><i style="background:#b3720c"></i>' . __s('Administracao (configurar)', 'nextool') . '</span>'
+         . '<span><i style="background:#c33044"></i>' . __s('Super-direito (acesso total)', 'nextool') . '</span>'
+         . '</div>';
+   }
+
+   /** JS que aplica as classes de familia as colunas de cada matriz (por bit no id do th). */
+   private function renderPermColorScript(): void {
+      echo '<script>window.NT_FAMILIES=' . json_encode($this->ntFamilies) . ';'
+         . 'window.NT_ALL=' . json_encode(__('Todos', 'nextool')) . ';(function(){'
+         . 'var F=window.NT_FAMILIES||{};var ALL=window.NT_ALL;'
+         . 'document.querySelectorAll(".nextool-perms .nt-matrix").forEach(function(m){'
+         . 'var fld=m.getAttribute("data-field");var map=F[fld]||{};var t=m.querySelector("table");if(!t)return;'
+         . 'var ath=t.querySelector("th[id^=col_of_table_]");if(ath)ath.textContent=ALL;'
+         . 'var hr=t.querySelectorAll("thead tr");var cr=hr[hr.length-1];if(!cr)return;'
+         . 'Array.prototype.forEach.call(cr.children,function(th,i){'
+         . 'var mm=(th.id||"").match(/^col_label_(\\d+)_/);if(!mm)return;var fam=map[mm[1]];if(!fam)return;'
+         . 'th.classList.add("nt-"+fam);'
+         . 't.querySelectorAll("tbody tr").forEach(function(tr){if(tr.children[i])tr.children[i].classList.add("nt-"+fam);});'
+         . '});});'
+         // Super-direito como "marcar todos global": ao (des)marcar Acesso total, (des)marca
+         // todas as flags de todos os blocos (base + modulos).
+         . 'var gm=document.querySelector(".nextool-perms .nt-matrix[data-field=nextool_admin_global]");'
+         . 'if(gm){var gcb=gm.querySelector("input[type=checkbox]");if(gcb){gcb.addEventListener("change",function(){'
+         . 'var on=gcb.checked;'
+         . 'document.querySelectorAll(".nextool-perms input[type=checkbox]").forEach(function(cb){'
+         . 'if(cb!==gcb&&cb.checked!==on){cb.checked=on;}});});}}'
+         . '})();</script>';
    }
 }

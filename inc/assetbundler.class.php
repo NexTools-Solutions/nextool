@@ -15,7 +15,7 @@ declare(strict_types=1);
  *  - Após loadActiveModules(), collapseHooks() varre as entradas, junta as
  *    bundláveis numa lista "mod:file,mod:file,..." e as substitui pela URL
  *    do bundle. O hash h= deriva das URLs originais COMPLETAS (que carregam
- *    os fv= individuais) — qualquer asset que mude muda a URL do bundle e
+ *    os fv= individuais) - qualquer asset que mude muda a URL do bundle e
  *    invalida o cache do browser na hora.
  *  - Entradas com &nobundle=1 (ex.: chat-widget do aiassist, que é no-store
  *    por ter estado dinâmico) e entradas que não passam pelo

@@ -557,5 +557,5 @@ if ($nextool_is_standalone) {
 }
 
 // Note: scripts and version vars are included in nextoolconfig.form.php (main page),
-// NOT here — because this file is loaded via AJAX tab and <script> tags in innerHTML don't execute.
+// NOT here - because this file is loaded via AJAX tab and <script> tags in innerHTML don't execute.
 ?>

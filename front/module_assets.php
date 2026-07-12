@@ -76,7 +76,7 @@ require_once GLPI_ROOT . '/inc/includes.php';
 Session::checkLoginUser();
 
 // Libera o lock de sessão imediatamente após validar o login.
-// Arquivos servidos por este router (CSS/JS dos módulos) apenas LEEM config —
+// Arquivos servidos por este router (CSS/JS dos módulos) apenas LEEM config -
 // nunca escrevem na sessão. Sem este write_close, cada asset segura o lock
 // exclusivo do PHP durante todo o bootstrap, serializando os demais requests
 // autenticados da mesma sessão (PHP session locking) e degradando fortemente
@@ -87,7 +87,7 @@ if (session_status() === PHP_SESSION_ACTIVE) {
 
 // Remove os headers anti-cache que o PHP emite por default quando há sessão
 // (Expires: 1981 + Pragma: no-cache via session_cache_limiter). Eles anulavam
-// o Cache-Control: max-age que os assets emitem — o browser re-baixava tudo a
+// o Cache-Control: max-age que os assets emitem - o browser re-baixava tudo a
 // cada page load. Cada asset define seu próprio Cache-Control após este ponto.
 header_remove('Expires');
 header_remove('Pragma');

@@ -180,14 +180,14 @@ if (!in_array($method, $bodylessMethods, true)) {
 // exclusivo do PHP durante todo o processamento, serializando os demais
 // requests autenticados da mesma sessão (mesmo fix do module_assets.php).
 // $_SESSION continua legível após o write_close. Handlers que ESCREVEM sessão
-// (rotação de token CSRF, mensagens) são todos POST — auditado em 2026-06-09:
+// (rotação de token CSRF, mensagens) são todos POST - auditado em 2026-06-09:
 // accessmatrix/aiassist.action/geolocation.action exigem POST; o único GET que
 // escrevia (contracthours timer.php get_status) foi corrigido para só
 // rotacionar token em POST.
 //
 // RETROCOMPAT (incidente portfolio 2026-06-11): MÓDULOS ANTIGOS (ex.:
 // contracthours <3.4.6) rotacionam token CSRF também em GET. Com a sessão já
-// fechada, o token novo ia pro JSON mas NÃO persistia — o JS do módulo trocava
+// fechada, o token novo ia pro JSON mas NÃO persistia - o JS do módulo trocava
 // o token global da página por esse token-fantasma e TODO POST seguinte (de
 // qualquer tela) virava 403 "A ação que você requisitou não é permitida".
 // Defesa: snapshot dos tokens antes do write_close + shutdown function (roda
@@ -203,7 +203,7 @@ if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION
       }
       $newTokens = array_diff_key($memTokens, is_array($nxPreCloseTokens) ? $nxPreCloseTokens : []);
       if ($newTokens === []) {
-         return; // caminho comum (handler não gerou token) — custo zero
+         return; // caminho comum (handler não gerou token) - custo zero
       }
       if (session_id() === '' || session_status() === PHP_SESSION_ACTIVE) {
          return; // sem sessão para reabrir, ou já reaberta por outrem

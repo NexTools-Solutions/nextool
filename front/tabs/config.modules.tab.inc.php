@@ -61,7 +61,7 @@ declare(strict_types=1);
                </div>
             <?php else: ?>
                <?php
-                  // Contadores dos chips — calculados server-side
+                  // Contadores dos chips - calculados server-side
                   $fc = ['enabled' => 0, 'disabled' => 0, 'download' => 0, 'install' => 0, 'update' => 0, 'free' => 0, 'licensed' => 0, 'dev' => 0];
                   $categoryCounters = [];
                   foreach ($modulesState as $m) {

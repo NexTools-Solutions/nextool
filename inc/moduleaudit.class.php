@@ -58,7 +58,7 @@ class PluginNextoolModuleAudit extends PluginNextoolBaseAuditLog {
 
       self::recordHistory(
          (string)($data['action'] ?? ''),
-         sprintf('%s — %s', $data['module_key'] ?? '', $data['message'] ?? '')
+         sprintf('%s - %s', $data['module_key'] ?? '', $data['message'] ?? '')
       );
 
       return $result;

@@ -1092,7 +1092,7 @@ class PluginNextoolCoreUpdater {
          }
       }
 
-      // Bundled public key — fallback when no key is configured via DB or env.
+      // Bundled public key - fallback when no key is configured via DB or env.
       // This is the official NexTool signing key, safe to distribute with the plugin.
       if (count($keys) === 0) {
          $bundledKeys = [
@@ -1176,7 +1176,7 @@ class PluginNextoolCoreUpdater {
       }
 
       if (str_ends_with($packagePath, '.tar.gz')) {
-         // PharData — formato preferencial (built-in, sem dependência externa)
+         // PharData - formato preferencial (built-in, sem dependência externa)
          try {
             $phar = new PharData($packagePath);
             require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
@@ -1189,7 +1189,7 @@ class PluginNextoolCoreUpdater {
             ));
          }
       } elseif (str_ends_with($packagePath, '.zip')) {
-         // ZipArchive — fallback (requer ext-zip)
+         // ZipArchive - fallback (requer ext-zip)
          if (!class_exists('ZipArchive')) {
             throw new RuntimeException(
                __('A extensão php-zip não está instalada neste servidor. Solicite ao administrador que instale a extensão (ex: apt install php-zip ou yum install php-zip) e reinicie o PHP.', 'nextool')
@@ -1361,7 +1361,7 @@ class PluginNextoolCoreUpdater {
          // 7. Post-update: set version + activate directly in DB
          $this->postUpdatePluginActivation($targetVersion);
 
-         // 7b. Verify state — GLPI's own boot hooks may override during concurrent requests
+         // 7b. Verify state - GLPI's own boot hooks may override during concurrent requests
          $this->verifyAndForceActivated();
 
          // 8. Success metadata
@@ -1642,7 +1642,7 @@ class PluginNextoolCoreUpdater {
       $missing = [];
 
       foreach ($expectedFiles as $relativePath => $expectedHash) {
-         // Skip protected paths (.git/, .github/, .gitignore) — not copied during overwrite
+         // Skip protected paths (.git/, .github/, .gitignore) - not copied during overwrite
          if ($this->isProtectedPath($relativePath)) {
             continue;
          }
@@ -1827,7 +1827,7 @@ class PluginNextoolCoreUpdater {
          ]);
 
          Toolbox::logInFile('plugin_nextool', sprintf(
-            "[DEBUG] [CoreUpdater] Post-update: DB atualizado — version=%s, state=ACTIVATED (%d)\n",
+            "[DEBUG] [CoreUpdater] Post-update: DB atualizado - version=%s, state=ACTIVATED (%d)\n",
             $targetVersion,
             Plugin::ACTIVATED
          ));
@@ -1863,12 +1863,12 @@ class PluginNextoolCoreUpdater {
                'directory' => 'nextool',
             ]);
             Toolbox::logInFile('plugin_nextool', sprintf(
-               "[WARN] [CoreUpdater] State divergiu para %d após postUpdate — re-forçado ACTIVATED.\n",
+               "[WARN] [CoreUpdater] State divergiu para %d após postUpdate - re-forçado ACTIVATED.\n",
                $currentState
             ));
          }
       } catch (Throwable $e) {
-         // Non-critical — the next page load will resolve via GLPI's own check
+         // Non-critical - the next page load will resolve via GLPI's own check
       }
    }
 
@@ -1876,7 +1876,7 @@ class PluginNextoolCoreUpdater {
       if (function_exists('opcache_reset')) {
          @opcache_reset();
       }
-      // Nota: NÃO enviar SIGUSR2 ao php-fpm aqui — mata o worker que está executando o apply.
+      // Nota: NÃO enviar SIGUSR2 ao php-fpm aqui - mata o worker que está executando o apply.
       // opcache_reset() é suficiente para invalidar o cache da SAPI web.
    }
 
@@ -2036,7 +2036,7 @@ class PluginNextoolCoreUpdater {
 
    /**
     * Path do plugin extraído no staging (files/_plugins/.../extract/nextool/).
-    * Não é escaneado pelo plugin loader do GLPI — evita conflito de redeclaração.
+    * Não é escaneado pelo plugin loader do GLPI - evita conflito de redeclaração.
     */
    private function getStagedPluginPath(): string {
       $extractRoot = $this->getStagedExtractPath();

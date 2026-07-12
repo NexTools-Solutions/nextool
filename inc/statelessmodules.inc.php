@@ -77,7 +77,7 @@ function plugin_nextool_stateless_files(): array {
       }
    }
 
-   // Cache não existe ainda (primeira instalação) — retorna vazio
+   // Cache não existe ainda (primeira instalação) - retorna vazio
    $cache = [];
    return $cache;
 }
