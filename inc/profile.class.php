@@ -76,21 +76,24 @@ class PluginNextoolProfile extends Profile {
       $this->ntFamilies = [];
 
       echo "<div class='spaced nextool-perms'>";
-      $this->renderPermLegend();
+      $this->renderPermLegend($isHelpdesk);
       if ($canEdit) {
          echo "<form method='post' action='" . static::getFormURL() . "'>";
       }
 
-      // 1) Super-direito global.
-      $this->renderBlock(
-         PluginNextoolPermissionManager::RIGHT_ADMIN_GLOBAL,
-         __('Super-direito', 'nextool'),
-         [
-            PluginNextoolPermissionManager::GLOBAL_BIT =>
-               __('Acesso total ao ecossistema NexTool (base + todos os modulos)', 'nextool'),
-         ],
-         $canEdit
-      );
+      // 1) Super-direito global -- SO interface central. "Acesso total ao ecossistema"
+      // e o maximo de administracao; nunca deve ser concedivel por perfil simplificado.
+      if (!$isHelpdesk) {
+         $this->renderBlock(
+            PluginNextoolPermissionManager::RIGHT_ADMIN_GLOBAL,
+            __('Super-direito', 'nextool'),
+            [
+               PluginNextoolPermissionManager::GLOBAL_BIT =>
+                  __('Acesso total ao ecossistema NexTool (base + todos os modulos)', 'nextool'),
+            ],
+            $canEdit
+         );
+      }
 
       // 2) Bloco base (so interface central).
       if (!$isHelpdesk) {
@@ -113,7 +116,14 @@ class PluginNextoolProfile extends Profile {
                if ($isHelpdesk && !$mod->isEnabled()) {
                   continue;
                }
-               $declared = method_exists($mod, 'getProfileRights') ? $mod->getProfileRights() : [];
+               // Interface simplificada (helpdesk): SÓ os bits de uso que o módulo declara
+               // para o requerente (opt-in via getHelpdeskRights) -- nunca administração.
+               // Interface central: usabilidade + administração (getProfileRights).
+               if ($isHelpdesk) {
+                  $declared = method_exists($mod, 'getHelpdeskRights') ? $mod->getHelpdeskRights() : [];
+               } else {
+                  $declared = method_exists($mod, 'getProfileRights') ? $mod->getProfileRights() : [];
+               }
                if (empty($declared)) {
                   continue;
                }
@@ -168,7 +178,7 @@ class PluginNextoolProfile extends Profile {
    }
 
    /** CSS de familia + legenda (uso=azul, admin=ambar). */
-   private function renderPermLegend(): void {
+   private function renderPermLegend(bool $isHelpdesk = false): void {
       echo '<style>'
          . '.nextool-perms .nt-legend{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:4px 0 14px;font-size:.85rem}'
          . '.nextool-perms .nt-legend span{display:inline-flex;align-items:center;gap:6px}'
@@ -181,11 +191,14 @@ class PluginNextoolProfile extends Profile {
          . '.nextool-perms td.nt-admin{background-color:rgba(179,114,12,.06)}'
          . '.nextool-perms td.nt-global{background-color:rgba(195,48,68,.07)}'
          . '</style>';
+      // No perfil simplificado so existem colunas de usabilidade -> legenda mostra so essa familia.
       echo '<div class="nt-legend">'
-         . '<span><i style="background:#2560c9"></i>' . __s('Usabilidade (usar)', 'nextool') . '</span>'
-         . '<span><i style="background:#b3720c"></i>' . __s('Administracao (configurar)', 'nextool') . '</span>'
-         . '<span><i style="background:#c33044"></i>' . __s('Super-direito (acesso total)', 'nextool') . '</span>'
-         . '</div>';
+         . '<span><i style="background:#2560c9"></i>' . __s('Usabilidade (usar)', 'nextool') . '</span>';
+      if (!$isHelpdesk) {
+         echo '<span><i style="background:#b3720c"></i>' . __s('Administracao (configurar)', 'nextool') . '</span>'
+            . '<span><i style="background:#c33044"></i>' . __s('Super-direito (acesso total)', 'nextool') . '</span>';
+      }
+      echo '</div>';
    }
 
    /** JS que aplica as classes de familia as colunas de cada matriz (por bit no id do th). */

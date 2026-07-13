@@ -254,6 +254,39 @@ class PluginNextoolPermissionManager {
 
       $migration->executeMigration();
       self::migrateLegacyRights();
+
+      // Apos conceder os direitos no banco, recarrega-os na sessao ATIVA: o admin que
+      // acabou de instalar recebe o super-direito no perfil, mas na interface central o
+      // gate le da sessao (nao do banco) -- sem isto so valeria apos deslogar/relogar.
+      self::reloadActiveProfileRights();
+   }
+
+   /**
+    * Recarrega os direitos NexTool do perfil ativo do banco para a sessao, apos
+    * concede-los no install/upgrade. Cirurgico: atualiza so os direitos 'nextool*' e
+    * 'plugin_nextool*' -- NAO reseta entidades ativas nem dispara hooks (ao contrario de
+    * Session::changeProfile). No-op quando nao ha sessao (ex.: instalacao via CLI).
+    */
+   public static function reloadActiveProfileRights(): void {
+      $pid = (int) ($_SESSION['glpiactiveprofile']['id'] ?? 0);
+      if ($pid <= 0) {
+         return;
+      }
+      global $DB;
+      $rows = $DB->request([
+         'SELECT' => ['name', 'rights'],
+         'FROM'   => 'glpi_profilerights',
+         'WHERE'  => [
+            'profiles_id' => $pid,
+            'OR'          => [
+               ['name' => ['LIKE', 'nextool%']],
+               ['name' => ['LIKE', 'plugin_nextool%']],
+            ],
+         ],
+      ]);
+      foreach ($rows as $row) {
+         $_SESSION['glpiactiveprofile'][$row['name']] = (int) $row['rights'];
+      }
    }
 
    public static function removeRights(): void {

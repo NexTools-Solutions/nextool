@@ -396,6 +396,24 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Bits de USO que aparecem no perfil de interface SIMPLIFICADA (helpdesk).
+    *
+    * Default = vazio (opt-in): o módulo NÃO aparece no perfil simplificado. Um módulo
+    * com função de requerente (autoatendimento) sobrescreve retornando SÓ o subconjunto
+    * de bits de uso que o requerente realmente aciona no portal -- NUNCA bits de
+    * administração/configuração (esses ficam exclusivos da interface central).
+    *
+    * Espelha o getRights($interface) do core do GLPI (ex.: Ticket::getRights('helpdesk'),
+    * que remove UPDATE/DELETE/PURGE no simplificado). A tela de perfil (profile.class.php)
+    * usa este método no lugar de getProfileRights() quando o perfil é de interface helpdesk.
+    *
+    * @return array<int,string|array{short:string,long:string}> Mapa bit => rótulo
+    */
+   public function getHelpdeskRights(): array {
+      return [];
+   }
+
+   /**
     * Retorna itens de menu adicionais para o hook redefine_menus.
     *
     * Módulos que precisam de menu de primeiro nível na sidebar (fora do
