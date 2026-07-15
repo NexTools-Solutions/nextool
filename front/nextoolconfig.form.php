@@ -15,7 +15,7 @@ declare(strict_types=1);
  */
 
 if (!defined('GLPI_ROOT')) {
-   include(__DIR__ . '/../../inc/includes.php');
+   include(__DIR__ . '/../../../inc/includes.php');
 }
 
 Session::checkLoginUser();

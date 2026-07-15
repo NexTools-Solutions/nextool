@@ -664,7 +664,24 @@ class PluginNextoolModuleManager {
 
       $currentGlpiMajor = (int) explode('.', GLPI_VERSION)[0];
 
-      if (isset($manifest['glpi_major'])) {
+      // Artefato unico: compat_glpi_majors (CSV "10,11") tem precedencia -- 1 module.json
+      // roda em multiplas majors. Modulos antigos (so o inteiro glpi_major) seguem validos
+      // pelo ramo de retrocompat abaixo.
+      if (isset($manifest['compat_glpi_majors']) && trim((string) $manifest['compat_glpi_majors']) !== '') {
+         $compatMajors = array_values(array_filter(array_map(
+            static function ($v) { return (int) trim((string) $v); },
+            explode(',', (string) $manifest['compat_glpi_majors'])
+         )));
+         if (!empty($compatMajors) && !in_array($currentGlpiMajor, $compatMajors, true)) {
+            $msg = sprintf(
+               'Modulo compativel com GLPI %s, mas este ambiente e GLPI %d',
+               implode('/', $compatMajors),
+               $currentGlpiMajor
+            );
+            Toolbox::logInFile('plugin_nextool', sprintf('[ModuleManifest] BLOCKED %s: %s', $moduleKey, $msg));
+            return ['status' => 'blocked', 'message' => $msg];
+         }
+      } elseif (isset($manifest['glpi_major'])) {
          if ((int) $manifest['glpi_major'] !== $currentGlpiMajor) {
             $msg = sprintf(
                'Modulo construido para GLPI %d, mas este ambiente e GLPI %d',
@@ -877,6 +894,19 @@ class PluginNextoolModuleManager {
       }
 
       $result = $this->downloadModuleFromDistribution($moduleKey);
+
+      // Sideeffect: verificar atualização do core após download bem-sucedido de módulo FREE.
+      // Downloads FREE não passam por validateLicense, então este é o único ponto onde a
+      // hint de core update é alimentada em ambientes que só usam módulos FREE.
+      if ($result['success']) {
+         try {
+            require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
+            $updater = new PluginNextoolCoreUpdater();
+            $updater->check('stable', 'post_download_sideeffect');
+         } catch (\Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', '[CoreUpdate] sideeffect check falhou: ' . $e->getMessage());
+         }
+      }
 
       return $this->buildModuleActionResult(
          $moduleKey,

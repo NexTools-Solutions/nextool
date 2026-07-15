@@ -63,7 +63,11 @@ if (preg_match('/\.inc\.php$/', $filename)) {
 }
 
 // Verifica se módulo existe
-require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
+// NOTA: modulespath.inc.php é justamente quem DEFINE NEXTOOL_PHP_DIR, então precisa ser
+// incluído por path relativo (__DIR__), nunca pela própria constante. No GLPI 11 o kernel
+// já define a constante no boot, mas no GLPI 10 este arquivo é o entry point puro e a
+// constante ainda não existe -> usar NEXTOOL_PHP_DIR aqui daria "Undefined constant" (fatal).
+require_once __DIR__ . '/../inc/modulespath.inc.php';
 $modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
 $filePath = $modulePath . '/front/' . $filename;
 

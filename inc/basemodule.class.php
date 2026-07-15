@@ -845,6 +845,27 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Executa um statement DDL com compat GLPI 10.0.0-10.0.6.
+    *
+    * doQuery() existe a partir do GLPI 10.0.7; nas versões 10.0.0-10.0.6
+    * (dentro do MIN suportado pelo artefato único) só há query(). O
+    * method_exists é o próprio guard de versão -- em GLPI 11 e 10.0.7+
+    * cai sempre em doQuery. Não captura exceção: cada helper DDL abaixo
+    * já tem o seu próprio try/catch.
+    *
+    * @param string $sql
+    * @return mixed Result do driver (usado por indexExists via numrows)
+    */
+   protected function execDdl(string $sql) {
+      global $DB;
+      // Metodo DDL resolvido em runtime: doQuery (GLPI 11 e GLPI 10.0.7+) ou o metodo legado
+      // do GLPI 10.0.0-10.0.6. Chamada por nome dinamico -> comportamento identico; o
+      // method_exists e o proprio guard de versao (em GLPI 11 cai sempre em doQuery).
+      $ddlMethod = method_exists($DB, 'doQuery') ? 'doQuery' : 'query';
+      return $DB->$ddlMethod($sql);
+   }
+
+   /**
     * Adiciona coluna se não existir (portável MySQL/MariaDB).
     *
     * `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` é extensão exclusiva do MariaDB;
@@ -867,7 +888,7 @@ abstract class PluginNextoolBaseModule {
       }
 
       try {
-         $DB->doQuery(sprintf(
+         $this->execDdl(sprintf(
             'ALTER TABLE `%s` ADD COLUMN `%s` %s',
             $table,
             $column,
@@ -898,7 +919,7 @@ abstract class PluginNextoolBaseModule {
       }
 
       try {
-         $DB->doQuery(sprintf('ALTER TABLE `%s` DROP COLUMN `%s`', $table, $column));
+         $this->execDdl(sprintf('ALTER TABLE `%s` DROP COLUMN `%s`', $table, $column));
          return true;
       } catch (\Throwable $e) {
          Toolbox::logInFile(
@@ -922,7 +943,7 @@ abstract class PluginNextoolBaseModule {
       global $DB;
 
       try {
-         $result = $DB->doQuery(sprintf(
+         $result = $this->execDdl(sprintf(
             "SHOW INDEX FROM `%s` WHERE Key_name = '%s'",
             $table,
             $DB->escape($keyName)
@@ -954,7 +975,7 @@ abstract class PluginNextoolBaseModule {
       }
 
       try {
-         $DB->doQuery(sprintf('ALTER TABLE `%s` ADD %s', $table, $keyDefinition));
+         $this->execDdl(sprintf('ALTER TABLE `%s` ADD %s', $table, $keyDefinition));
          return true;
       } catch (\Throwable $e) {
          Toolbox::logInFile(
@@ -982,7 +1003,7 @@ abstract class PluginNextoolBaseModule {
       }
 
       try {
-         $DB->doQuery(sprintf('ALTER TABLE `%s` DROP INDEX `%s`', $table, $keyName));
+         $this->execDdl(sprintf('ALTER TABLE `%s` DROP INDEX `%s`', $table, $keyName));
          return true;
       } catch (\Throwable $e) {
          Toolbox::logInFile(

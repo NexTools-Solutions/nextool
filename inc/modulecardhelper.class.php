@@ -307,8 +307,11 @@ class PluginNextoolModuleCardHelper {
       }
       $moduleKey = $state['module_key'] ?? '';
       if ($moduleKey !== '') {
+         // Artefato único: a tag de plataforma segue o GLPI onde o plugin roda
+         // (GLPI_10 num GLPI 10, GLPI_11 num GLPI 11), não hardcoded.
+         $currentMajor = (int) explode('.', GLPI_VERSION)[0];
          $changelogUrl = 'https://github.com/NexTools-Solutions/nextool/releases?q='
-            . urlencode('Etiqueta: modulo:' . $moduleKey . '[GLPI_11]');
+            . urlencode('Etiqueta: modulo:' . $moduleKey . '[GLPI_' . $currentMajor . ']');
          $items[] = self::renderDropdownItem(__('Changelogs', 'nextool'), 'ti ti-history', $changelogUrl, true);
       }
    }
