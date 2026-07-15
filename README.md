@@ -14,11 +14,11 @@ Este repositório (`NexTools-Solutions/nextool`) distribui **uma única linha** 
 
 ---
 
-### Módulos (GLPI 11)
+### Módulos
 
-Links de filtro (uma página com todas as releases do módulo nesta linha):
+Links de filtro (uma página com todas as releases do módulo):
 
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aaiassist%5BGLPI_11%5D" target="_blank" rel="noopener">AI Assist</a>  \
+- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aaiassist%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">AI Assist</a>  \
   Descrição: resumos, sugestões e sinais de sentimento para agilizar a triagem de tickets.  \
   Problema que resolve: atendimento lento e priorização inconsistente em filas grandes.
 - <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aapprovalflow%5BGLPI_11%5D" target="_blank" rel="noopener">Approval Flow</a>  \
@@ -27,7 +27,7 @@ Links de filtro (uma página com todas as releases do módulo nesta linha):
 - <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aautentique%5BGLPI_11%5D" target="_blank" rel="noopener">Autentique</a>  \
   Descrição: assinatura digital de documentos vinculados a tickets, com acompanhamento de status.  \
   Problema que resolve: coleta de assinatura fora do GLPI e falta de rastreio do processo.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Acolumnresize%5BGLPI_11%5D" target="_blank" rel="noopener">Column Resize</a>  \
+- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Acolumnresize%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">Column Resize</a>  \
   Descrição: ajusta e salva preferências de largura de colunas em telas do GLPI.  \
   Problema que resolve: telas “apertadas” e perda de tempo ajustando colunas repetidamente.
 - <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aestoque%5BGLPI_11%5D" target="_blank" rel="noopener">Estoque</a>  \
@@ -36,7 +36,7 @@ Links de filtro (uma página com todas as releases do módulo nesta linha):
 - <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Ageolocation%5BGLPI_11%5D" target="_blank" rel="noopener">Geolocation</a>  \
   Descrição: captura localização em atendimentos e vincula evidências ao histórico do chamado.  \
   Problema que resolve: ausência de comprovação/rastreio em atendimentos de campo.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Amailanalyzer%5BGLPI_11%5D" target="_blank" rel="noopener">Mail Analyzer</a>  \
+- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Amailanalyzer%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">Mail Analyzer</a>  \
   Descrição: reduz ruído de e-mail e ajuda a evitar tickets duplicados gerados por cadeias.  \
   Problema que resolve: duplicidade de chamados e aumento de volume por e-mails em CC.
 - <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Amailinteractions%5BGLPI_11%5D" target="_blank" rel="noopener">Mail Interactions</a>  \
@@ -48,13 +48,13 @@ Links de filtro (uma página com todas as releases do módulo nesta linha):
 - <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Apendingsurvey%5BGLPI_11%5D" target="_blank" rel="noopener">Pending Survey</a>  \
   Descrição: incentiva resposta de pesquisas e pode restringir novas aberturas quando aplicável.  \
   Problema que resolve: baixa taxa de resposta e ausência de feedback para melhoria contínua.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aruleinspector%5BGLPI_11%5D" target="_blank" rel="noopener">Rule Inspector</a>  \
+- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aruleinspector%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">Rule Inspector</a>  \
   Descrição: ajuda a inspecionar e depurar regras do GLPI com mais transparência.  \
   Problema que resolve: troubleshooting demorado em regras complexas (e-mail, tickets, rotinas).
 - <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Asignaturepad%5BGLPI_11%5D" target="_blank" rel="noopener">Signature Pad</a>  \
   Descrição: coleta assinatura manual em PDF diretamente no navegador e vincula ao ticket.  \
   Problema que resolve: coleta de assinatura em campo sem depender de ferramentas externas.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Asmartassign%5BGLPI_11%5D" target="_blank" rel="noopener">Smart Assign</a>  \
+- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Asmartassign%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">Smart Assign</a>  \
   Descrição: distribui tickets automaticamente por regras (balanceamento, rodízio, categorias).  \
   Problema que resolve: sobrecarga em alguns técnicos e filas mal distribuídas.
 - <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Atelegrambot%5BGLPI_11%5D" target="_blank" rel="noopener">Telegram Bot</a>  \
