@@ -109,9 +109,9 @@ Cada módulo puede ser instalado, activado y configurado de forma independiente.
     </authors>
     <versions>
         <version>
-            <num>6.0.0</num>
+            <num>6.0.1</num>
             <compatibility>&gt;=10.0.0,&lt;11.1.0</compatibility>
-            <download_url>https://github.com/NexTools-Solutions/nextool/releases/tag/v6.0.0</download_url>
+            <download_url>https://github.com/NexTools-Solutions/nextool/releases/tag/v6.0.1</download_url>
         </version>
     </versions>
     <langs>

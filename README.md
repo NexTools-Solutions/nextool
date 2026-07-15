@@ -1,70 +1,123 @@
-# NexTool Solutions – Hub de Soluções para GLPI 10 e 11
+# NexTool Solutions – Hub de Soluções para GLPI
 
 O **NexTool Solutions** é um hub de soluções dentro do GLPI: você habilita apenas o que precisa e mantém tudo centralizado em uma única interface, com instalação guiada e licenciamento integrado quando aplicável.
 
-Importante: o NexTool é distribuído como um **único artefato** que roda tanto no **GLPI 11** quanto no **GLPI 10** — a mesma versão instala nas duas majors (veja a seção “Versões”).
+Compatível com **GLPI 10** e **GLPI 11**: o mesmo pacote instala nas duas versões, sem download separado.
 
 ---
 
-## Versões (GLPI 10 e GLPI 11)
+## Instalação
 
-Este repositório (`NexTools-Solutions/nextool`) distribui **uma única linha** do plugin NexTool, compatível com **GLPI 10 e GLPI 11** (artefato único, a partir da 6.0.0):
-
-- <a href="https://github.com/NexTools-Solutions/nextool/releases/tag/v6.0.0" target="_blank" rel="noopener"><strong>GLPI 10 e 11</strong>: branch <code>main</code> — release única</a>
-
----
-
-### Módulos
-
-Links de filtro (uma página com todas as releases do módulo):
-
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aaiassist%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">AI Assist</a>  \
-  Descrição: resumos, sugestões e sinais de sentimento para agilizar a triagem de tickets.  \
-  Problema que resolve: atendimento lento e priorização inconsistente em filas grandes.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aapprovalflow%5BGLPI_11%5D" target="_blank" rel="noopener">Approval Flow</a>  \
-  Descrição: fluxo de aprovações multinível, com rastreabilidade e ações automáticas por resultado.  \
-  Problema que resolve: aprovações “no improviso” sem controle, histórico e governança.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aautentique%5BGLPI_11%5D" target="_blank" rel="noopener">Autentique</a>  \
-  Descrição: assinatura digital de documentos vinculados a tickets, com acompanhamento de status.  \
-  Problema que resolve: coleta de assinatura fora do GLPI e falta de rastreio do processo.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Acolumnresize%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">Column Resize</a>  \
-  Descrição: ajusta e salva preferências de largura de colunas em telas do GLPI.  \
-  Problema que resolve: telas “apertadas” e perda de tempo ajustando colunas repetidamente.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aestoque%5BGLPI_11%5D" target="_blank" rel="noopener">Estoque</a>  \
-  Descrição: registra consumo de insumos/itens diretamente nos tickets e melhora a rastreabilidade.  \
-  Problema que resolve: falta de controle sobre saída de materiais por atendimento.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Ageolocation%5BGLPI_11%5D" target="_blank" rel="noopener">Geolocation</a>  \
-  Descrição: captura localização em atendimentos e vincula evidências ao histórico do chamado.  \
-  Problema que resolve: ausência de comprovação/rastreio em atendimentos de campo.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Amailanalyzer%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">Mail Analyzer</a>  \
-  Descrição: reduz ruído de e-mail e ajuda a evitar tickets duplicados gerados por cadeias.  \
-  Problema que resolve: duplicidade de chamados e aumento de volume por e-mails em CC.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Amailinteractions%5BGLPI_11%5D" target="_blank" rel="noopener">Mail Interactions</a>  \
-  Descrição: permite interações por e-mail (aprovar, responder, validar) com links seguros.  \
-  Problema que resolve: usuários que não acessam o portal, travando validações e fluxos.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aorderservice%5BGLPI_11%5D" target="_blank" rel="noopener">Order Service</a>  \
-  Descrição: gera Ordem de Serviço (PDF) a partir do ticket com layout padronizado.  \
-  Problema que resolve: formalização manual e inconsistência de documentos entregues ao cliente.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Apendingsurvey%5BGLPI_11%5D" target="_blank" rel="noopener">Pending Survey</a>  \
-  Descrição: incentiva resposta de pesquisas e pode restringir novas aberturas quando aplicável.  \
-  Problema que resolve: baixa taxa de resposta e ausência de feedback para melhoria contínua.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aruleinspector%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">Rule Inspector</a>  \
-  Descrição: ajuda a inspecionar e depurar regras do GLPI com mais transparência.  \
-  Problema que resolve: troubleshooting demorado em regras complexas (e-mail, tickets, rotinas).
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Asignaturepad%5BGLPI_11%5D" target="_blank" rel="noopener">Signature Pad</a>  \
-  Descrição: coleta assinatura manual em PDF diretamente no navegador e vincula ao ticket.  \
-  Problema que resolve: coleta de assinatura em campo sem depender de ferramentas externas.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Asmartassign%5BGLPI_10%2F11%5D" target="_blank" rel="noopener">Smart Assign</a>  \
-  Descrição: distribui tickets automaticamente por regras (balanceamento, rodízio, categorias).  \
-  Problema que resolve: sobrecarga em alguns técnicos e filas mal distribuídas.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Atelegrambot%5BGLPI_11%5D" target="_blank" rel="noopener">Telegram Bot</a>  \
-  Descrição: integra notificações e interações com tickets via Telegram (quando habilitado).  \
-  Problema que resolve: falta de agilidade para alertas e acompanhamento fora do GLPI.
-- <a href="https://github.com/NexTools-Solutions/nextool/releases?q=Etiqueta%3A%20modulo%3Aticketflow%5BGLPI_11%5D" target="_blank" rel="noopener">Ticket Flow</a>  \
-  Descrição: automatiza fluxos de chamados e criação de tickets derivados por evento/categoria.  \
-  Problema que resolve: processos repetitivos que dependem de abertura manual de múltiplos tickets.
+- **Download:** baixe a versão mais recente em <a href="https://github.com/NexTools-Solutions/nextool/releases/latest" target="_blank" rel="noopener">Releases</a> e instale pelo mecanismo padrão de plugins do GLPI.
+- Cada solução (módulo) tem sua própria página com detalhes e demonstração no site oficial - os links estão na lista abaixo.
 
 ---
+
+## Módulos
+
+Cada módulo abaixo tem uma página dedicada em **[nextoolsolutions.com](https://nextoolsolutions.com/plugins-glpi)** com recursos, telas e detalhes.
+
+### Módulos gratuitos
+
+- **[AI Assist](https://nextoolsolutions.com/plugins-glpi/ai-assist)**  \
+  Descrição: resumos automáticos de threads longas e sugestões de resposta com IA (OpenAI GPT e Google Gemini).  \
+  Problema que resolve: triagem lenta de chamados extensos e respostas inconsistentes.
+- **[Mail Analyzer](https://nextoolsolutions.com/plugins-glpi/mail-analyzer)**  \
+  Descrição: analisa e-mails recebidos e distingue nova solicitação de resposta a chamado existente, reconhecendo respostas automáticas.  \
+  Problema que resolve: enxurrada de tickets duplicados gerados por cadeias e respostas de e-mail.
+- **[Smart Assign](https://nextoolsolutions.com/plugins-glpi/smart-assign)**  \
+  Descrição: atribui chamados automaticamente por categoria, grupo ou entidade, em modo balanceamento de carga ou rodízio.  \
+  Problema que resolve: sobrecarga de alguns técnicos e filas mal distribuídas.
+- **[Column Resize](https://nextoolsolutions.com/plugins-glpi/column-resize)**  \
+  Descrição: redimensiona as colunas das listagens do GLPI por arraste e salva a preferência por usuário.  \
+  Problema que resolve: listagens apertadas e ajuste repetitivo de colunas.
+- **[Rule Inspector](https://nextoolsolutions.com/plugins-glpi/rule-inspector)**  \
+  Descrição: mostra um log detalhado de cada avaliação das regras do GLPI, com os critérios aprovados e reprovados.  \
+  Problema que resolve: troubleshooting demorado de regras complexas.
+- **[WhatsApp Bot](https://nextoolsolutions.com/plugins-glpi/whatsapp-bot)**  \
+  Descrição: envia notificações de chamados no WhatsApp via Evolution API, com configuração por tipo de evento e perfil.  \
+  Problema que resolve: usuários que não acompanham e-mail nem o portal.
+- **[CVE Scan](https://nextoolsolutions.com/plugins-glpi/cve-scan)**  \
+  Descrição: cruza os softwares dos ativos com a base CVE do NIST e exibe as vulnerabilidades por severidade no próprio ativo.  \
+  Problema que resolve: inventário sem visibilidade das falhas de segurança conhecidas.
+- **[Smart Notify](https://nextoolsolutions.com/plugins-glpi/smart-notify)**  \
+  Descrição: sino de notificações na navbar que agrega 11 fontes de eventos ITIL, com preferências individuais por usuário.  \
+  Problema que resolve: atualizações importantes perdidas por falta de aviso centralizado.
+- **[Branding](https://nextoolsolutions.com/plugins-glpi/branding)**  \
+  Descrição: personaliza favicon, título, logo, cores, fundo da tela de login e rodapé do GLPI, sem editar o core.  \
+  Problema que resolve: GLPI sem a identidade visual da organização.
+- **[GLPI Bug Fixes](https://nextoolsolutions.com/plugins-glpi/glpi-bug-fixes)**  \
+  Descrição: reúne correções visuais e comportamentais do GLPI, cada uma ativável individualmente, sem editar o código-fonte.  \
+  Problema que resolve: pequenos bugs de interface acumulando atrito no dia a dia.
+- **[Ticket Tracker](https://nextoolsolutions.com/plugins-glpi/ticket-tracker)**  \
+  Descrição: registra automaticamente quem visualizou cada ticket, quantas vezes e quando, em uma aba dedicada.  \
+  Problema que resolve: falta de visibilidade sobre quem leu e acompanhou o chamado.
+- **[Translate](https://nextoolsolutions.com/plugins-glpi/translate)**  \
+  Descrição: traduz chamados e acompanhamentos na própria timeline, por item e por usuário, com DeepL, Google Translate ou IA.  \
+  Problema que resolve: atendimento multilíngue dependendo de ferramentas externas.
+
+### Módulos licenciados
+
+- **[Autentique](https://nextoolsolutions.com/plugins-glpi/autentique)**  \
+  Descrição: envia contratos e documentos do chamado para assinatura digital na plataforma Autentique, com controle de signatários e status.  \
+  Problema que resolve: coleta de assinatura fora do GLPI e sem rastreio do processo.
+- **[Assinatura Manual](https://nextoolsolutions.com/plugins-glpi/signature-pad)**  \
+  Descrição: captura assinatura manuscrita (dedo, mouse ou stylus) e a incorpora ao PDF, dentro do GLPI.  \
+  Problema que resolve: coleta de assinatura em campo dependendo de papel ou ferramentas externas.
+- **[Escalonamento de Aprovação](https://nextoolsolutions.com/plugins-glpi/approval-flow)**  \
+  Descrição: fluxos de aprovação multinível por categoria, com múltiplos aprovadores e integração às validações do GLPI e ao Telegram.  \
+  Problema que resolve: aprovações no improviso, sem sequência, histórico ou governança.
+- **[Ticket Flow](https://nextoolsolutions.com/plugins-glpi/ticket-flow)**  \
+  Descrição: cria chamados automaticamente a partir de templates completos, por agendamento ou evento do GLPI.  \
+  Problema que resolve: abertura manual e repetitiva de chamados recorrentes.
+- **[Gestão de Estoque](https://nextoolsolutions.com/plugins-glpi/stock-management)**  \
+  Descrição: debita insumos do estoque nativo ao registrar o uso no chamado, com estorno e exportação em CSV.  \
+  Problema que resolve: falta de controle sobre a saída de materiais por atendimento.
+- **[Mail Interactions](https://nextoolsolutions.com/plugins-glpi/mail-interactions)**  \
+  Descrição: permite aprovar/rejeitar validações e responder pesquisas de satisfação por e-mail, sem login, com token de uso único.  \
+  Problema que resolve: usuários que não acessam o portal, travando validações e feedback.
+- **[Order Service](https://nextoolsolutions.com/plugins-glpi/order-service)**  \
+  Descrição: gera Ordem de Serviço em PDF a partir do chamado, com logo, cabeçalho e campos configuráveis por entidade.  \
+  Problema que resolve: formalização manual e documentos inconsistentes entregues ao cliente.
+- **[Geolocation](https://nextoolsolutions.com/plugins-glpi/geolocation)**  \
+  Descrição: captura a localização GPS do navegador e insere o endereço no acompanhamento do chamado.  \
+  Problema que resolve: ausência de comprovação de posição em atendimentos de campo.
+- **[Pending Survey](https://nextoolsolutions.com/plugins-glpi/pending-survey)**  \
+  Descrição: bloqueia a abertura de novos chamados pelo usuário final enquanto houver pesquisa de satisfação pendente.  \
+  Problema que resolve: baixa taxa de resposta às pesquisas e falta de feedback.
+- **[Telegram Bot](https://nextoolsolutions.com/plugins-glpi/telegram-bot)**  \
+  Descrição: entrega notificações de chamados e permite aprovar validações pelo Telegram, com vínculo de usuário por chat_id.  \
+  Problema que resolve: falta de agilidade para alertas e aprovações fora do GLPI.
+- **[Problem Flow](https://nextoolsolutions.com/plugins-glpi/problem-flow)**  \
+  Descrição: detecta incidentes recorrentes por categoria ou serviço e cria registros de Problema ITIL, vinculando os chamados relacionados.  \
+  Problema que resolve: recorrências tratadas isoladamente, sem gestão de problema.
+- **[Automações](https://nextoolsolutions.com/plugins-glpi/automations)**  \
+  Descrição: dispara webhooks configuráveis por evento do GLPI, com payload customizável e autenticação por header ou HMAC.  \
+  Problema que resolve: GLPI isolado de n8n, Power Automate e APIs próprias.
+- **[Access Matrix](https://nextoolsolutions.com/plugins-glpi/access-matrix)**  \
+  Descrição: matriz visual de permissões CRUD de sistemas externos por cargo, grupo e usuário, com resolução em camadas.  \
+  Problema que resolve: controle de acesso a sistemas externos espalhado e sem centralização.
+- **[Contract Hours](https://nextoolsolutions.com/plugins-glpi/contract-hours)**  \
+  Descrição: cronômetro na timeline do ticket com arredondamento faturável, tarefa automática e baixa no saldo do contrato.  \
+  Problema que resolve: horas de contrato registradas de forma imprecisa e manual.
+- **[SubTask Flow](https://nextoolsolutions.com/plugins-glpi/subtask-flow)**  \
+  Descrição: encadeia subtarefas por relações pai-filho entre templates, condicionadas à solução escolhida ao concluir cada tarefa.  \
+  Problema que resolve: fluxos de tarefas montados manualmente a cada chamado.
+- **[GLPI Sync](https://nextoolsolutions.com/plugins-glpi/glpi-sync)**  \
+  Descrição: replica tickets entre instâncias GLPI via API REST, com acompanhamentos, tarefas e soluções ativáveis por item.  \
+  Problema que resolve: chamados isolados em instâncias GLPI separadas.
+- **[Form Extender](https://nextoolsolutions.com/plugins-glpi/form-extender)**  \
+  Descrição: adiciona novos tipos de campo aos formulários nativos, começando pelo Category Picker de categorias ITIL.  \
+  Problema que resolve: formulários nativos limitados aos tipos de campo padrão.
+- **[Mercado Eletrônico](https://nextoolsolutions.com/plugins-glpi/mercado-eletronico)**  \
+  Descrição: cria requisições de compra no Mercado Eletrônico a partir do chamado, com catálogo sincronizado (produtos, grupos, fornecedores).  \
+  Problema que resolve: dupla aprovação e redigitação de pedidos de compra.
+- **[Rule Extender](https://nextoolsolutions.com/plugins-glpi/rule-extender)**  \
+  Descrição: adiciona ações de atribuição (Localização, Supervisor, Categoria, Título) ao motor de regras de direitos, sem editar o core.  \
+  Problema que resolve: regras de atribuição nativas sem ação para preencher esses campos.
+- **[Assinatura Digital](https://nextoolsolutions.com/plugins-glpi/digital-signature)**  \
+  Descrição: integra o GLPI ao DocuSeal para assinatura eletrônica de documentos de chamados, contratos e ativos, com múltiplos signatários.  \
+  Problema que resolve: assinatura eletrônica fora do fluxo de atendimento.
 
 ---
 
@@ -109,4 +162,3 @@ O NexTool Solutions pode se conectar a um **servidor externo** para habilitar re
 O plugin não foi projetado para enviar conteúdo de chamados, senhas ou dados sensíveis dos usuários finais para o servidor do desenvolvedor.
 
 Para detalhes completos de privacidade, licenciamento, redistribuição e políticas de uso, consulte **[POLICIES_OF_USE.md](./POLICIES_OF_USE.md)**.
-
