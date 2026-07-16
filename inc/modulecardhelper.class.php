@@ -56,14 +56,15 @@ class PluginNextoolModuleCardHelper {
       // Dropdown mantém Saiba Mais + Changelogs apontando para a plataforma onde
       // o módulo realmente existe (primeira major do compat_glpi_majors).
       if (!self::isCompatibleWithCurrentGlpi($state)) {
-         $compatLabel = self::resolveCompatLabel($state);
-         $primary = '<span class="badge bg-warning text-dark me-1" title="' .
-            Html::entities_deep(__('Este módulo não suporta sua versão do GLPI', 'nextool')) . '">' .
-            '<i class="ti ti-alert-triangle me-1"></i>' .
-            Html::entities_deep($compatLabel) .
-            '</span>';
+         // Sem tarja "não compatível" (matava conversão): o módulo ainda não tem artefato
+         // para este major, mas segue ofertável. PAGO -> "Licenciar" (a compra dispara a
+         // compatibilização sob demanda). GRÁTIS -> "Tenho interesse" (lead), sem prometer
+         // Download que não teria artefato deste major. Dropdown mantém Saiba Mais + Changelogs.
          $secondary = [];
          self::appendExternalLinksForCompat($state, $secondary);
+         $primary = !empty($state['is_paid'])
+            ? self::renderLicensingButton($state)
+            : self::renderInterestButton($state);
          return $primary . self::wrapDropdown($secondary);
       }
 
@@ -220,8 +221,10 @@ class PluginNextoolModuleCardHelper {
 
       }
 
-      // Re-baixar: disponivel apenas quando desinstalado (arquivos podem existir no disco)
-      if (!$state['is_installed'] && !empty($state['distribution_configured'])) {
+      // Re-baixar: só quando o módulo JÁ foi baixado (há arquivos no disco para substituir)
+      // e está desinstalado. Sem download prévio o CTA é "Download" -- não há o que
+      // "re"-baixar, então o item não aparece.
+      if (!$state['is_installed'] && !empty($state['module_downloaded']) && !empty($state['distribution_configured'])) {
          $secondary[] = self::renderDropdownAction(
             $state,
             'redownload',
@@ -246,7 +249,7 @@ class PluginNextoolModuleCardHelper {
     * CSV compat_glpi_majors. Quando o campo está vazio (catálogo antigo sem
     * platforms), assume compatibilidade - fallback retrocompat.
     */
-   private static function isCompatibleWithCurrentGlpi(array $state): bool {
+   public static function isCompatibleWithCurrentGlpi(array $state): bool {
       $csv = isset($state['compat_glpi_majors']) ? trim((string) $state['compat_glpi_majors']) : '';
       if ($csv === '') {
          return true;
@@ -379,6 +382,34 @@ class PluginNextoolModuleCardHelper {
       return "<a href='" . Html::entities_deep($url) . "' target='_blank' rel='noopener'"
          . " class='btn btn-sm btn-outline-licensing me-1'>"
          . "<i class='ti ti-certificate me-1'></i>{$label}</a>";
+   }
+
+   /**
+    * Botão "Tenho interesse" para módulo GRÁTIS ainda sem artefato para este major do GLPI.
+    * Abre uma nova solicitação no portal (/painel/solicitacoes/nova) já pré-preenchida
+    * (categoria Módulos, tipo Sugestão de recurso, assunto e mensagem com o nome do módulo),
+    * onde o cliente registra o interesse -- a equipe compatibiliza sob demanda. Não promete
+    * Download (não há artefato deste major). Substitui a antiga tarja "não compatível".
+    */
+   private static function renderInterestButton(array $state): string {
+      $label = Html::entities_deep(__('Tenho interesse', 'nextool'));
+      $moduleName = (string) ($state['name'] ?? $state['module_key']);
+      $assunto = sprintf(__('Interesse no módulo %s', 'nextool'), $moduleName);
+      $corpo = sprintf(
+         __('Tenho interesse no módulo "%s" e gostaria de disponibilizá-lo para a minha versão do GLPI.', 'nextool'),
+         $moduleName
+      );
+      // O portal valida categoria/tipo contra as opções conhecidas e sanitiza os textos;
+      // sem query (ou com valores inválidos) a página cai no formulário em branco.
+      $url = 'https://app.nextoolsolutions.com/painel/solicitacoes/nova?' . http_build_query([
+         'categoria' => 'modulos',
+         'tipo'      => 'recurso',
+         'assunto'   => $assunto,
+         'corpo'     => $corpo,
+      ]);
+      return "<a href='" . Html::entities_deep($url) . "' target='_blank' rel='noopener'"
+         . " class='btn btn-sm btn-interest me-1'>"
+         . "<i class='ti ti-bulb me-1'></i>{$label}</a>";
    }
 
    private static function renderLink(string $label, string $classes, string $icon, string $url, bool $newTab = false): string {

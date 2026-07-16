@@ -734,7 +734,7 @@ class PluginNextoolLicenseValidator {
                'after'   => 'available_version',
             ]
          );
-         $migrationMinVer->executeMigration();
+         PluginNextoolMigrationHelper::runSilently($migrationMinVer);
       }
 
       if (!$DB->fieldExists($table, 'website_url')) {
@@ -749,7 +749,7 @@ class PluginNextoolLicenseValidator {
                'after'   => 'min_version_nextools',
             ]
          );
-         $migUrl->executeMigration();
+         PluginNextoolMigrationHelper::runSilently($migUrl);
       }
 
       if (!$DB->fieldExists($table, 'icon')) {
@@ -764,7 +764,7 @@ class PluginNextoolLicenseValidator {
                'after'   => 'description',
             ]
          );
-         $migIcon->executeMigration();
+         PluginNextoolMigrationHelper::runSilently($migIcon);
       }
 
       foreach ([
@@ -778,12 +778,12 @@ class PluginNextoolLicenseValidator {
          if (!$DB->fieldExists($table, $field)) {
             $m = new Migration($ver);
             $m->addField($table, $field, $type, ['value' => null, 'comment' => $comment, 'after' => $after]);
-            $m->executeMigration();
+            PluginNextoolMigrationHelper::runSilently($m);
          }
       }
 
       if ($schemaUpdated) {
-         $migration->executeMigration();
+         PluginNextoolMigrationHelper::runSilently($migration);
       }
 
       $planUpper = strtoupper(trim($plan));

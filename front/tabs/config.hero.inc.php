@@ -91,7 +91,7 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
             <?php endif; ?>
             <?php if (empty($nextoolHeroHideAccountLink)): ?>
                <button type="button"
-                       class="btn btn-outline-light fw-semibold"
+                       class="btn btn-light fw-semibold"
                        data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal"
                        onclick="nextoolRefreshLinkStatus();">
                   <i class="ti <?php echo !empty($accountLinked) ? 'ti-user-cog' : 'ti-user-check'; ?> me-1"></i>

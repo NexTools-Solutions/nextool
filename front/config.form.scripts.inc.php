@@ -915,7 +915,7 @@ function nextoolInitCoreUpdateModal() {
 })();
 
 var _nextoolSyncCooldown = (function() {
-   var COOLDOWN_SECONDS = 60;
+   var COOLDOWN_SECONDS = 10;
    var STORAGE_KEY = 'nextool.sync.cooldown';
    var originalLabel = <?php echo json_encode(__('Sincronizar', 'nextool')); ?>;
    var intervalId = null;
@@ -990,7 +990,7 @@ function nextoolValidateLicense(btn) {
    }
    actionInput.value = 'validate_license';
 
-   // Cooldown: ativar countdown de 60s e desabilitar botão
+   // Cooldown: ativar countdown de 10s e desabilitar botão
    _nextoolSyncCooldown.activate();
    if (btn) {
       btn.disabled = true;
@@ -1008,6 +1008,29 @@ if (document.readyState === 'loading') {
    _nextoolSyncCooldown.init();
 }
 document.addEventListener('glpi.load', _nextoolSyncCooldown.init);
+
+// Aba Logs: o form de busca do grid Search::show submete sem forcetab/id, então ENTER
+// (e o botão Pesquisar) recarregava para FORA da aba Logs. Injeta forcetab+id como campos
+// ocultos no form da busca (identificado por itemtype) -> o submit preserva a aba Logs com
+// a pesquisa aplicada. Sem isso, apertar ENTER no filtro jogava o usuário para outra aba.
+(function nextoolSearchEnterAsButton() {
+   // Grids Search embutidos nas abas do plugin (ex.: Logs): apertar ENTER no campo de busca
+   // disparava o SUBMIT NATIVO do form (GET) -> recarregava a página inteira e caía FORA da
+   // aba. O core do GLPI (Search/Table.js) só trata o CLIQUE no botão "Pesquisar" (onSearch,
+   // busca via AJAX, sem reload). Interceptamos o submit desses forms e disparamos o clique
+   // no botão -> ENTER passa a se comportar exatamente como o clique em "Pesquisar".
+   document.addEventListener('submit', function (e) {
+      var f = e.target;
+      if (!f || typeof f.querySelector !== 'function') { return; }
+      if (!f.classList || !f.classList.contains('search-form-container')) { return; }
+      var it = f.querySelector('input[name="itemtype"]');
+      if (!it || String(it.value).indexOf('PluginNextool') !== 0) { return; }
+      var btn = f.querySelector('button[name="search"]');
+      if (!btn) { return; }
+      e.preventDefault();
+      btn.click();
+   }, true);
+})();
 
 // F5 -- nextoolRegenerateHmac removido: a rotação de segredo/identidade é coordenada pelo servidor
 // (re-enroll/migrate). Sem botões que disparem a ação 'regenerate_hmac'.
@@ -1269,7 +1292,9 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
       case 'dev':
          return card.dataset.moduleTier === 'DEV';
       case 'category':
-         return activeCategory !== '' && (card.dataset.moduleCategory || '') === activeCategory;
+         // N:N -- o card pode ter várias categorias (CSV no data-attr); casa se CONTÉM a ativa.
+         return activeCategory !== '' && (card.dataset.moduleCategory || '')
+            .split(',').map(function (c) { return c.trim(); }).indexOf(activeCategory) !== -1;
       default:
          return true;
       }

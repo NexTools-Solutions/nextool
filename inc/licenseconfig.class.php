@@ -223,7 +223,9 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
       }
 
       if ($schemaUpdated) {
-         $migration->executeMigration();
+         // Silencioso: a Migration ecoa "Tarefa concluída. (0 segundo)" no HTML e ensureSchema roda
+         // em background (getDefaultConfig no install/uninstall de módulo, validação de licença).
+         PluginNextoolMigrationHelper::runSilently($migration);
       }
 
       self::$schemaEnsuredThisRequest = true;

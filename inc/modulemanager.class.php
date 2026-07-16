@@ -247,7 +247,17 @@ class PluginNextoolModuleManager {
          $module = $this->modules[$moduleKey];
          if ($this->checkDependencies($module)) {
             $module->loadModuleLang();
-            $module->onInit();
+            // onInit() pode disparar migração de schema idempotente (ex.: ensureSchema quando a
+            // versão do módulo muda). A Migration do GLPI ecoa a tela de progresso ("Tarefa
+            // concluída. (0 segundo)") direto no HTML (Migration::outputMessageToHtml). Como isto
+            // roda no BOOT dos módulos (não é ação do usuário), capturamos e descartamos esse
+            // output para não vazar uma mensagem fixa no topo da página (bug no GLPI 10).
+            ob_start(static function () { return ''; }); // handler descarta (imune ao ob_flush da Migration)
+            try {
+               $module->onInit();
+            } finally {
+               ob_end_clean();
+            }
             $this->loadedModules[$moduleKey] = $module;
          }
       }
@@ -336,8 +346,13 @@ class PluginNextoolModuleManager {
          return $this->buildModuleActionResult($moduleKey, $action, false, sprintf(__('Dependências não atendidas: %s', 'nextool'), $deps), $baseContext);
       }
 
-      // Executa instalação do módulo
-      if (!$module->install()) {
+      // Executa instalação do módulo. O install de alguns módulos (aiassist, mailanalyzer) roda
+      // Migration::executeMigration, que ecoa a tela de progresso ("Tarefa concluída. (0 segundo)")
+      // no HTML. Capturamos esse output para não vazar na UI (handler imune ao ob_flush interno).
+      ob_start(static function () { return ''; });
+      $installOk = $module->install();
+      if (ob_get_level() > 0) { @ob_end_clean(); }
+      if (!$installOk) {
          return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao executar instalação do módulo', 'nextool'), $baseContext);
       }
 
@@ -439,8 +454,12 @@ class PluginNextoolModuleManager {
          $this->disableModule($moduleKey);
       }
 
-      // Executa desinstalação do módulo (apenas desregistra; NÃO executa uninstall.sql nem DROP TABLE)
-      if (!$module->uninstall()) {
+      // Executa desinstalação do módulo (apenas desregistra; NÃO executa uninstall.sql nem DROP TABLE).
+      // Capturamos eventual output de Migration (tela de progresso) para não vazar na UI.
+      ob_start(static function () { return ''; });
+      $uninstallOk = $module->uninstall();
+      if (ob_get_level() > 0) { @ob_end_clean(); }
+      if (!$uninstallOk) {
          return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao executar desinstalação do módulo', 'nextool'), $baseContext);
       }
 
@@ -1426,9 +1445,17 @@ class PluginNextoolModuleManager {
       ?string $to,
       string $moduleKey
    ): bool {
+      // Reconciliação de schema em BACKGROUND (carregamento, não ação do usuário): a
+      // Migration do GLPI ecoa a tela de progresso direto no HTML. Capturamos e
+      // descartamos esse output para não vazar mensagem fixa na UI (mesmo motivo do
+      // schema-drift guard). As queries de schema rodam normalmente.
+      ob_start(static function () { return ''; }); // handler descarta (imune ao ob_flush da Migration)
       try {
-         return $module->upgrade($from, $to) !== false;
+         $ok = $module->upgrade($from, $to) !== false;
+         ob_end_clean();
+         return $ok;
       } catch (\Throwable $e) {
+         ob_end_clean();
          Toolbox::logInFile('plugin_nextool', sprintf(
             "[ModuleManager] upgrade idempotente de %s (%s -> %s) FALHOU: %s\n",
             $moduleKey, $from ?? 'null', $to ?? 'null', $e->getMessage()
@@ -1505,13 +1532,22 @@ class PluginNextoolModuleManager {
             // install), então não há drift incremental a curar: só marca.
             $healed = true;
             if (method_exists($module, 'runMigrations')) {
+               // A Migration do GLPI ecoa a tela de progresso ("Tarefa concluída. (0 segundo)")
+               // direto no HTML (Migration::outputMessageToHtml -> <p class="center">). Este guard
+               // roda em BACKGROUND no carregamento da página (não é ação do usuário), então
+               // capturamos e descartamos esse output para não vazar uma mensagem fixa na UI
+               // (bug: "mensagem travada no hero" após desinstalar, no GLPI 10). A migração em si
+               // (as queries de schema) roda normalmente -- só o eco visual é suprimido.
+               ob_start(static function () { return ''; }); // handler descarta (imune ao ob_flush da Migration)
                try {
                   $module->runMigrations();
+                  ob_end_clean();
                   Toolbox::logInFile('plugin_nextool', sprintf(
                      "[ModuleManager] schema-drift guard: %s v%s reconciliado (runMigrations idempotente aplicado)\n",
                      $moduleKey, $diskVersion
                   ));
                } catch (\Throwable $e) {
+                  ob_end_clean();
                   $healed = false;
                   Toolbox::logInFile('plugin_nextool', sprintf(
                      "[ModuleManager] schema-drift guard: %s v%s NÃO reconciliado (runMigrations falhou: %s) -- schema pode estar ATRÁS da versão registrada\n",

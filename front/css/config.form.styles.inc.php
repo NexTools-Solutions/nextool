@@ -28,6 +28,22 @@ declare(strict_types=1);
       color: #ffffff;
    }
 
+   /* Botão "Tenho interesse" (lead de módulo GRÁTIS ainda sem artefato para este major):
+      fundo sólido na cor "free" da marca (teal), fazendo par com o "Licenciar" (roxo, pago).
+      Evita o âmbar do "Configurações" (btn-primary) e destaca a CTA -- antes era outline
+      (fundo branco). */
+   #nextool-config-form .btn-interest {
+      background-color: #0d9488;
+      border-color: #0d9488;
+      color: #ffffff;
+   }
+   #nextool-config-form .btn-interest:hover,
+   #nextool-config-form .btn-interest:focus {
+      background-color: #0f766e;
+      border-color: #0f766e;
+      color: #ffffff;
+   }
+
    #nextool-config-form .text-licensing {
       color: #7c3aed !important;
    }
@@ -103,6 +119,21 @@ declare(strict_types=1);
    #nextool-config-form .nextool-module-card .nextool-module-action:hover:not(:disabled) {
       transform: scale(1.06);
       filter: brightness(0.9);
+   }
+
+   /* Hover UNIFORME no dropdown de opções ("..."). Fora do menu, o item de ação
+      (.nextool-module-action) cresce no hover (scale/brightness) e sua transição só
+      cobre transform/filter -- o fundo mudava "seco". Já os links (Saiba Mais,
+      Changelogs) usam transition: all e o fundo animava suave. Resultado: "só alguns
+      itens tinham animação". Dentro do menu, todo item é um item de menu: mesma
+      transição de fundo para TODOS e, no item de ação, sem crescer (transform/filter
+      neutralizados). O realce de fundo em si vem do fix em nextool-tabs.css.php. */
+   #nextool-config-form .nextool-module-card .dropdown-menu .dropdown-item {
+      transition: background-color 0.15s ease, color 0.15s ease;
+   }
+   #nextool-config-form .nextool-module-card .dropdown-menu .nextool-module-action:hover:not(:disabled) {
+      transform: none;
+      filter: none;
    }
 
    #nextool-config-form .nextool-module-card .card-title a {

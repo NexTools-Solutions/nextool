@@ -133,11 +133,15 @@ class PluginNextoolEntitlementToken {
 
       // F2 -- chave pública de PRODUÇÃO embutida (espelha o coreupdater, que embute as chaves de
       // manifesto da assinatura). Distribuída COM o plugin -> todo cliente verifica out-of-the-box,
-      // sem depender de provisionamento por instância. Config/env abaixo PODEM sobrescrever o mesmo
-      // kid (rotação/teste). A privada correspondente vive só no ContainerAPI.
+      // sem depender de provisionamento por instância. A privada correspondente vive só no ContainerAPI.
+      // IMUTÁVEL (hardening 2026-07): config/env podem ADICIONAR kids novos (rotação/teste), mas
+      // NUNCA sobrescrever o kid embutido -- senão um operador com escrita no banco do GLPI-cliente
+      // trocaria a chave pública de confiança e aceitaria um entitlement forjado na graça offline.
       $builtin = self::decodePublicKey('iaT9s0NXKlR1CflBgeipzBhZMdUqNJVwWeexQomIu/Y=');
+      $builtinKeyIds = [];
       if ($builtin !== null) {
-         $keys['nextool-entitlement-1'] = $builtin;
+         $keys['nextool-entitlement-1']          = $builtin;
+         $builtinKeyIds['nextool-entitlement-1'] = true;
       }
 
       $jsonCandidates = [];
@@ -160,8 +164,12 @@ class PluginNextoolEntitlementToken {
          }
          foreach ($decoded as $keyId => $rawKey) {
             $normalizedId = trim((string) $keyId);
-            $decodedKey   = self::decodePublicKey((string) $rawKey);
-            if ($normalizedId !== '' && $decodedKey !== null) {
+            // Nunca sobrescreve o kid embutido.
+            if ($normalizedId === '' || isset($builtinKeyIds[$normalizedId])) {
+               continue;
+            }
+            $decodedKey = self::decodePublicKey((string) $rawKey);
+            if ($decodedKey !== null) {
                $keys[$normalizedId] = $decodedKey;
             }
          }
@@ -169,7 +177,7 @@ class PluginNextoolEntitlementToken {
 
       $singleKeyId  = trim((string) ($values['entitlement_signing_key_id'] ?? ''));
       $singleKeyRaw = trim((string) ($values['entitlement_signing_public_key'] ?? ''));
-      if ($singleKeyId !== '' && $singleKeyRaw !== '') {
+      if ($singleKeyId !== '' && $singleKeyRaw !== '' && !isset($builtinKeyIds[$singleKeyId])) {
          $decoded = self::decodePublicKey($singleKeyRaw);
          if ($decoded !== null) {
             $keys[$singleKeyId] = $decoded;
@@ -179,11 +187,18 @@ class PluginNextoolEntitlementToken {
       $envSingleId  = getenv('NEXTOOL_ENTITLEMENT_SIGNING_KEY_ID');
       $envSingleKey = getenv('NEXTOOL_ENTITLEMENT_SIGNING_PUBLIC_KEY');
       if ($envSingleId !== false && $envSingleKey !== false) {
-         $decoded      = self::decodePublicKey((string) $envSingleKey);
          $normalizedId = trim((string) $envSingleId);
-         if ($decoded !== null && $normalizedId !== '') {
-            $keys[$normalizedId] = $decoded;
+         if ($normalizedId !== '' && !isset($builtinKeyIds[$normalizedId])) {
+            $decoded = self::decodePublicKey((string) $envSingleKey);
+            if ($decoded !== null) {
+               $keys[$normalizedId] = $decoded;
+            }
          }
+      }
+
+      // Garantia final: reafirma o builtin -- nunca removível/sobrescrível por config/env.
+      if ($builtin !== null) {
+         $keys['nextool-entitlement-1'] = $builtin;
       }
 
       return $keys;

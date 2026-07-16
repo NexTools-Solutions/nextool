@@ -263,6 +263,18 @@ foreach ($allModuleKeys as $moduleKey) {
       $canUseModule = $catalogIsEnabled;
    }
 
+   // Módulo incompatível com a major atual (ex.: módulo G11-only visto no GLPI 10) NÃO é
+   // baixável: não há artefato para este GLPI e o card mostra "Licenciar"/"Tenho interesse"
+   // (não "Download"). Zerar can_download aqui evita que ele apareça no filtro "Download"
+   // (e no contador do chip) como se fosse baixável. O botão em si é decidido antes, pela
+   // incompatibilidade, então zerar aqui não altera o CTA exibido.
+   $isCompatibleWithMajor = PluginNextoolModuleCardHelper::isCompatibleWithCurrentGlpi(
+      ['compat_glpi_majors' => $meta['compat_glpi_majors'] ?? null]
+   );
+   if (!$isCompatibleWithMajor) {
+      $canDownloadModule = false;
+   }
+
    $hasModuleDbData = $manager->moduleHasData($moduleKey);
    $hasModuleData   = $hasModuleDbData || $moduleDownloaded;
    $moduleHasConfig = $moduleInstance && $moduleInstance->hasConfig();
@@ -291,14 +303,14 @@ foreach ($allModuleKeys as $moduleKey) {
    // 1=Update disponível, 2=Instalados DESATIVADOS ("Ativar"), 3=Ativos ("Configurações"),
    // 4=Disponível para instalar, 5=Vitrine PAID (sem licença), 6=Download (FREE), 7=Bloqueados
    // Os DESATIVADOS sobem (grupo 2, ACIMA dos ativos) para ficar fácil ver que estão off.
-   // Módulos novos (<30 dias, não instalados) recebem grupo 0 (aparecem primeiro)
+   // Buckets de exibição (menor = mais no topo). Dentro de cada um, ordena por downloads.
    $sortGroup = 7; // default: bloqueados/edge cases
    if (!empty($updateAvailable)) {
       $sortGroup = 1;
-   } elseif ($isInstalled && !$isEnabled && $moduleDownloaded) {
-      $sortGroup = 2; // Instalado mas DESATIVADO -> botão "Ativar"
    } elseif ($isEnabled && $moduleDownloaded) {
-      $sortGroup = 3; // Ativo -> botão "Configurações"
+      $sortGroup = 2; // Ativo -> botão "Configurações" (ANTES dos desativados)
+   } elseif ($isInstalled && !$isEnabled && $moduleDownloaded) {
+      $sortGroup = 3; // Instalado mas DESATIVADO -> botão "Ativar"
    } elseif ($canUseModule && $moduleDownloaded) {
       $sortGroup = 4;
    } elseif ($isPaid && !$canUseModule && $requiresRemoteDownload) {
@@ -307,14 +319,14 @@ foreach ($allModuleKeys as $moduleKey) {
       $sortGroup = 6; // FREE disponível para download
    }
 
-   // Módulos novos (<30 dias) não instalados vão para o topo
+   // Módulos novos (<30 dias): apenas marca a flag $isNewModule; NÃO promove mais ao
+   // topo -- dentro de cada bucket a prioridade é a quantidade de downloads (desempate 3).
    $isNewModule = false;
    $catalogCreation = $meta['date_creation'] ?? null;
    if ($catalogCreation !== null && !$isInstalled && $sortGroup >= 4) {
       $daysSinceCreation = (int) ((time() - strtotime($catalogCreation)) / 86400);
       if ($daysSinceCreation <= 30) {
          $isNewModule = true;
-         $sortGroup = 0;
       }
    }
 
@@ -323,6 +335,9 @@ foreach ($allModuleKeys as $moduleKey) {
       'name'              => $meta['name'] ?? $moduleKey,
       '_sort_group'       => $sortGroup,
       '_is_new'           => $isNewModule,
+      // Módulo incompatível com a major atual (ex.: módulo G11-only visto no GLPI 10):
+      // continua no catálogo, mas vai para o FIM da lista (critério 0 do usort).
+      '_incompatible'     => !$isCompatibleWithMajor,
       'description'       => $meta['description'] ?? __('Descrição não fornecida.', 'nextool'),
       'version'           => $isInstalled && $installedVersion ? $installedVersion : $availableVersion,
       'installed_version' => $installedVersion,
@@ -389,6 +404,8 @@ foreach ($allModuleKeys as $moduleKey) {
 }
 
 usort($modulesState, static function ($a, $b) {
+   // (incompatíveis não são mais forçados ao fim: viraram vitrine com Licenciar/Interesse,
+   //  precisam ficar visíveis para conversão -- sorteiam pelos buckets/downloads normais.)
    // 1. Grupo de estado (menor = mais prioritário)
    $ga = $a['_sort_group'] ?? 7;
    $gb = $b['_sort_group'] ?? 7;

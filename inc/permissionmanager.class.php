@@ -252,7 +252,7 @@ class PluginNextoolPermissionManager {
       self::ensureRightExists(self::RIGHT_ADMIN_GLOBAL, $migration, [Config::$rightname => UPDATE], self::GLOBAL_BIT);
       self::ensureRightExists(self::RIGHT_BASE, $migration, [Config::$rightname => UPDATE], self::BASE_MASK);
 
-      $migration->executeMigration();
+      PluginNextoolMigrationHelper::runSilently($migration);
       self::migrateLegacyRights();
 
       // Apos conceder os direitos no banco, recarrega-os na sessao ATIVA: o admin que
@@ -321,7 +321,7 @@ class PluginNextoolPermissionManager {
          self::$syncedModuleRights[$rightName] = true;
       }
       if ($changes) {
-         $migration->executeMigration();
+         PluginNextoolMigrationHelper::runSilently($migration);
       }
    }
 

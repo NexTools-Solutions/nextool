@@ -33,7 +33,7 @@ declare(strict_types=1);
 
          <?php
          $GLOBALS['nextool_validation_attempts_forcetab_url'] = Plugin::getWebDir('nextool')
-            . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$4';
+            . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$5';
 
          $_GET['embedded'] = '1';
          if (empty($_GET['sort'])) {

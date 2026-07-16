@@ -59,7 +59,7 @@ class PluginNextoolValidationAttempt extends PluginNextoolBaseAuditLog implement
          return $GLOBALS['nextool_validation_attempts_forcetab_url'];
       }
       return Plugin::getWebDir('nextool')
-         . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$4';
+         . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$5';
    }
 
    public static function getDefaultSearchRequest(): array {

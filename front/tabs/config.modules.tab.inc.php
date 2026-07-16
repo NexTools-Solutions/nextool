@@ -74,8 +74,10 @@ declare(strict_types=1);
                      if ($tier === 'FREE')                                            $fc['free']++;
                      if ($tier === 'DEV')                                             $fc['dev']++;
                      if ($tier !== 'FREE' && $tier !== 'DEV')                         $fc['licensed']++;
-                     $cat = $m['category'] ?? '';
-                     if ($cat !== '') {
+                     // category pode trazer VÁRIAS categorias separadas por vírgula (N:N):
+                     // conta o módulo em cada uma. Valor único vira lista de 1 elemento
+                     // (retrocompatível com o catálogo antigo, 1 categoria por módulo).
+                     foreach (array_filter(array_map('trim', explode(',', (string) ($m['category'] ?? '')))) as $cat) {
                         $categoryCounters[$cat] = ($categoryCounters[$cat] ?? 0) + 1;
                      }
                   }
@@ -205,9 +207,18 @@ declare(strict_types=1);
                                  <?php
                                     $installedVersion = $module['installed_version'] ?? null;
                                     $availableVersion = $module['available_version'] ?? null;
-                                    $versionLabel = $installedVersion
-                                       ? 'v' . $installedVersion
-                                       : ($availableVersion ? 'v' . $availableVersion : '');
+                                    // Com atualização disponível, mostra "atual → nova" para deixar
+                                    // claro qual versão será baixada (antes só mostrava a instalada).
+                                    if (!empty($module['update_available']) && $installedVersion && $availableVersion
+                                        && $installedVersion !== $availableVersion) {
+                                       $versionLabel = 'v' . $installedVersion . ' → v' . $availableVersion;
+                                    } elseif ($installedVersion) {
+                                       $versionLabel = 'v' . $installedVersion;
+                                    } elseif ($availableVersion) {
+                                       $versionLabel = 'v' . $availableVersion;
+                                    } else {
+                                       $versionLabel = '';
+                                    }
                                  ?>
                                  <small class="text-muted">
                                     <?php if ($versionLabel !== ''): ?><?php echo Html::entities_deep($versionLabel); ?> · <?php endif; ?>

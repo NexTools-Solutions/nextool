@@ -36,14 +36,30 @@ header('Cache-Control: public, max-age=3600');
  * telas do base (hero do plano, abas), colapsando-os a ~1 caractere de largura:
  * o texto quebra 1 char por linha e a pagina chega a ~34000px de altura.
  * Afeta QUALQUER bloco com `.small` (div do hero, ul.nextool-features dos cards,
- * p, etc.). Restauramos a largura APENAS dentro dos nossos containers e apenas
- * para o que NAO for celula de tabela (`:not(td):not(th)` -> o encolhimento de
- * coluna do core em <td class="small"> das grades Search embarcadas fica intacto).
+ * <p class="small"> do modal de auto-update, etc.). Restauramos a largura em TODO
+ * container do plugin -- casado por `nextool` na classe ([class*=]) ou no id
+ * ([id*=], ex.: #nextool-core-update-modal) e pelas abas ([id^="rt-tab-"]) -- e
+ * apenas para o que NAO for celula de tabela (`:not(td):not(th)` -> o encolhimento
+ * de coluna do core em <td class="small"> das grades Search embarcadas fica intacto).
  * O seletor do core tem ID (#page), entao precisamos de !important para venca-lo.
- * No GLPI 11 a regra do core nao existe -> no-op.
+ * No GLPI 11 a regra do core nao existe -> no-op. (Escopo amplo de proposito: evita
+ * o whack-a-mole de listar container por container -- ver 6.0.1 que perdeu o modal.)
  */
-.nextool-hero-actions .small:not(td):not(th),
-.nextool-tab-card .small:not(td):not(th),
+[class*="nextool"] .small:not(td):not(th),
+[id*="nextool"] .small:not(td):not(th),
 [id^="rt-tab-"] .small:not(td):not(th) {
    width: auto !important;
+}
+
+/*
+ * Hover UNIFORME nos itens do dropdown de opções do módulo. No GLPI 10 o hover
+ * do Bootstrap fica inconsistente entre item de ação (a.nextool-module-action) e
+ * link simples (a.dropdown-item), dando "efeito" só em alguns. Aplica o mesmo
+ * realce e cursor a TODOS os itens (exceto os desabilitados). Escopado ao dropdown
+ * dos cards do plugin. No GLPI 11 apenas reforça o comportamento nativo (idempotente).
+ */
+[class*="nextool"] .dropdown-menu .dropdown-item:not(.disabled):hover,
+[class*="nextool"] .dropdown-menu .dropdown-item:not(.disabled):focus {
+   background-color: rgba(0, 0, 0, 0.06);
+   cursor: pointer;
 }
