@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.1.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.1.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -333,6 +333,19 @@ function plugin_init_nextool() {
                   }
                   @touch($rightsSyncFlag);
                }
+            }
+
+            // Sessao stale: o file-flag acima ressincroniza o BANCO quando a versao muda, mas a
+            // sessao web carregada ANTES de um update (ex.: self-update, que nao passa por
+            // plugin_nextool_install na sessao ativa do usuario) nao recebe os direitos novos --
+            // e o gate da interface central le da SESSAO (Session::haveRight), nao do banco. Sem
+            // isto, o super-direito so passaria a valer apos deslogar/relogar. Recarrega os
+            // direitos 'nextool*'/'plugin_nextool*' do perfil ativo 1x por sessao por versao
+            // (1 query; no-op quando nao ha login).
+            if (isset($_SESSION['glpiactiveprofile']['id'])
+                && (($_SESSION['nextool_session_rights_v'] ?? null) !== PLUGIN_NEXTOOL_VERSION)) {
+               PluginNextoolPermissionManager::reloadActiveProfileRights();
+               $_SESSION['nextool_session_rights_v'] = PLUGIN_NEXTOOL_VERSION;
             }
 
             // Registra classes Config de módulos standalone instalados (inclusive desativados)
