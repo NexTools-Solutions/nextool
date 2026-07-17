@@ -612,8 +612,13 @@ class PluginNextoolCoreUpdater {
          }
 
          $this->clearStagingArtifacts();
+         // Limpa também latest_available_version: o hero mostra o botão de atualizar quando
+         // QUALQUER de update_available / staged_target_version / latest_available_version está
+         // setado (OR). Sem zerar latest aqui, o botão persistia após aplicar o update e só sumia
+         // no próximo sync (que reavalia current>=latest e zera). Agora some assim que aplica.
          $state = $this->persistState([
             'update_available' => 0,
+            'latest_available_version' => '',
             'staged_target_version' => null,
             'staged_source' => null,
             'staged_at' => null,

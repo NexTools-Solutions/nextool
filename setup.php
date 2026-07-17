@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.1.1');
+define('PLUGIN_NEXTOOL_VERSION', '6.1.2');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -528,9 +528,20 @@ function _plugin_nextool_register_crons() {
       }
    }
    if (class_exists('PluginNextoolCronCatalogSync')) {
-      CronTask::register('PluginNextoolCronCatalogSync', 'catalogSync', DAY_TIMESTAMP, [
+      CronTask::register('PluginNextoolCronCatalogSync', 'catalogSync', 6 * HOUR_TIMESTAMP, [
          'comment' => 'Sincroniza o catálogo de módulos NexTool com a plataforma',
          'mode'    => CronTask::MODE_EXTERNAL,
       ]);
+      // register() faz early-return se a task já existe -> não atualiza a frequência de quem
+      // instalou com o antigo DAY_TIMESTAMP (24h). Migra 24h -> 6h SÓ para quem está no default
+      // antigo, preservando qualquer ajuste manual de frequência feito pelo admin.
+      global $DB;
+      if (isset($DB) && $DB->tableExists('glpi_crontasks')) {
+         $DB->update('glpi_crontasks', ['frequency' => 6 * HOUR_TIMESTAMP], [
+            'itemtype'  => 'PluginNextoolCronCatalogSync',
+            'name'      => 'catalogSync',
+            'frequency' => DAY_TIMESTAMP,
+         ]);
+      }
    }
 }
