@@ -194,7 +194,9 @@ class PluginNextoolCoreUpdater {
          $this->appendCheck($checks, $blocking, 'lock_free', 'blocker', true, __('Lock ignorado (chamador já detém o lock).', 'nextool'));
       }
 
-      $requiredExtensions = ['curl', 'zip', 'sodium'];
+      // curl (download) e phar (descompacta o .tar.gz via PharData -- built-in, SEM ext-zip,
+      // que só serviria ao formato .zip legado, não mais gerado) são obrigatórias.
+      $requiredExtensions = ['curl', 'phar'];
       $missingExtensions = [];
       foreach ($requiredExtensions as $extension) {
          if (!extension_loaded($extension)) {
@@ -206,6 +208,18 @@ class PluginNextoolCoreUpdater {
          $extensionsOk
             ? __('Extensões PHP necessárias estão disponíveis.', 'nextool')
             : sprintf(__('Extensões PHP ausentes: %s', 'nextool'), implode(', ', $missingExtensions))
+      );
+
+      // Verificador de assinatura Ed25519: extensão sodium (preferida) OU o openssl do
+      // sistema (>= 3.0, via proc_open) como fallback. Fail-closed: sem nenhum, bloqueia.
+      $hasSodium = extension_loaded('sodium');
+      $hasVerifier = $hasSodium || $this->opensslCanVerifyEd25519();
+      $this->appendCheck($checks, $blocking, 'signature_verifier', 'blocker', $hasVerifier,
+         $hasSodium
+            ? __('Verificação de assinatura via extensão sodium.', 'nextool')
+            : ($hasVerifier
+               ? __('Verificação de assinatura via openssl do sistema (fallback -- sodium ausente).', 'nextool')
+               : __('Nenhum verificador de assinatura: habilite a extensão sodium (núcleo do PHP 7.2+) ou o openssl (>= 3.0) do sistema.', 'nextool'))
       );
 
       $connectivityResult = [
@@ -1018,14 +1032,13 @@ class PluginNextoolCoreUpdater {
       }
    }
 
-   private function assertManifestSignatureValid(array $manifest): void {
-      if (!extension_loaded('sodium')) {
-         throw new RuntimeException(__('Extensão sodium ausente para validação de assinatura Ed25519.', 'nextool'));
-      }
+   private const ED25519_SIGNATURE_BYTES = 64;
+   private const ED25519_PUBLICKEY_BYTES = 32;
 
+   private function assertManifestSignatureValid(array $manifest): void {
       $keyId = trim((string)($manifest['signature_key_id'] ?? ''));
       $signatureRaw = base64_decode((string)($manifest['signature'] ?? ''), true);
-      if ($keyId === '' || $signatureRaw === false || strlen($signatureRaw) !== SODIUM_CRYPTO_SIGN_BYTES) {
+      if ($keyId === '' || $signatureRaw === false || strlen($signatureRaw) !== self::ED25519_SIGNATURE_BYTES) {
          throw new RuntimeException(__('Assinatura do manifesto inválida ou ausente.', 'nextool'));
       }
 
@@ -1037,9 +1050,113 @@ class PluginNextoolCoreUpdater {
       $payload = $this->buildManifestSignaturePayload($manifest);
       $publicKey = $trustedKeys[$keyId];
 
-      if (!sodium_crypto_sign_verify_detached($signatureRaw, $payload, $publicKey)) {
+      if (!$this->ed25519Verify($signatureRaw, $payload, $publicKey)) {
          throw new RuntimeException(__('Assinatura Ed25519 do manifesto não confere.', 'nextool'));
       }
+   }
+
+   /**
+    * Verifica uma assinatura Ed25519 detached. Cadeia de verificadores, FAIL-CLOSED
+    * (nunca aceita sem conferir):
+    *   1) ext-sodium -- preferido: nativo do core do PHP 7.2+, rápido;
+    *   2) fallback: binário `openssl` do sistema (>= 3.0, `pkeyutl -rawin`), quando
+    *      proc_open está habilitado -- cobre servidores sem a extensão sodium.
+    * Se nenhum estiver disponível, lança e o update é bloqueado (nunca aplicado às cegas).
+    *
+    * Plano B futuro (só se muitos clientes ficarem sem sodium E sem openssl/exec): embutir
+    * o polyfill puro-PHP paragonie/sodium_compat (~1 MB; funciona sem extensão e sem exec).
+    * Ver CORE_UPDATE_SIGNATURE.md (raiz do plugin). Decisão 2026-07: openssl primeiro.
+    */
+   private function ed25519Verify(string $signatureRaw, string $payload, string $publicKeyRaw): bool {
+      if (extension_loaded('sodium')) {
+         return sodium_crypto_sign_verify_detached($signatureRaw, $payload, $publicKeyRaw);
+      }
+      if ($this->opensslCanVerifyEd25519()) {
+         return $this->ed25519VerifyViaOpenssl($signatureRaw, $payload, $publicKeyRaw);
+      }
+      throw new RuntimeException(__('Nenhum verificador de assinatura disponível: habilite a extensão sodium (núcleo do PHP 7.2+) ou o openssl (>= 3.0) do sistema com proc_open habilitado.', 'nextool'));
+   }
+
+   /**
+    * O `openssl` do sistema consegue verificar Ed25519? Requer proc_open habilitado e
+    * OpenSSL >= 3.0 (o `-rawin` do pkeyutl para Ed25519 só existe a partir da 3.0).
+    */
+   public function opensslCanVerifyEd25519(): bool {
+      static $cached = null;
+      if ($cached !== null) {
+         return $cached;
+      }
+      if (!function_exists('proc_open')) {
+         return $cached = false;
+      }
+      $res = $this->runOpenssl(['version']);
+      if ($res === null || preg_match('/OpenSSL\s+(\d+)\./i', $res['stdout'], $m) !== 1 || (int)$m[1] < 3) {
+         return $cached = false;
+      }
+      return $cached = true;
+   }
+
+   /**
+    * Verifica a assinatura Ed25519 pelo `openssl` do sistema. A chave pública raw (32 bytes)
+    * vira PEM SPKI via prefixo DER fixo do Ed25519. Nenhum dado é secreto (chave pública,
+    * payload e assinatura são públicos). Exige exit code 0 E a confirmação textual.
+    */
+   private function ed25519VerifyViaOpenssl(string $signatureRaw, string $payload, string $publicKeyRaw): bool {
+      if (strlen($publicKeyRaw) !== self::ED25519_PUBLICKEY_BYTES) {
+         return false;
+      }
+      $der = pack('H*', '302a300506032b6570032100') . $publicKeyRaw; // SubjectPublicKeyInfo do Ed25519
+      $pem = "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END PUBLIC KEY-----\n";
+
+      $tmp = sys_get_temp_dir();
+      $keyFile = @tempnam($tmp, 'nxk');
+      $msgFile = @tempnam($tmp, 'nxm');
+      $sigFile = @tempnam($tmp, 'nxs');
+      if ($keyFile === false || $msgFile === false || $sigFile === false) {
+         foreach ([$keyFile, $msgFile, $sigFile] as $f) { if (is_string($f)) { @unlink($f); } }
+         return false;
+      }
+      try {
+         foreach ([$keyFile, $msgFile, $sigFile] as $f) { @chmod($f, 0600); }
+         if (file_put_contents($keyFile, $pem) === false
+             || file_put_contents($msgFile, $payload) === false
+             || file_put_contents($sigFile, $signatureRaw) === false) {
+            return false;
+         }
+         $res = $this->runOpenssl(['pkeyutl', '-verify', '-pubin', '-inkey', $keyFile, '-rawin', '-in', $msgFile, '-sigfile', $sigFile]);
+         if ($res === null || $res['code'] !== 0) {
+            return false;
+         }
+         return stripos($res['stdout'] . "\n" . $res['stderr'], 'Signature Verified Successfully') !== false;
+      } finally {
+         @unlink($keyFile); @unlink($msgFile); @unlink($sigFile);
+      }
+   }
+
+   /**
+    * Executa `openssl <args>` SEM shell (proc_open com array de argumentos -> imune a
+    * injeção; não precisa de escapeshell). Retorna null se não conseguiu iniciar o processo.
+    *
+    * @param string[] $args
+    * @return array{code:int,stdout:string,stderr:string}|null
+    */
+   private function runOpenssl(array $args): ?array {
+      if (!function_exists('proc_open')) {
+         return null;
+      }
+      $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+      $pipes = [];
+      $proc = @proc_open(array_merge(['openssl'], $args), $descriptors, $pipes);
+      if (!is_resource($proc)) {
+         return null;
+      }
+      @fclose($pipes[0]);
+      $stdout = (string) @stream_get_contents($pipes[1]);
+      $stderr = (string) @stream_get_contents($pipes[2]);
+      @fclose($pipes[1]);
+      @fclose($pipes[2]);
+      $code = proc_close($proc);
+      return ['code' => (int) $code, 'stdout' => $stdout, 'stderr' => $stderr];
    }
 
    /**

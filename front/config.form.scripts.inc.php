@@ -531,8 +531,13 @@ function nextoolInitCoreUpdateModal() {
       },
       'php_extensions': {
          title: <?php echo json_encode(__('Extensões PHP ausentes', 'nextool')); ?>,
-         desc: <?php echo json_encode(__('A atualização requer as extensões: curl, zip e sodium.', 'nextool')); ?>,
-         fix: <?php echo json_encode(__('Instale as extensões faltantes (ex: apt install php-curl php-zip php-sodium) e reinicie o PHP-FPM ou Apache.', 'nextool')); ?>
+         desc: <?php echo json_encode(__('A atualização precisa das extensões PHP curl (baixar o pacote) e phar (descompactar o .tar.gz).', 'nextool')); ?>,
+         fix: <?php echo json_encode(__('curl e phar normalmente já vêm habilitados no PHP. Habilite os que faltarem e reinicie o PHP-FPM/Apache.', 'nextool')); ?>
+      },
+      'signature_verifier': {
+         title: <?php echo json_encode(__('Sem verificador de assinatura do pacote', 'nextool')); ?>,
+         desc: <?php echo json_encode(__('Antes de aplicar, o NexTool confere a assinatura oficial do pacote. Isso exige a extensão sodium OU o openssl do sistema (versão 3.0+).', 'nextool')); ?>,
+         fix: <?php echo json_encode(__('Habilite a extensão sodium - faz parte do núcleo do PHP 7.2+, não é biblioteca de terceiros (ex.: apt install php-sodium no Debian/Ubuntu, ou extension=sodium no php.ini) - e reinicie o PHP-FPM/Apache. Em alternativa, garanta o openssl 3.0+ no servidor com a função proc_open habilitada.', 'nextool')); ?>
       },
       'containerapi_connectivity': {
          title: <?php echo json_encode(__('Sem conexão com o servidor de atualizações', 'nextool')); ?>,
