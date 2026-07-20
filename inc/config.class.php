@@ -35,6 +35,14 @@ class PluginNextoolConfig extends CommonDBTM {
     */
    const PROVISIONING_CONTEXT = 'plugin:nextool_provisioning';
 
+   /**
+    * Context das credenciais de SERVIÇOS GERENCIADOS entregues pelo servidor no /validate
+    * (managed-services-v1). 1 chave por serviço (ex.: 'whatsapp'), valor JSON com o token
+    * CIFRADO (SecretVault). Server-driven: o plugin nunca edita -- só consome via
+    * getManagedService(). Limpo no uninstall (LGPD); re-entregue no próximo validate.
+    */
+   const MANAGED_SERVICES_CONTEXT = 'plugin:nextool_managed_services';
+
    /** Origens permitidas no formulário de contato (LO-01). Fonte única para validação + template. */
    public const CONTACT_SOURCES = [
       'canais_jmba',
@@ -234,6 +242,67 @@ class PluginNextoolConfig extends CommonDBTM {
     * context dedicado que NÃO é apagado no uninstall. Só grava valores não
     * vazios (não sobrescreve um segredo válido por vazio).
     */
+   /**
+    * Credenciais da instância gerenciada de um serviço (ex.: 'whatsapp'), entregues pelo
+    * servidor no Sincronizar. Decifra o token INTERNAMENTE (SecretVault) -- o chamador recebe
+    * o valor pronto para uso e NUNCA deve logá-lo/ecoá-lo no DOM.
+    *
+    * @return array{status:string, api_url:string, instance_name:string,
+    *               instance_token_plain:string, expires_at:string, grace_until:string,
+    *               renewal_url:string}|null null = sem instância entregue/dados inválidos
+    */
+   public static function getManagedService(string $service): ?array {
+      $stored = Config::getConfigurationValues(self::MANAGED_SERVICES_CONTEXT);
+      $raw = isset($stored[$service]) ? (string) $stored[$service] : '';
+      if ($raw === '') {
+         return null;
+      }
+      $data = json_decode($raw, true);
+      if (!is_array($data)) {
+         return null;
+      }
+
+      $apiUrl = isset($data['api_url']) ? (string) $data['api_url'] : '';
+      $instanceName = isset($data['instance_name']) ? (string) $data['instance_name'] : '';
+      if ($apiUrl === '' || $instanceName === '') {
+         return null;
+      }
+
+      $tokenPlain = '';
+      $encrypted = isset($data['instance_token']) ? (string) $data['instance_token'] : '';
+      if ($encrypted !== '') {
+         require_once NEXTOOL_PHP_DIR . '/inc/secretvault.class.php';
+         $tokenPlain = PluginNextoolSecretVault::decrypt($encrypted);
+      }
+
+      $status = isset($data['status']) ? (string) $data['status'] : '';
+      if (!in_array($status, ['active', 'suspended', 'pending_provisioning'], true)) {
+         $status = $status !== '' ? $status : 'pending_provisioning';
+      }
+
+      return [
+         'status'               => $status,
+         'api_url'              => $apiUrl,
+         'instance_name'        => $instanceName,
+         'instance_token_plain' => $tokenPlain,
+         'expires_at'           => isset($data['expires_at']) ? (string) $data['expires_at'] : '',
+         'grace_until'          => isset($data['grace_until']) ? (string) $data['grace_until'] : '',
+         'renewal_url'          => isset($data['renewal_url']) ? (string) $data['renewal_url'] : '',
+      ];
+   }
+
+   /** Há credencial de serviço gerenciado entregue? (SEM decifrar o token -- barato p/ UI). */
+   public static function hasManagedService(string $service): bool {
+      $stored = Config::getConfigurationValues(self::MANAGED_SERVICES_CONTEXT);
+      $raw = isset($stored[$service]) ? (string) $stored[$service] : '';
+      if ($raw === '') {
+         return false;
+      }
+      $data = json_decode($raw, true);
+
+      return is_array($data) && !empty($data['api_url']) && !empty($data['instance_name']);
+   }
+
    public static function setProvisioning(string $clientIdentifier, string $clientSecret): void {
       $clientIdentifier = trim($clientIdentifier);
       $clientSecret     = trim($clientSecret);

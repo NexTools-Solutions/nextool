@@ -47,7 +47,7 @@ class PluginNextoolLicenseValidator {
     * este plugin verifica o token de entitlement (Ed25519, offline) e trata metadata vazia na
     * negação sem quebrar. Gate de compatibilidade por capability (nunca por versão numérica).
     */
-   public const NEXTOOL_CAPABILITIES = 'entitlement-v1';
+   public const NEXTOOL_CAPABILITIES = 'entitlement-v1,managed-services-v1';
 
    /**
     * Namespaces de configuração persistidos via Config::setConfigurationValues por este validator.
@@ -57,6 +57,7 @@ class PluginNextoolLicenseValidator {
       'plugin:nextool_billing',
       'plugin:nextool_entitlement',
       'plugin:nextool_core_update',
+      'plugin:nextool_managed_services',
    ];
 
    /**
@@ -93,6 +94,84 @@ class PluginNextoolLicenseValidator {
       $dist['base_url'] = $url;
       self::persistConfig('plugin:nextool_distribution', $dist, 'platform_url');
       Toolbox::logInFile('plugin_nextool', sprintf('LicenseValidator: platform_url adotada do servidor: %s', $url));
+   }
+
+   /**
+    * Persiste o bloco managed_services do /validate no context plugin:nextool_managed_services.
+    * 1 chave por serviço (ex.: 'whatsapp' <- whatsapp_instance), valor JSON com o token CIFRADO
+    * via PluginNextoolSecretVault (fail-secure: encrypt() vazio NUNCA sobrescreve um token bom).
+    * Serviço ausente do bloco é removido (sem instância = sem credencial local).
+    */
+   private static function persistManagedServices(array $services): void {
+      require_once NEXTOOL_PHP_DIR . '/inc/secretvault.class.php';
+      require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+
+      $context = PluginNextoolConfig::MANAGED_SERVICES_CONTEXT;
+      $stored = Config::getConfigurationValues($context);
+
+      // Mapa bloco-do-servidor -> chave local do serviço.
+      $map = ['whatsapp_instance' => 'whatsapp'];
+
+      foreach ($map as $serverKey => $localKey) {
+         if (!isset($services[$serverKey]) || !is_array($services[$serverKey])) {
+            // Sem instância deste serviço -> remover credencial local (se houver).
+            if (array_key_exists($localKey, $stored)) {
+               self::persistConfig($context, [$localKey => ''], 'managed_services clear ' . $localKey);
+            }
+            continue;
+         }
+
+         $svc = $services[$serverKey];
+         $plainToken = isset($svc['instance_token']) ? (string) $svc['instance_token'] : '';
+
+         $encryptedToken = '';
+         if ($plainToken !== '') {
+            $encryptedToken = PluginNextoolSecretVault::encrypt($plainToken);
+            if ($encryptedToken === '') {
+               // Vault indisponível (GLPIKey/sodium): preserva o token anterior em vez de
+               // gravar vazio/claro. NUNCA persistir o token em claro.
+               $previous = self::decodeStoredManagedService((string) ($stored[$localKey] ?? ''));
+               $encryptedToken = (string) ($previous['instance_token'] ?? '');
+               Toolbox::logInFile('plugin_nextool',
+                  '[SECURITY] managed_services: SecretVault indisponível; token anterior preservado (' . $localKey . ")\n");
+            }
+         }
+
+         $payload = [
+            'status'         => isset($svc['status']) ? (string) $svc['status'] : '',
+            'api_url'        => isset($svc['api_url']) ? (string) $svc['api_url'] : '',
+            'instance_name'  => isset($svc['instance_name']) ? (string) $svc['instance_name'] : '',
+            'instance_token' => $encryptedToken,
+            'expires_at'     => isset($svc['expires_at']) ? (string) $svc['expires_at'] : '',
+            'grace_until'    => isset($svc['grace_until']) ? (string) $svc['grace_until'] : '',
+            'renewal_url'    => isset($svc['renewal_url']) ? (string) $svc['renewal_url'] : '',
+            'updated_at'     => date('c'),
+         ];
+
+         self::persistConfig($context, [$localKey => json_encode($payload, JSON_UNESCAPED_SLASHES)], 'managed_services ' . $localKey);
+      }
+   }
+
+   /** Remove TODAS as credenciais de serviços gerenciados (sem instância no servidor). */
+   private static function clearManagedServices(): void {
+      require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+      $context = PluginNextoolConfig::MANAGED_SERVICES_CONTEXT;
+      $stored = Config::getConfigurationValues($context);
+      foreach (array_keys($stored) as $key) {
+         if ($stored[$key] === '' || $stored[$key] === null) {
+            continue;
+         }
+         self::persistConfig($context, [$key => ''], 'managed_services clear');
+      }
+   }
+
+   /** Decodifica um valor armazenado do context managed_services ('' -> []). */
+   private static function decodeStoredManagedService(string $raw): array {
+      if ($raw === '') {
+         return [];
+      }
+      $decoded = json_decode($raw, true);
+      return is_array($decoded) ? $decoded : [];
    }
 
    /**
@@ -582,6 +661,17 @@ class PluginNextoolLicenseValidator {
          // Item 6: a URL da plataforma é controlada pelo servidor (campo read-only no plugin).
          if (!empty($responseData['platform_url'])) {
             self::adoptPlatformUrl((string) $responseData['platform_url']);
+         }
+
+         // Instâncias gerenciadas (managed-services-v1): credenciais server-driven da instância
+         // Evolution do ambiente. Presente -> persiste (token cifrado). AUSENTE: só limpa com
+         // resposta autenticada E válida (nunca por falha transitória/negação -- e um servidor
+         // sem a feature não pode apagar credenciais boas; a ContainerAPI a trata como aditiva
+         // permanente).
+         if (isset($responseData['managed_services']) && is_array($responseData['managed_services'])) {
+            self::persistManagedServices($responseData['managed_services']);
+         } elseif ($valid) {
+            self::clearManagedServices();
          }
 
          // Persistir alertas recebidos

@@ -218,6 +218,10 @@ function plugin_nextool_uninstall() {
    // Remove configurações do self-updater e da distribuição em glpi_configs.
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_core_update']);
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_distribution']);
+   // Credenciais de serviços gerenciados (token da instância Evolution): APAGAR no uninstall
+   // (LGPD -- credencial não fica em banco de plugin desinstalado). São re-entregues pelo
+   // servidor no primeiro Sincronizar após reinstalar.
+   $DB->delete('glpi_configs', ['context' => 'plugin:nextool_managed_services']);
    // ATENÇÃO: NÃO apagar 'plugin:nextool_provisioning' (PluginNextoolConfig::PROVISIONING_CONTEXT).
    // O vínculo de provisionamento (client_identifier + segredo HMAC) é estado do
    // AMBIENTE, não config do plugin. Preservá-lo permite que reinstalar no mesmo
