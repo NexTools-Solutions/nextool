@@ -594,14 +594,19 @@ class PluginNextoolModuleManager {
          PluginNextoolMainConfig::clearModuleConfigTabsCache();
       }
 
-      // Disable de cron tasks só no path de disable (evita "função indefinida" em cron)
-      if (!$enabled) {
-         $cronIterator = $DB->request([
-            'FROM'  => 'glpi_crontasks',
-            'WHERE' => ['itemtype' => ['LIKE', 'PluginNextool' . ucfirst($moduleKey) . '%']]
-         ]);
-         foreach ($cronIterator as $cronRow) {
-            $DB->update('glpi_crontasks', ['state' => 0], ['id' => $cronRow['id']]);
+      // Cron tasks: SIMÉTRICO ao ciclo do módulo. Ao DESABILITAR, desliga (state=0) as crons do
+      // módulo (evita "função indefinida" quando o cron dispara com o módulo off). Ao REABILITAR,
+      // RELIGA (state=1 / WAITING) -- senão um módulo desativado e reativado ficaria com as crons
+      // mortas para sempre (o CronTask::register do install é idempotente e NÃO recupera o state).
+      // Casa o itemtype por 'PluginNextool<Modulekey>%'. Só grava quando o state muda.
+      $cronState = $enabled ? 1 : 0; // 1 = CronTask::STATE_WAITING, 0 = STATE_DISABLED
+      $cronIterator = $DB->request([
+         'FROM'  => 'glpi_crontasks',
+         'WHERE' => ['itemtype' => ['LIKE', 'PluginNextool' . ucfirst($moduleKey) . '%']]
+      ]);
+      foreach ($cronIterator as $cronRow) {
+         if ((int)$cronRow['state'] !== $cronState) {
+            $DB->update('glpi_crontasks', ['state' => $cronState], ['id' => $cronRow['id']]);
          }
       }
 
