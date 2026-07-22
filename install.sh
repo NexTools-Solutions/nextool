@@ -48,7 +48,8 @@ usage() {
 Instalador do plugin base NexTool para GLPI 10/11.
 
 Opcoes:
-  --glpi-root=CAMINHO        Raiz do GLPI (default: pasta atual)
+  --glpi-root=CAMINHO        Raiz do GLPI (default: detecta automaticamente -- pasta atual
+                             ou uma varredura pelos locais mais comuns de instalacao)
   --web-user=USUARIO         Forca o usuario do servidor web (default: detecta automaticamente)
   --force                    Reinstala mesmo se ja existir a mesma versao (faz backup antes)
   --allow-unverified-package Permite prosseguir sem verificacao de SHA256 se o release nao
@@ -126,10 +127,44 @@ is_glpi_root() {
   return 0
 }
 
-# Decide qual pasta usar como raiz do GLPI: se o operador passou --glpi-root,
-# usa exatamente essa (e confere que faz sentido). Senao, assume que o script
-# esta sendo executado de dentro da propria pasta do GLPI (o jeito mais comum
-# de rodar este tipo de instalador: "entre na pasta do GLPI e rode o script").
+# Varre um punhado de locais onde GLPI costuma ser instalado (paths exatos
+# primeiro, depois uma busca limitada por baixo de raizes web comuns) e
+# devolve, por linha, cada pasta encontrada que passa em is_glpi_root(). Nao
+# faz nenhuma suposicao "as cegas" -- so aceita o que realmente bate com os
+# marcadores de uma instalacao GLPI de verdade.
+#
+# A busca com "find" e limitada de proposito (--maxdepth 4, so por baixo de
+# um punhado de raizes conhecidas) para nao varrer o disco inteiro -- o
+# mesmo cuidado que se toma com grep -r na raiz "/".
+discover_glpi_roots() {
+  local exact_candidates=(/var/www/glpi /var/www/html/glpi /var/www/html /usr/share/glpi /srv/glpi /opt/glpi)
+  local c
+  for c in "${exact_candidates[@]}"; do
+    if [[ -d "$c" ]] && is_glpi_root "$c"; then
+      printf '%s\n' "$c"
+    fi
+  done
+
+  local search_roots=(/var/www /srv /opt /usr/share)
+  local marker candidate
+  for c in "${search_roots[@]}"; do
+    [[ -d "$c" ]] || continue
+    while IFS= read -r -d '' marker; do
+      candidate="$(dirname "$(dirname "$marker")")"
+      is_glpi_root "$candidate" && printf '%s\n' "$candidate"
+    done < <(find "$c" -maxdepth 4 -type f -path '*/inc/includes.php' -print0 2>/dev/null)
+  done
+}
+
+# Decide qual pasta usar como raiz do GLPI, na seguinte ordem de confianca:
+#   1. --glpi-root explicito (o operador sabe o caminho, usa exatamente esse).
+#   2. A pasta atual, se for uma raiz GLPI valida (rodar de dentro da pasta
+#      do GLPI e o jeito mais comum de usar este tipo de instalador).
+#   3. Uma varredura real do sistema de arquivos (discover_glpi_roots), caso
+#      nenhuma das duas opcoes acima resolva -- assim o script encontra a
+#      instalacao mesmo que o operador tenha rodado de outro lugar.
+# So desiste (e pede --glpi-root manual) se a varredura nao achar nada, ou
+# se achar mais de uma instalacao e nao houver como decidir sozinho.
 resolve_glpi_root() {
   if [[ -n "$GLPI_ROOT_OVERRIDE" ]]; then
     is_glpi_root "$GLPI_ROOT_OVERRIDE" || die "diretorio informado em --glpi-root nao parece ser uma raiz GLPI valida: $GLPI_ROOT_OVERRIDE"
@@ -142,7 +177,32 @@ resolve_glpi_root() {
     return
   fi
 
-  die "esta pasta nao parece ser a raiz do GLPI. Rode 'cd /caminho/do/glpi' antes, ou informe --glpi-root=/caminho/do/glpi"
+  log "Pasta atual nao e a raiz do GLPI -- procurando a instalacao real no sistema..." >&2
+
+  local found=()
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    local already=0 f
+    for f in "${found[@]:-}"; do
+      [[ "$f" == "$candidate" ]] && already=1
+    done
+    [[ "$already" -eq 0 ]] && found+=("$candidate")
+  done < <(discover_glpi_roots)
+
+  case "${#found[@]}" in
+    0)
+      die "nao encontrei nenhuma instalacao GLPI no sistema. Rode 'cd /caminho/do/glpi' antes, ou informe --glpi-root=/caminho/do/glpi"
+      ;;
+    1)
+      log "Instalacao GLPI encontrada em: ${found[0]}" >&2
+      printf '%s' "${found[0]}"
+      ;;
+    *)
+      warn "mais de uma instalacao GLPI encontrada: ${found[*]}"
+      die "informe qual usar via --glpi-root=/caminho/do/glpi"
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -467,6 +527,12 @@ main() {
   echo "  1. Configurar > Plugins > localizar 'NexTool Solutions' > Instalar > Ativar"
   echo "  2. Menu 'NexTool Solutions' > aba Licenciamento > clicar em 'Sincronizar'"
   echo "  3. Aba Modulos > baixar/ativar os modulos desejados"
+  echo
+  echo "IMPORTANTE: se for instalar/ativar pelo console (bin/console plugin:install),"
+  echo "  rode SEMPRE como o usuario do servidor web (ex.: --user ${web_user}), NUNCA"
+  echo "  como root/--allow-superuser -- o proprio passo de instalacao cria as pastas"
+  echo "  de dados do plugin (files/_plugins/nextool) e elas ficam com o dono de quem"
+  echo "  rodou o comando."
 }
 
 main "$@"
