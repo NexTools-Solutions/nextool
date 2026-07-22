@@ -1607,16 +1607,11 @@ class PluginNextoolLicenseValidator {
 
    /**
     * F5 -- adota a nova identidade server-issued: descarta a antiga (provisioning + secret local) e
-    * persiste o novo par identifier+secret nas configs de distribuição.
+    * persiste o novo par identifier+secret nas configs de distribuição. Mecânica centralizada em
+    * PluginNextoolConfig::adoptIdentity (compartilhada com o re-enroll por substituição do bootstrap).
     */
    private static function adoptNewIdentity(string $oldIdentifier, string $newId, string $newSecret): void {
-      PluginNextoolConfig::clearProvisioning();
-      PluginNextoolConfig::setClientIdentifier($newId);
-      PluginNextoolConfig::setProvisioning($newId, $newSecret);
-      $dist = PluginNextoolConfig::getDistributionSettings();
-      $dist['client_identifier'] = $newId;
-      $dist['client_secret']     = $newSecret;
-      Config::setConfigurationValues('plugin:nextool_distribution', $dist);
+      PluginNextoolConfig::adoptIdentity($newId, $newSecret);
    }
 
    protected static function enforceFreeModeFallback(string $reason): void {

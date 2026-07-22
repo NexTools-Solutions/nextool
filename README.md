@@ -8,7 +8,14 @@ Compatível com **GLPI 10** e **GLPI 11**: o mesmo pacote instala nas duas vers�
 
 ## Instalação
 
-- **Download:** baixe a versão mais recente em <a href="https://github.com/NexTools-Solutions/nextool/releases/latest" target="_blank" rel="noopener">Releases</a> e instale pelo mecanismo padrão de plugins do GLPI.
+- **Automática (Linux):** a partir da pasta raiz do seu GLPI, execute:
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/NexTools-Solutions/nextool/main/install.sh | sudo bash
+  ```
+
+  O script (código aberto, [install.sh](install.sh)) detecta a raiz do GLPI, baixa a versão mais recente, verifica a integridade do pacote via SHA256, extrai, ajusta dono/permissões e recarrega o PHP-FPM. Rode com `--help` pra ver as opções (`--glpi-root`, `--force`, `--web-user`, `--dry-run`).
+- **Manual:** baixe a versão mais recente em <a href="https://github.com/NexTools-Solutions/nextool/releases/latest" target="_blank" rel="noopener">Releases</a> e instale pelo mecanismo padrão de plugins do GLPI.
 - Cada solução (módulo) tem sua própria página com detalhes e demonstração no site oficial - os links estão na lista abaixo.
 
 ---

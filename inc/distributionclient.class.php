@@ -37,7 +37,13 @@ class PluginNextoolDistributionClient {
    /**
     * Tenta obter o client_secret via bootstrap no ContainerAPI.
     *
-    * @return array{secret: ?string, error: ?string, http_code: int, message: ?string, retry_after: ?int}
+    * Anuncia a capability `reenroll-v1`: se o identifier já estiver provisionado no servidor
+    * (segredo local perdido ou identidade colidida) e o ambiente for comprovadamente FREE, o
+    * servidor cunha uma identidade NOVA e a retorna em `environment_id` + `reenrolled: true`
+    * (o segredo antigo nunca trafega). O chamador DEVE adotar a identidade nova quando
+    * `reenrolled` vier true (PluginNextoolConfig::adoptIdentity).
+    *
+    * @return array{secret: ?string, error: ?string, http_code: int, message: ?string, retry_after: ?int, environment_id: ?string, reenrolled: bool}
     */
    public static function bootstrapClientSecret(string $baseUrl, string $clientIdentifier): array {
       $baseUrl = rtrim($baseUrl, '/');
@@ -48,12 +54,21 @@ class PluginNextoolDistributionClient {
             'http_code'   => 0,
             'message'     => __('URL do ContainerAPI ou identificador do ambiente não configurados.', 'nextool'),
             'retry_after' => null,
+            'environment_id' => null,
+            'reenrolled'  => false,
          ];
       }
 
-      $payload = json_encode([
+      // domain/glpi_version alimentam a telemetria inicial caso o servidor cunhe identidade nova.
+      $domain = '';
+      if (!empty($GLOBALS['CFG_GLPI']['url_base'])) {
+         $domain = (string) (parse_url((string) $GLOBALS['CFG_GLPI']['url_base'], PHP_URL_HOST) ?: '');
+      }
+      $payload = json_encode(array_filter([
          'client_identifier' => $clientIdentifier,
-      ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+         'domain'            => $domain !== '' ? $domain : null,
+         'glpi_version'      => defined('GLPI_VERSION') ? GLPI_VERSION : null,
+      ]), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
       $ch = curl_init($baseUrl . '/api/distribution/bootstrap');
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -64,6 +79,7 @@ class PluginNextoolDistributionClient {
       curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
       $bootstrapHeaders = [
          'Content-Type: application/json',
+         'X-Nextool-Caps: reenroll-v1',
       ];
       if (!isset($GLOBALS['nextool_request_group_id'])) {
          require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
@@ -105,6 +121,8 @@ class PluginNextoolDistributionClient {
             'http_code'   => 0,
             'message'     => $networkMessage,
             'retry_after' => null,
+            'environment_id' => null,
+            'reenrolled'  => false,
          ];
       }
 
@@ -121,6 +139,10 @@ class PluginNextoolDistributionClient {
                => sprintf(__('O servidor de licenciamento está temporariamente limitando requisições. Tente novamente em %d segundos.', 'nextool'), $retryAfter ?? 60),
             $httpCode === 503
                => __('O servidor de licenciamento está temporariamente indisponível por medida de segurança. Tente novamente em alguns minutos.', 'nextool'),
+            // 409 = ambiente já provisionado: a mensagem do servidor é orientativa (LICENSED ->
+            // contato com o suporte). Exibe-a direto, sem o prefixo "erro inesperado".
+            $httpCode === 409 && is_string($serverMessage) && $serverMessage !== ''
+               => $serverMessage,
             $httpCode === 400
                => sprintf(__('Requisição inválida para o servidor de licenciamento: %s', 'nextool'), $serverMessage ?? 'payload inválido'),
             $httpCode >= 500
@@ -142,6 +164,8 @@ class PluginNextoolDistributionClient {
             'http_code'   => $httpCode,
             'message'     => $userMessage,
             'retry_after' => $retryAfter,
+            'environment_id' => null,
+            'reenrolled'  => false,
          ];
       }
 
@@ -168,6 +192,8 @@ class PluginNextoolDistributionClient {
             'http_code'   => $httpCode,
             'message'     => __('O servidor de licenciamento retornou uma resposta inválida. Tente novamente em instantes.', 'nextool'),
             'retry_after' => null,
+            'environment_id' => null,
+            'reenrolled'  => false,
          ];
       }
 
@@ -185,7 +211,23 @@ class PluginNextoolDistributionClient {
             'http_code'   => $httpCode,
             'message'     => __('O servidor de licenciamento não retornou a chave de segurança esperada. Tente novamente em instantes.', 'nextool'),
             'retry_after' => null,
+            'environment_id' => null,
+            'reenrolled'  => false,
          ];
+      }
+
+      // Re-enroll por substituição: o servidor cunhou identidade NOVA para este ambiente
+      // (FREE órfão). O environment_id retornado difere do enviado; o chamador deve adotá-lo.
+      $reenrolled = ($data['reenrolled'] ?? false) === true;
+      $newEnvironmentId = isset($data['environment_id']) && is_string($data['environment_id']) && $data['environment_id'] !== ''
+         ? $data['environment_id']
+         : null;
+      if ($reenrolled && $newEnvironmentId !== null) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'Bootstrap: servidor re-registrou o ambiente (identidade órfã %s substituída por %s).',
+            $clientIdentifier,
+            $newEnvironmentId
+         ));
       }
 
       return [
@@ -194,6 +236,8 @@ class PluginNextoolDistributionClient {
          'http_code'   => $httpCode,
          'message'     => null,
          'retry_after' => null,
+         'environment_id' => $newEnvironmentId,
+         'reenrolled'  => $reenrolled && $newEnvironmentId !== null,
       ];
    }
 
@@ -679,6 +723,8 @@ class PluginNextoolDistributionClient {
             'http_code'   => $bootstrapResult['http_code'],
             'message'     => null,
             'retry_after' => null,
+            'environment_id' => $bootstrapResult['environment_id'],
+            'reenrolled'  => $bootstrapResult['reenrolled'],
          ];
       }
 
@@ -690,6 +736,8 @@ class PluginNextoolDistributionClient {
          'http_code'   => $bootstrapResult['http_code'],
          'message'     => $bootstrapResult['message'],
          'retry_after' => $bootstrapResult['retry_after'],
+         'environment_id' => null,
+         'reenrolled'  => false,
       ];
    }
 

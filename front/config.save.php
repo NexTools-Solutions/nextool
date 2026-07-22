@@ -83,6 +83,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
             'attempted'         => true,
             'success'           => false,
             'reused_secret'     => false,
+            'reenrolled'        => false,
             'settings'          => $distributionSettings,
             'client_identifier' => '',
             'error'             => $enroll['error'],
@@ -116,6 +117,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
          'attempted'         => true,
          'success'           => true,
          'reused_secret'     => false,
+         'reenrolled'        => false,
          'settings'          => PluginNextoolConfig::getDistributionSettings(),
          'client_identifier' => $clientIdentifier,
          'error'             => null,
@@ -133,6 +135,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
          'attempted'         => false,
          'success'           => true,
          'reused_secret'     => false,
+         'reenrolled'        => false,
          'settings'          => $distributionSettings,
          'client_identifier' => $clientIdentifier,
          'error'             => null,
@@ -156,12 +159,51 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
          'attempted'         => true,
          'success'           => false,
          'reused_secret'     => false,
+         'reenrolled'        => false,
          'settings'          => $distributionSettings,
          'client_identifier' => $clientIdentifier,
          'error'             => $result['error'],
          'error_message'     => $result['message'],
          'http_code'         => $result['http_code'],
          'retry_after'       => $result['retry_after'],
+      ];
+   }
+
+   // Re-enroll por substituição: o servidor detectou identidade órfã (segredo local perdido /
+   // identifier colidido) em ambiente FREE e cunhou uma identidade NOVA. Adota o novo par
+   // identifier+secret nos 3 lugares (main_configs, distribution, provisioning resiliente) --
+   // a identidade antiga é descartada localmente (ela continua existindo no servidor, intacta,
+   // para quem quer que a use). Vínculo de conta e licenças NÃO migram: o usuário re-vincula.
+   if (!empty($result['reenrolled']) && is_string($result['environment_id'] ?? null)) {
+      $previousIdentifier = $clientIdentifier;
+      $clientIdentifier   = (string) $result['environment_id'];
+      PluginNextoolConfig::adoptIdentity($clientIdentifier, (string) $result['secret']);
+
+      PluginNextoolConfigAudit::log([
+         'section' => 'distribution',
+         'action'  => 'reenroll',
+         'result'  => 1,
+         'message' => __('Ambiente re-registrado no servidor de licenciamento (identidade anterior órfã substituída).', 'nextool'),
+         'details' => [
+            'base_url'            => $baseUrl,
+            'previous_identifier' => $previousIdentifier,
+            'new_identifier'      => $clientIdentifier,
+         ],
+      ]);
+
+      $updatedSettings = PluginNextoolConfig::getDistributionSettings();
+
+      return [
+         'attempted'         => true,
+         'success'           => true,
+         'reused_secret'     => false,
+         'reenrolled'        => true,
+         'settings'          => $updatedSettings,
+         'client_identifier' => $clientIdentifier,
+         'error'             => null,
+         'error_message'     => null,
+         'http_code'         => $result['http_code'],
+         'retry_after'       => null,
       ];
    }
 
@@ -194,6 +236,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
       'attempted'         => true,
       'success'           => true,
       'reused_secret'     => $result['reused'],
+      'reenrolled'        => false,
       'settings'          => $updatedSettings,
       'client_identifier' => trim((string) ($updatedSettings['client_identifier'] ?? $clientIdentifier)),
       'error'             => null,
@@ -282,25 +325,28 @@ if ($action === 'accept_policies') {
    $bootstrap = plugin_nextool_bootstrap_hmac_if_needed($distributionSettings);
    if (!empty($bootstrap['attempted'])) {
       if (!empty($bootstrap['success'])) {
-         Session::addMessageAfterRedirect(
-            !empty($bootstrap['reused_secret'])
-               ? __('A chave de segurança já existia e foi reutilizada com sucesso.', 'nextool')
-               : __('Chave de segurança gerada automaticamente com sucesso.', 'nextool'),
-            false,
-            INFO
-         );
+         if (!empty($bootstrap['reenrolled'])) {
+            Session::addMessageAfterRedirect(
+               __('Este ambiente foi re-registrado automaticamente no servidor de licenciamento (a identidade anterior estava órfã). Se este ambiente era vinculado à sua conta NexTool, refaça o vínculo em "Vincular conta".', 'nextool'),
+               false,
+               INFO
+            );
+         } else {
+            Session::addMessageAfterRedirect(
+               !empty($bootstrap['reused_secret'])
+                  ? __('A chave de segurança já existia e foi reutilizada com sucesso.', 'nextool')
+                  : __('Chave de segurança gerada automaticamente com sucesso.', 'nextool'),
+               false,
+               INFO
+            );
+         }
          $distributionSettings = $bootstrap['settings'];
       } else {
-         // 409 = ambiente já provisionado no servidor, mas o segredo local foi perdido
-         // (ex.: reinstalação/atualização do plugin). Por segurança o segredo não é
-         // reentregue; re-tentar não resolve e só gera ruído. Orientar o reset do
-         // provisionamento pelo administrador, em vez de mandar "tentar novamente".
-         if ((int) ($bootstrap['http_code'] ?? 0) === 409) {
-            $errorMessage = __('Este ambiente já está provisionado no servidor de licenciamento e, por segurança, o segredo não é reenviado automaticamente. Se o segredo local foi perdido, solicite ao administrador o reset do provisionamento deste ambiente; depois você poderá aceitar as políticas novamente.', 'nextool');
-         } else {
-            $errorMessage = $bootstrap['error_message']
-               ?? __('Não foi possível gerar a chave de segurança automaticamente. Tente novamente em instantes.', 'nextool');
-         }
+         // 409 = ambiente já provisionado no servidor com licença vinculada (FREE órfão é
+         // re-registrado automaticamente pelo re-enroll). A mensagem do servidor já orienta
+         // o próximo passo (contato com o suporte / atualização do plugin).
+         $errorMessage = $bootstrap['error_message']
+            ?? __('Não foi possível gerar a chave de segurança automaticamente. Tente novamente em instantes.', 'nextool');
          Session::addMessageAfterRedirect($errorMessage, false, WARNING);
 
          Toolbox::logInFile('plugin_nextool', sprintf(
@@ -492,13 +538,21 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
    $bootstrap = plugin_nextool_bootstrap_hmac_if_needed($distributionSettings, true);
    if (!empty($bootstrap['attempted'])) {
       if (!empty($bootstrap['success'])) {
-         Session::addMessageAfterRedirect(
-            !empty($bootstrap['reused_secret'])
-               ? __('A chave de segurança já existia e foi reutilizada automaticamente.', 'nextool')
-               : __('Chave de segurança gerada automaticamente com sucesso.', 'nextool'),
-            false,
-            INFO
-         );
+         if (!empty($bootstrap['reenrolled'])) {
+            Session::addMessageAfterRedirect(
+               __('Este ambiente foi re-registrado automaticamente no servidor de licenciamento (a identidade anterior estava órfã). Se este ambiente era vinculado à sua conta NexTool, refaça o vínculo em "Vincular conta".', 'nextool'),
+               false,
+               INFO
+            );
+         } else {
+            Session::addMessageAfterRedirect(
+               !empty($bootstrap['reused_secret'])
+                  ? __('A chave de segurança já existia e foi reutilizada automaticamente.', 'nextool')
+                  : __('Chave de segurança gerada automaticamente com sucesso.', 'nextool'),
+               false,
+               INFO
+            );
+         }
          $distributionSettings = $bootstrap['settings'];
          $distributionClientIdentifier = $bootstrap['client_identifier']
             ?? ($previousGlobalConfig['client_identifier'] ?? '');

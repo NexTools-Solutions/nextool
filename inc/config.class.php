@@ -355,6 +355,27 @@ class PluginNextoolConfig extends CommonDBTM {
       }
    }
 
+   /**
+    * Adota uma identidade server-issued NOVA descartando a antiga: limpa o provisioning
+    * resiliente, persiste o novo par identifier+secret nos 3 lugares (main_configs, context
+    * distribution, provisioning). Usada pelo re-enroll coordenado pelo servidor (sinal
+    * re_enroll_required do /validate e re-enroll por substituição do bootstrap -- FREE órfão).
+    */
+   public static function adoptIdentity(string $newIdentifier, string $newSecret): void {
+      $newIdentifier = trim($newIdentifier);
+      $newSecret     = trim($newSecret);
+      if ($newIdentifier === '' || $newSecret === '') {
+         return;
+      }
+      self::clearProvisioning();
+      self::setClientIdentifier($newIdentifier);
+      self::setProvisioning($newIdentifier, $newSecret);
+      $dist = self::getDistributionSettings();
+      $dist['client_identifier'] = $newIdentifier;
+      $dist['client_secret']     = $newSecret;
+      Config::setConfigurationValues('plugin:nextool_distribution', $dist);
+   }
+
    public static function getDistributionSettings() {
       $values = Config::getConfigurationValues('plugin:nextool_distribution');
       $updated = [];
