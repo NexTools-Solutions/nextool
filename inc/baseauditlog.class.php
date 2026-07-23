@@ -31,6 +31,20 @@ abstract class PluginNextoolBaseAuditLog extends CommonDBTM {
 
    public static $rightname = 'config';
 
+   public function __construct() {
+      parent::__construct();
+      // GLPI 11: getItemTypeForTable() só aceita a classe se o ARQUIVO dela estiver
+      // sob GLPI_ROOT / marketplace / plugin_doc. As classes de log de MÓDULO vivem em
+      // GLPI_VAR_DIR/_plugins/nextool/modules/... (runtime), fora desses paths, então a
+      // resolução tabela->itemtype devolve null e o Search estoura no giveItem
+      // (getItemForItemtype(null)). Primamos o cache reverso $CFG_GLPI['glpiitemtypetables']:
+      // o Search faz `new static()` em searchOptions() ANTES do render, então quando o
+      // giveItem chama getItemTypeForTable() já há cache-hit. Vale para todos os módulos.
+      if (function_exists('getTableForItemType')) {
+         getTableForItemType(static::class);
+      }
+   }
+
    /**
     * Resolve user_id: usa o valor passado explicitamente, ou cai para Session::getLoginUserID().
     */

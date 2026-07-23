@@ -429,6 +429,21 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Retorna itens de menu para a interface simplificada (helpdesk).
+    *
+    * Módulos que precisam de atalho no menu do helpdesk sobrescrevem e retornam
+    * [menu_key => ['default' => url, 'title' => string, 'icon' => string]].
+    * O gate de permissão é responsabilidade do módulo (checar o próprio bit -
+    * ex.: USE_HELPDESK_ACCESS - e retornar [] sem direito). Coletado por
+    * plugin_nextool_redefine_menus() (hook.php) no ramo helpdesk.
+    *
+    * @return array<string, array{default: string, title: string, icon: string}>
+    */
+   public function getHelpdeskMenuItems(): array {
+      return [];
+   }
+
+   /**
     * Hook executado após ativação do módulo.
     *
     * @return void

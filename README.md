@@ -168,4 +168,7 @@ O NexTool Solutions pode se conectar a um **servidor externo** para habilitar re
 
 O plugin não foi projetado para enviar conteúdo de chamados, senhas ou dados sensíveis dos usuários finais para o servidor do desenvolvedor.
 
-Para detalhes completos de privacidade, licenciamento, redistribuição e políticas de uso, consulte **[POLICIES_OF_USE.md](./POLICIES_OF_USE.md)**.
+Para detalhes completos de privacidade, licenciamento, redistribuição e políticas de uso, consulte no site oficial:
+
+- **[Termos de uso](https://nextoolsolutions.com/termos-de-uso)**
+- **[Política de privacidade](https://nextoolsolutions.com/politica-de-privacidade)**

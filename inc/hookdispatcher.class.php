@@ -32,6 +32,9 @@ class PluginNextoolHookDispatcher {
    /** @var array[] itemUpdate[itemType] = [ [class, method], ... ] */
    private static $itemUpdate = [];
 
+   /** @var array[] preItemUpdate[itemType] = [ [class, method], ... ] */
+   private static $preItemUpdate = [];
+
    /** @var array[] postShowItem[itemType] = [ [class, method], ... ] */
    private static $postShowItem = [];
 
@@ -69,6 +72,22 @@ class PluginNextoolHookDispatcher {
          self::$itemUpdate[$itemType] = [];
       }
       self::$itemUpdate[$itemType][] = $callback;
+   }
+
+   /**
+    * Registra callback para pre_item_update (BLOQUEAR atualização antes da gravação).
+    * O callback recebe o CommonDBTM $item (com $item->input contendo os novos valores)
+    * e, para bloquear, lança PluginNextoolValidationException($mensagem). O dispatcher
+    * traduz isso no abort nativo do GLPI (input=false) + mensagem ao usuário.
+    *
+    * @param string $itemType Ex.: 'Ticket'
+    * @param array  $callback [className, methodName]
+    */
+   public static function registerPreItemUpdate($itemType, array $callback) {
+      if (!isset(self::$preItemUpdate[$itemType])) {
+         self::$preItemUpdate[$itemType] = [];
+      }
+      self::$preItemUpdate[$itemType][] = $callback;
    }
 
    /**
@@ -151,6 +170,43 @@ class PluginNextoolHookDispatcher {
       return $item;
    }
 
+   /**
+    * Dispatcher genérico para pre_item_update[itemType]. O GLPI 11 chama o hook
+    * PRE_ITEM_UPDATE com o objeto ($this) ANTES de gravar; logo depois, o core faz
+    * `if ($this->input && is_array($this->input))` (CommonDBTM::update) e PULA a
+    * gravação quando input=false. Por isso, para BLOQUEAR de forma limpa (sem 500 e
+    * sem depender de propagação de exceção), este dispatcher captura a
+    * PluginNextoolValidationException do validador, enfileira a mensagem e seta
+    * `$item->input = false`. Erros técnicos comuns são logados e ignorados (fail-open:
+    * nunca travar o chamado por um bug de validador).
+    */
+   public static function dispatchPreItemUpdate(string $itemType, CommonDBTM $item): CommonDBTM {
+      foreach (self::$preItemUpdate[$itemType] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            $msg = trim($e->getMessage());
+            if ($msg !== '') {
+               Session::addMessageAfterRedirect($msg, false, ERROR);
+            }
+            // Abort: array VAZIO (não `false`). O core faz `if ($this->input && is_array(...))`
+            // e `[]` é falsy → pula a gravação; mas continua sendo array, então outros plugins
+            // que rodam depois neste mesmo hook (ex.: Fields, que faz array_key_exists no input)
+            // não quebram com TypeError. `false` abortaria igual mas estouraria os vizinhos.
+            $item->input = [];
+            return $item;
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] pre_item_update %s: %s - %s',
+               $itemType,
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
    // ========================================
    // Wrappers nomeados (compat com callers $PLUGIN_HOOKS em setup.php)
    // ========================================
@@ -162,6 +218,44 @@ class PluginNextoolHookDispatcher {
    public static function dispatchItemUpdateTicket(CommonDBTM $item) {
       return self::dispatchItemUpdate('Ticket', $item);
    }
+
+   public static function dispatchPreItemUpdateTicket(CommonDBTM $item) {
+      return self::dispatchPreItemUpdate('Ticket', $item);
+   }
+
+   /**
+    * Dispatcher genérico para pre_item_add[itemType] com BLOQUEIO (mesmo mecanismo do
+    * pre_item_update: o core faz `if ($this->input && is_array(...))` após o PRE_ITEM_ADD,
+    * então abortamos com input=[] -- array-safe, não quebra vizinhos). Usado para sub-itens
+    * (TicketTask/ITILFollowup/ITILSolution). NÃO substitui o dispatchPreItemAddTicket legado
+    * (que faz rethrow, compat com pendingsurvey) -- registries compartilhados, sem conflito.
+    */
+   public static function dispatchPreItemAddBlocking(string $itemType, CommonDBTM $item): CommonDBTM {
+      foreach (self::$preItemAdd[$itemType] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (PluginNextoolValidationException $e) {
+            $msg = trim($e->getMessage());
+            if ($msg !== '') {
+               Session::addMessageAfterRedirect($msg, false, ERROR);
+            }
+            $item->input = [];
+            return $item;
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] pre_item_add %s: %s', $itemType, $e->getMessage()
+            ));
+         }
+      }
+      return $item;
+   }
+
+   // Sub-itens de chamado (add + update) -- usados pelo módulo ticketrules.
+   public static function dispatchPreItemAddTicketTask(CommonDBTM $item)      { return self::dispatchPreItemAddBlocking('TicketTask', $item); }
+   public static function dispatchPreItemUpdateTicketTask(CommonDBTM $item)   { return self::dispatchPreItemUpdate('TicketTask', $item); }
+   public static function dispatchPreItemAddITILFollowup(CommonDBTM $item)    { return self::dispatchPreItemAddBlocking('ITILFollowup', $item); }
+   public static function dispatchPreItemUpdateITILFollowup(CommonDBTM $item) { return self::dispatchPreItemUpdate('ITILFollowup', $item); }
+   public static function dispatchPreItemAddITILSolution(CommonDBTM $item)    { return self::dispatchPreItemAddBlocking('ITILSolution', $item); }
 
    public static function dispatchItemAddTicketValidation(CommonDBTM $item) {
       return self::dispatchItemAdd('TicketValidation', $item);
@@ -300,5 +394,154 @@ class PluginNextoolHookDispatcher {
          }
       }
       return $actions;
+   }
+
+   // ========================================
+   // POST ITEM FORM (modificar formulários nativos - ex.: dropdown de técnico)
+   // ========================================
+
+   /** @var array<string, array[]> postItemForm[itemType] = [ callback, ... ] */
+   private static $postItemForm = [];
+
+   /**
+    * Registra callback para post_item_form (chamado após render do formulário
+    * nativo de um itemtype - permite injetar JS/campos, ex.: filtrar dropdown).
+    *
+    * @param string $itemType Ex.: 'TicketTask'
+    * @param array  $callback [className, methodName] - recebe array $params do GLPI
+    */
+   public static function registerPostItemForm(string $itemType, array $callback): void {
+      if (!isset(self::$postItemForm[$itemType])) {
+         self::$postItemForm[$itemType] = [];
+      }
+      self::$postItemForm[$itemType][] = $callback;
+   }
+
+   /**
+    * Adaptador chamado diretamente pelo hook `post_item_form` do GLPI (registrado
+    * em setup.php). Resolve o item do payload e delega aos callbacks do itemtype.
+    */
+   public static function dispatchPostItemFormHook(array $params): void {
+      $item = $params['item'] ?? null;
+      if (!($item instanceof CommonGLPI)) {
+         return;
+      }
+      foreach (self::$postItemForm[$item::getType()] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $params);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] post_item_form %s: %s',
+               $item::getType(),
+               $e->getMessage()
+            ));
+         }
+      }
+   }
+
+   // ========================================
+   // SEARCH OPTIONS (colunas extras em itemtypes nativos)
+   // ========================================
+   //
+   // O GLPI resolve search options de plugin como a função global
+   // plugin_nextool_getAddSearchOptions($itemtype) (ver hook.php). Módulos que
+   // queiram adicionar colunas de busca a itemtypes nativos registram um provider
+   // aqui no onInit(). ATENÇÃO: IDs de search option devem ser únicos por
+   // itemtype entre TODOS os módulos (usar faixas altas e documentar no módulo).
+
+   /** @var array<string, callable[]> searchOptions[itemType] = [ provider, ... ] */
+   private static $searchOptions = [];
+
+   /**
+    * Registra provider de search options para um itemtype nativo.
+    *
+    * @param string   $itemType Ex.: 'TicketTask'
+    * @param callable $provider fn(): array - devolve [id => definição de search option]
+    */
+   public static function registerSearchOptions(string $itemType, callable $provider): void {
+      if (!isset(self::$searchOptions[$itemType])) {
+         self::$searchOptions[$itemType] = [];
+      }
+      self::$searchOptions[$itemType][] = $provider;
+   }
+
+   /**
+    * Mescla as search options de todos os providers do itemtype.
+    * Chamado por plugin_nextool_getAddSearchOptions() (hook.php).
+    *
+    * @return array vazio se não houver provider (fast-path para todo itemtype)
+    */
+   public static function dispatchGetAddSearchOptions(string $itemType): array {
+      if (empty(self::$searchOptions[$itemType])) {
+         return [];
+      }
+      $options = [];
+      foreach (self::$searchOptions[$itemType] as $provider) {
+         try {
+            $ret = call_user_func($provider);
+            if (is_array($ret)) {
+               $options += $ret;
+            }
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] getAddSearchOptions %s: %s',
+               $itemType,
+               $e->getMessage()
+            ));
+         }
+      }
+      return $options;
+   }
+
+   // NOTA: render de search options 'specific' (giveItem) NÃO fica aqui - já
+   // existe ponto de extensão via PluginNextoolHookProviderInterface::giveItem()
+   // (módulo declara getHookProviders(); ver hookprovidersdispatcher.class.php).
+
+   /**
+    * Ocupa um slot $PLUGIN_HOOKS[<hook>]['nextool'][<itemType>] com um dispatcher
+    * desta classe de forma APPEND-AWARE (retrocompat com módulos antigos).
+    *
+    * Chamado pelo setup.php DEPOIS do loadActiveModules. Se um módulo em versão
+    * antiga já registrou callback direto no slot durante o onInit() (padrão
+    * pré-registry, atribuição plana ou append-safe), a atribuição plana do setup
+    * o sobrescreveria -- regressão real de 2026-07-23 (subtaskflow E2E 8 FAIL).
+    * Este helper encadeia: dispatcher primeiro (módulos novos, via registry),
+    * depois o callback pré-existente (módulos antigos). Ambos convivem durante
+    * a janela de transição base-nova + módulo-velho no parque instalado.
+    *
+    * @param array   $PLUGIN_HOOKS   por referência (global do GLPI)
+    * @param string  $hookName       ex.: 'pre_item_update'
+    * @param ?string $itemType       ex.: 'TicketTask'; null para hooks globais (sem sub-chave)
+    * @param string  $dispatchMethod método estático desta classe, ex.: 'dispatchPreItemUpdateTicketTask'
+    */
+   public static function installHook(array &$PLUGIN_HOOKS, string $hookName, ?string $itemType, string $dispatchMethod): void {
+      $dispatcher = [self::class, $dispatchMethod];
+      if ($itemType === null) {
+         $existing = $PLUGIN_HOOKS[$hookName]['nextool'] ?? null;
+      } else {
+         $existing = $PLUGIN_HOOKS[$hookName]['nextool'][$itemType] ?? null;
+      }
+
+      $value = $dispatcher;
+      if ($existing !== null && $existing !== $dispatcher
+          && !(is_array($existing) && ($existing[0] ?? null) === self::class)
+          && !(is_array($existing) && ($existing[0] ?? null) === 'PluginNextoolHookDispatcher')) {
+         // Slot ocupado por callback de módulo antigo: encadeia (dispatcher + legado).
+         $value = static function ($param) use ($dispatcher, $existing) {
+            $mid = call_user_func($dispatcher, $param);
+            // Hooks de OBJETO (maioria): mutação por referência, retornos irrelevantes.
+            // Hooks de VALOR (ex.: pre_item_add com $input array): o valor processado
+            // pelo dispatcher segue para o legado, e o retorno do legado prevalece.
+            $next = is_object($param) ? $param : ($mid ?? $param);
+            $out  = call_user_func($existing, $next);
+            return $out ?? $mid ?? $param;
+         };
+      }
+
+      if ($itemType === null) {
+         $PLUGIN_HOOKS[$hookName]['nextool'] = $value;
+      } else {
+         $PLUGIN_HOOKS[$hookName]['nextool'][$itemType] = $value;
+      }
    }
 }

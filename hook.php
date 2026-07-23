@@ -45,6 +45,21 @@ function plugin_nextool_getRuleActions($params) {
    return PluginNextoolHookDispatcher::dispatchRuleActions(is_array($params) ? $params : []);
 }
 
+/**
+ * Search options adicionais em itemtypes nativos, contribuídas por módulos.
+ * O GLPI chama esta função para cada itemtype pesquisado; módulos registram
+ * providers via PluginNextoolHookDispatcher::registerSearchOptions() no onInit().
+ *
+ * @param string $itemtype
+ * @return array [id => definição] - vazio se nenhum módulo contribui
+ */
+function plugin_nextool_getAddSearchOptions($itemtype) {
+   if (!class_exists('PluginNextoolHookDispatcher')) {
+      return [];
+   }
+   return PluginNextoolHookDispatcher::dispatchGetAddSearchOptions((string) $itemtype);
+}
+
 function plugin_nextool_install() {
    global $DB;
 
@@ -301,7 +316,8 @@ function plugin_nextool_redefine_menus($menu) {
       return $menu;
    }
 
-   // Interface simplificada (helpdesk): apenas dashboard Contract Hours (se tiver permissao)
+   // Interface simplificada (helpdesk): dashboard Contract Hours (legado hardcoded)
+   // + itens declarados pelos módulos via getHelpdeskMenuItems() (genérico).
    if (Session::getCurrentInterface() === 'helpdesk') {
       try {
          if (PluginNextoolPermissionManager::haveRight('plugin_nextool_contracthours_report', READ)) {
@@ -314,6 +330,23 @@ function plugin_nextool_redefine_menus($menu) {
          }
       } catch (\Throwable $e) {
          // Silenciar se modulo nao carregado
+      }
+
+      // Itens de menu helpdesk dos módulos ativos (gate de permissão é do módulo)
+      try {
+         $hdManager = PluginNextoolModuleManager::getInstance();
+         foreach ($hdManager->getActiveModules() as $hdModule) {
+            if (!method_exists($hdModule, 'getHelpdeskMenuItems')) {
+               continue;
+            }
+            foreach ($hdModule->getHelpdeskMenuItems() as $hdKey => $hdItem) {
+               if (!empty($hdItem['default']) && !isset($menu[$hdKey])) {
+                  $menu[$hdKey] = $hdItem;
+               }
+            }
+         }
+      } catch (\Throwable $e) {
+         // Menu helpdesk nunca pode derrubar o GLPI
       }
       return $menu;
    }

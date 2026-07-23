@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.3.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.4.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -192,6 +192,12 @@ function plugin_init_nextool() {
    // pagina de busca pura) e remove a 2a barra de rolagem. Nao afeta telas puras.
    $PLUGIN_HOOKS['add_css']['nextool'][] = 'front/nextool-tabs.css.php';
 
+   // JS global escopado a .nextool-tab-card: intercepta o ENTER nas grades Search::show
+   // embarcadas em abas de modulo (que, sem isso, faz submit GET nativo e recarrega a
+   // pagina). Fix centralizado -> cobre TODAS as abas de busca de TODOS os modulos,
+   // presentes e futuros, sem <script> por modulo. Ver js/nextool-tabs.js.
+   $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'js/nextool-tabs.js';
+
    try {
    Plugin::loadLang('nextool');
 
@@ -276,6 +282,7 @@ function plugin_init_nextool() {
             require_once $managerfile;
 
             $manager = PluginNextoolModuleManager::getInstance();
+
             $manager->loadActiveModules();
 
             // Bundle de assets: colapsa os N registros de module_assets.php
@@ -390,50 +397,41 @@ function plugin_init_nextool() {
             // Menu "Nextools" (nativo) + menus de módulos via redefine_menus
             $PLUGIN_HOOKS['redefine_menus']['nextool'] = 'plugin_nextool_redefine_menus';
 
-            // Dispatcher central para Ticket: vários módulos registram via register*;
-            // registramos os handlers globais após loadActiveModules para que todos sejam chamados.
+            // Dispatcher central: registrado DEPOIS do loadActiveModules, com ocupação
+            // APPEND-AWARE (installHook). Módulo NOVO registra no registry (register*)
+            // e é despachado pelo dispatcher; módulo ANTIGO que atribuiu callback
+            // direto no slot durante o onInit() é ENCADEADO (dispatcher + legado),
+            // nunca sobrescrito -- retrocompat na janela base-nova + módulo-velho
+            // (regressão real de 2026-07-23: subtaskflow E2E 8 FAIL por clobber).
             if (class_exists('PluginNextoolHookDispatcher')) {
-               $PLUGIN_HOOKS['pre_item_add']['nextool']['Ticket'] = [
-                  'PluginNextoolHookDispatcher',
-                  'dispatchPreItemAddTicket'
-               ];
-               $PLUGIN_HOOKS['item_add']['nextool']['Ticket'] = [
-                  'PluginNextoolHookDispatcher',
-                  'dispatchItemAddTicket'
-               ];
-               $PLUGIN_HOOKS['item_update']['nextool']['Ticket'] = [
-                  'PluginNextoolHookDispatcher',
-                  'dispatchItemUpdateTicket'
-               ];
-               $PLUGIN_HOOKS['item_add']['nextool']['TicketValidation'] = [
-                  'PluginNextoolHookDispatcher',
-                  'dispatchItemAddTicketValidation'
-               ];
-               $PLUGIN_HOOKS['item_add']['nextool']['TicketTask'] = [
-                  'PluginNextoolHookDispatcher',
-                  'dispatchItemAddTicketTask'
-               ];
-               $PLUGIN_HOOKS['item_update']['nextool']['TicketValidation'] = [
-                  'PluginNextoolHookDispatcher',
-                  'dispatchItemUpdateTicketValidation'
-               ];
-               $PLUGIN_HOOKS['item_update']['nextool']['TicketTask'] = [
-                  'PluginNextoolHookDispatcher',
-                  'dispatchItemUpdateTicketTask'
-               ];
-               $PLUGIN_HOOKS['item_add']['nextool']['ITILFollowup'] = [
-                  'PluginNextoolHookDispatcher',
-                  'dispatchItemAddITILFollowup'
-               ];
-               $PLUGIN_HOOKS['item_add']['nextool']['ITILSolution'] = [
-                  'PluginNextoolHookDispatcher',
-                  'dispatchItemAddITILSolution'
-               ];
+               $nxInstall = ['PluginNextoolHookDispatcher', 'installHook'];
+               $nxInstall($PLUGIN_HOOKS, 'pre_item_add',    'Ticket',           'dispatchPreItemAddTicket');
+               $nxInstall($PLUGIN_HOOKS, 'item_add',        'Ticket',           'dispatchItemAddTicket');
+               $nxInstall($PLUGIN_HOOKS, 'item_update',     'Ticket',           'dispatchItemUpdateTicket');
+               // pre_item_update: módulos podem BLOQUEAR a atualização antes da gravação
+               // (abort via input=[] + mensagem; ver PluginNextoolValidationException).
+               $nxInstall($PLUGIN_HOOKS, 'pre_item_update', 'Ticket',           'dispatchPreItemUpdateTicket');
+               // Sub-itens de chamado (bloqueio na criação/edição): tarefa, acompanhamento,
+               // solução. Habilita módulos a exigir mínimos/obrigatoriedades (ex.: ticketrules).
+               $nxInstall($PLUGIN_HOOKS, 'pre_item_add',    'TicketTask',       'dispatchPreItemAddTicketTask');
+               $nxInstall($PLUGIN_HOOKS, 'pre_item_update', 'TicketTask',       'dispatchPreItemUpdateTicketTask');
+               $nxInstall($PLUGIN_HOOKS, 'pre_item_add',    'ITILFollowup',     'dispatchPreItemAddITILFollowup');
+               $nxInstall($PLUGIN_HOOKS, 'pre_item_update', 'ITILFollowup',     'dispatchPreItemUpdateITILFollowup');
+               $nxInstall($PLUGIN_HOOKS, 'pre_item_add',    'ITILSolution',     'dispatchPreItemAddITILSolution');
+               $nxInstall($PLUGIN_HOOKS, 'item_add',        'TicketValidation', 'dispatchItemAddTicketValidation');
+               $nxInstall($PLUGIN_HOOKS, 'item_add',        'TicketTask',       'dispatchItemAddTicketTask');
+               $nxInstall($PLUGIN_HOOKS, 'item_update',     'TicketValidation', 'dispatchItemUpdateTicketValidation');
+               $nxInstall($PLUGIN_HOOKS, 'item_update',     'TicketTask',       'dispatchItemUpdateTicketTask');
+               $nxInstall($PLUGIN_HOOKS, 'item_add',        'ITILFollowup',     'dispatchItemAddITILFollowup');
+               $nxInstall($PLUGIN_HOOKS, 'item_add',        'ITILSolution',     'dispatchItemAddITILSolution');
 
                // post_show_item: timeline separator e outros hooks visuais.
                // Nota: nao pode usar HookManager para este hook (limitacao do core GLPI 11).
-               // Callable estatico substituiu closure (LO-09 do audit-deep).
-               $PLUGIN_HOOKS['post_show_item']['nextool'] = [PluginNextoolHookDispatcher::class, 'dispatchPostShowItemHook'];
+               $nxInstall($PLUGIN_HOOKS, 'post_show_item', null, 'dispatchPostShowItemHook');
+
+               // post_item_form: modificação de formulários nativos por módulos
+               // (registrados via HookDispatcher::registerPostItemForm no onInit).
+               $nxInstall($PLUGIN_HOOKS, 'post_item_form', null, 'dispatchPostItemFormHook');
             }
 
             // Registra menus de módulos ativos via getMenuRegistration()
