@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.4.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.4.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -192,11 +192,11 @@ function plugin_init_nextool() {
    // pagina de busca pura) e remove a 2a barra de rolagem. Nao afeta telas puras.
    $PLUGIN_HOOKS['add_css']['nextool'][] = 'front/nextool-tabs.css.php';
 
-   // JS global escopado a .nextool-tab-card: intercepta o ENTER nas grades Search::show
-   // embarcadas em abas de modulo (que, sem isso, faz submit GET nativo e recarrega a
-   // pagina). Fix centralizado -> cobre TODAS as abas de busca de TODOS os modulos,
-   // presentes e futuros, sem <script> por modulo. Ver js/nextool-tabs.js.
-   $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'js/nextool-tabs.js';
+   // JS global: intercepta o ENTER nas abas de modulo (grades Search::show e forms de
+   // config) para nao recarregar a pagina. Servido via front/*.php porque o GLPI 11
+   // (Symfony) NAO serve .js estatico de plugin por path direto (/plugins/X/js/*.js ->
+   // 404) -- mesmo padrao do add_css. Ver front/nextool-tabs.js.php.
+   $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-tabs.js.php';
 
    try {
    Plugin::loadLang('nextool');
