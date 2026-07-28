@@ -23,8 +23,17 @@ class PluginNextoolModuleCardHelper {
 
    public static function renderActions(array $state): string {
 
-      $canManage      = !empty($state['can_manage_module'] ?? $state['can_manage_modules']);
+      // Permissoes por ACAO (2026-07-28): cada botao segue o MESMO bit que o
+      // endpoint valida (canRunModuleAction). Fallback para a flag antiga
+      // (CONFIGURE) mantem compat caso algum chamador nao passe as novas.
+      $canInstallMod  = !empty($state['can_install_module']);
+      $canToggleMod   = !empty($state['can_toggle_module']);
+      $canUpdateMod   = !empty($state['can_update_module']);
+      $canUninstall   = !empty($state['can_uninstall_module']);
       $canPurge       = !empty($state['can_purge_module'] ?? $state['can_purge_modules']);
+      // "Gerencia alguma coisa?" decide se o card sai do modo somente-leitura.
+      $canManage      = !empty($state['can_manage_module'] ?? $state['can_manage_modules'])
+                        || $canInstallMod || $canToggleMod || $canUpdateMod || $canUninstall || $canPurge;
       $canView        = !empty($state['can_view_module'] ?? $state['can_view_modules']);
       $canManageAdmin = !empty($state['can_manage_admin_tabs']);
 
@@ -88,7 +97,7 @@ class PluginNextoolModuleCardHelper {
          if ($isSuspended && $state['is_paid']) {
             $primary = self::renderBadge(__('Download bloqueado: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
          } else {
-            $canDownload = !empty($state['can_download_module'] ?? $state['can_use_module']);
+            $canDownload = !empty($state['can_download_module'] ?? $state['can_use_module']) && $canInstallMod;
             // Gate de versão mínima do plugin base - mesmo critério do caminho de
             // UPDATE (abaixo): sem o base mínimo, o ContainerAPI recusaria o
             // manifesto (nextool_upgrade_required); exibir o botão Download só
@@ -161,7 +170,7 @@ class PluginNextoolModuleCardHelper {
                   $msg = sprintf(__('Nextool %s necessário para atualizar', 'nextool'), $minVerNextool);
                   $primary = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . '</span>';
                } else {
-                  $canDl = !empty($state['can_download_module'] ?? $state['can_use_module']);
+                  $canDl = !empty($state['can_download_module'] ?? $state['can_use_module']) && $canUpdateMod;
                   $primary = self::renderActionForm(
                      $state, 'update', __('Atualização Disponível', 'nextool'),
                      'btn btn-sm btn-outline-info module-action', 'ti ti-arrow-up',
@@ -175,7 +184,7 @@ class PluginNextoolModuleCardHelper {
             $primary = self::renderActionForm(
                $state, 'enable', __('Ativar', 'nextool'),
                'btn btn-sm btn-success module-action', 'ti ti-player-play',
-               !$state['can_use_module'] || $catalogDisabled
+               !$state['can_use_module'] || $catalogDisabled || !$canToggleMod
             );
          }
          // Prioridade 4: Ativo com config -> Configuracoes
@@ -190,7 +199,7 @@ class PluginNextoolModuleCardHelper {
             $primary = self::renderActionForm(
                $state, 'disable', __('Desativar', 'nextool'),
                'btn btn-sm btn-outline-warning module-action', 'ti ti-player-pause',
-               $catalogDisabled
+               $catalogDisabled || !$canToggleMod
             );
             $primaryIsDisable = true;
          }
@@ -203,16 +212,18 @@ class PluginNextoolModuleCardHelper {
 
          if ($state['is_enabled']) {
             // Desativar só vai no dropdown se NÃO virou o botão primário (módulo sem config).
-            if (empty($primaryIsDisable)) {
+            if (empty($primaryIsDisable) && $canToggleMod) {
                $secondary[] = self::renderDropdownAction($state, 'disable', __('Desativar', 'nextool'), 'ti ti-player-pause');
             }
          } else {
-            if ($primary !== '' && strpos($primary, 'data-action=\'enable\'') === false) {
+            if ($primary !== '' && strpos($primary, 'data-action=\'enable\'') === false && $canToggleMod) {
                $secondary[] = self::renderDropdownAction($state, 'enable', __('Ativar', 'nextool'), 'ti ti-player-play',
                   !$state['can_use_module'] || $catalogDisabled);
             }
-            $secondary[] = self::renderDropdownAction($state, 'uninstall', __('Desinstalar', 'nextool'), 'ti ti-trash text-danger', false,
-               __('Tem certeza? O módulo será desativado, mas tabelas e dados permanecerão no banco.', 'nextool'));
+            if ($canUninstall) {
+               $secondary[] = self::renderDropdownAction($state, 'uninstall', __('Desinstalar', 'nextool'), 'ti ti-trash text-danger', false,
+                  __('Tem certeza? O módulo será desativado, mas tabelas e dados permanecerão no banco.', 'nextool'));
+            }
          }
 
          if ($state['show_config_button'] && strpos($primary, 'ti-settings') === false) {

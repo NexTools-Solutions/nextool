@@ -43,7 +43,12 @@ $statusBadge = $module->isEnabled()
    : '<span class="badge bg-secondary text-white">' . __('Inativo', 'nextool') . '</span>';
 ?>
 
-<div class="m-3">
+<?php
+// Margem só no TOPO (era m-3, nos 4 lados): o card do módulo que vem acima nesta aba
+// não tem margem lateral, então o m-3 recuava este bloco ~1rem à esquerda/direita e as
+// bordas dos dois cards não batiam. Afetava os 37 módulos que usam esta aba genérica.
+?>
+<div class="mt-3">
    <div class="card">
       <div class="card-header">
          <h5 class="card-title mb-0">

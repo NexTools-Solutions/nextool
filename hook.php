@@ -316,22 +316,11 @@ function plugin_nextool_redefine_menus($menu) {
       return $menu;
    }
 
-   // Interface simplificada (helpdesk): dashboard Contract Hours (legado hardcoded)
-   // + itens declarados pelos módulos via getHelpdeskMenuItems() (genérico).
+   // Interface simplificada (helpdesk): itens declarados pelos módulos via
+   // getHelpdeskMenuItems() (genérico). O atalho hardcoded do Contract Hours foi
+   // removido: apontava para o direito legado plugin_nextool_contracthours_report,
+   // deletado na migração P1 (menu morto) - o módulo agora declara o item.
    if (Session::getCurrentInterface() === 'helpdesk') {
-      try {
-         if (PluginNextoolPermissionManager::haveRight('plugin_nextool_contracthours_report', READ)) {
-            global $CFG_GLPI;
-            $menu['consumo_horas'] = [
-               'default' => ($CFG_GLPI['root_doc'] ?? '') . '/plugins/nextool/front/modules.php?module=contracthours&file=dashboard.php',
-               'title'   => __('Consumo de Horas', 'nextool_contracthours'),
-               'icon'    => 'ti ti-clock-play',
-            ];
-         }
-      } catch (\Throwable $e) {
-         // Silenciar se modulo nao carregado
-      }
-
       // Itens de menu helpdesk dos módulos ativos (gate de permissão é do módulo)
       try {
          $hdManager = PluginNextoolModuleManager::getInstance();

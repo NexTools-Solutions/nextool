@@ -298,6 +298,12 @@ foreach ($allModuleKeys as $moduleKey) {
    }
    $moduleCanManage = PluginNextoolPermissionManager::canManageModule($moduleKey);
    $moduleCanPurge = PluginNextoolPermissionManager::canPurgeModuleDataForModule($moduleKey);
+   // Por acao (2026-07-28): a UI passa a usar os MESMOS helpers do endpoint --
+   // botao oferecido == acao autorizada (antes tudo saia de CONFIGURE).
+   $moduleCanInstall   = PluginNextoolPermissionManager::canInstallModules();
+   $moduleCanToggle    = PluginNextoolPermissionManager::canToggleModule($moduleKey);
+   $moduleCanUpdate    = PluginNextoolPermissionManager::canUpdateModule($moduleKey);
+   $moduleCanUninstall = PluginNextoolPermissionManager::canUninstallModule($moduleKey);
 
    // Ordenação por grupo de estado:
    // 1=Update disponível, 2=Instalados DESATIVADOS ("Ativar"), 3=Ativos ("Configurações"),
@@ -394,6 +400,11 @@ foreach ($allModuleKeys as $moduleKey) {
          'can_view_modules'        => $canViewModules,
          'can_manage_module'       => $moduleCanManage,
          'can_purge_module'        => $moduleCanPurge,
+         // Permissoes por ACAO (2026-07-28) -- mesmos helpers que o endpoint usa
+         'can_install_module'      => $moduleCanInstall,
+         'can_toggle_module'       => $moduleCanToggle,
+         'can_update_module'       => $moduleCanUpdate,
+         'can_uninstall_module'    => $moduleCanUninstall,
          'can_view_module'         => $moduleCanView,
          'is_license_suspended'    => $isSuspended,
          'has_zip_extension'       => $hasZipExtension,

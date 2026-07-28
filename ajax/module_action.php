@@ -15,8 +15,12 @@ include('../../../inc/includes.php');
 require_once NEXTOOL_PHP_DIR . '/inc/ajaxbootstrap.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 
+// Porteiro: quem nao ve o catalogo nem modulo algum nao entra. A autorizacao
+// REAL e por ACAO (canRunModuleAction, abaixo) -- antes este callback exigia o
+// super-direito global e, com ele, TOGGLE/MOD_UPDATE/UNINSTALL nunca eram
+// alcancados (bits inertes na matriz de perfil). Ver PERMISSIONS.md secao 3.2.
 PluginNextoolAjaxBootstrap::start([
-   'permission_callback' => ['PluginNextoolPermissionManager', 'canManageModules'],
+   'permission_callback' => ['PluginNextoolPermissionManager', 'canReachModuleActions'],
    'errors'              => [
       'forbidden'  => __('Você não tem permissão para gerenciar os módulos do NexTool.', 'nextool'),
       'bad_method' => __('Método inválido para esta ação.', 'nextool'),
@@ -68,25 +72,26 @@ function nextoolBuildModuleRedirectUrl(string $returnTab, string $moduleFilter =
    return Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?' . http_build_query($params);
 }
 
-if (in_array($action, ['install', 'uninstall', 'enable', 'disable', 'update', 'download', 'redownload'], true)) {
-   if (!PluginNextoolPermissionManager::canManageModule($moduleKey)) {
-      http_response_code(403);
-      echo json_encode([
-         'success' => false,
-         'message' => __('Você não tem permissão para gerenciar este módulo.', 'nextool'),
-      ]);
-      exit;
-   }
-}
-if ($action === 'purge_data') {
-   if (!PluginNextoolPermissionManager::canPurgeModuleDataForModule($moduleKey)) {
-      http_response_code(403);
-      echo json_encode([
-         'success' => false,
-         'message' => __('Você não tem permissão para apagar os dados deste módulo.', 'nextool'),
-      ]);
-      exit;
-   }
+// Autorizacao POR ACAO (2026-07-28): install/download -> base "Instalar modulo";
+// enable/disable -> TOGGLE; update -> MOD_UPDATE; uninstall -> UNINSTALL;
+// purge_data -> PURGE_DATA. Fail-closed para acao desconhecida.
+if (!PluginNextoolPermissionManager::canRunModuleAction($action, $moduleKey)) {
+   $denyMessages = [
+      'install'     => __('Você não tem permissão para instalar módulos.', 'nextool'),
+      'download'    => __('Você não tem permissão para instalar módulos.', 'nextool'),
+      'redownload'  => __('Você não tem permissão para atualizar este módulo.', 'nextool'),
+      'enable'      => __('Você não tem permissão para ativar ou desativar este módulo.', 'nextool'),
+      'disable'     => __('Você não tem permissão para ativar ou desativar este módulo.', 'nextool'),
+      'update'      => __('Você não tem permissão para atualizar este módulo.', 'nextool'),
+      'uninstall'   => __('Você não tem permissão para desinstalar este módulo.', 'nextool'),
+      'purge_data'  => __('Você não tem permissão para apagar os dados deste módulo.', 'nextool'),
+   ];
+   http_response_code(403);
+   echo json_encode([
+      'success' => false,
+      'message' => $denyMessages[$action] ?? __('Você não tem permissão para esta ação.', 'nextool'),
+   ]);
+   exit;
 }
 
 require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';

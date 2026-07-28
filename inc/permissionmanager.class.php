@@ -64,10 +64,15 @@ class PluginNextoolPermissionManager {
    // Legado de uso ainda em circulacao (autentique/digitalsignature): CREATE=4, DELETE=8
    private const LEGACY_USE = 4 | 8;
 
+   // Bits ALTOS livres para o modulo declarar administracao PROPRIA (ex.: um par
+   // Ver/Gerenciar por menu). O bloco fixo (1<<20..1<<26) NAO se move: ele e lido
+   // posicionalmente pelo catalogo (canRunModuleAction) nos ~39 modulos.
+   public const MODULE_ADMIN_EXTRA_MASK = 0xF << 27; // bits 27..30
+
    // Mascara completa de bits validos num direito de modulo.
    public const MODULE_MASK = self::ACCESS | self::CONFIGURE | self::PURGE_DATA
       | self::MANAGE_ITEMS | self::TOGGLE | self::MOD_UPDATE | self::UNINSTALL | self::VIEW_LOGS
-      | self::USE_MASK | self::LEGACY_USE;
+      | self::USE_MASK | self::LEGACY_USE | self::MODULE_ADMIN_EXTRA_MASK;
 
    // ---- Bits do direito base (nextool_base) ----
    public const BASE_VIEW_CATALOG  = 1 << 0;
@@ -165,7 +170,9 @@ class PluginNextoolPermissionManager {
          return true;
       }
       foreach (self::getModuleKeysFromDatabase() as $moduleKey) {
-         if (self::haveModuleRight($moduleKey, self::ACCESS)) {
+         // Mascara de visualizacao do modulo (default ACCESS; modulos que trocaram o
+         // bit generico por "Ver <menu>" declaram a sua em getViewMask()).
+         if (self::haveModuleRight($moduleKey, self::moduleViewMask($moduleKey))) {
             return true;
          }
       }
@@ -176,9 +183,13 @@ class PluginNextoolPermissionManager {
    // SHIMS de compatibilidade (Fase B migra os modulos para canUse/canAdmin)
    // =====================================================================
 
-   /** @deprecated usar canUse(key, ACCESS) */
+   /**
+    * "O perfil ve este modulo?" (menu NexTool, card do catalogo, porta do console).
+    * Usa a MASCARA DE VISUALIZACAO do modulo: default ACCESS (comportamento historico
+    * dos 38 modulos) ou o OR dos "Ver <menu>" para quem aposentou o ACCESS generico.
+    */
    public static function canViewModule(string $moduleKey): bool {
-      return self::canUse($moduleKey, self::ACCESS);
+      return self::canViewModuleAny($moduleKey);
    }
    /** @deprecated usar canAdmin(key, CONFIGURE) */
    public static function canManageModule(string $moduleKey): bool {
@@ -194,6 +205,71 @@ class PluginNextoolPermissionManager {
    }
    public static function canPurgeModuleDataForModule(string $moduleKey): bool {
       return self::canAdmin($moduleKey, self::PURGE_DATA);
+   }
+
+   // =====================================================================
+   // Acoes do CATALOGO por bit especifico (2026-07-28)
+   //
+   // Antes, TODAS as acoes (install/uninstall/enable/disable/update/download)
+   // passavam por canManageModule() = CONFIGURE, e o endpoint ainda exigia o
+   // super-direito global por cima -- na pratica TOGGLE, MOD_UPDATE e UNINSTALL
+   // eram bits INERTES: apareciam na matriz do perfil, o admin marcava e nao
+   // tinham efeito nenhum. Agora cada acao tem o seu bit, e estes helpers sao a
+   // FONTE UNICA usada pela UI (botoes do card) e pelo endpoint -- foi o
+   // desalinhamento UI x backend que escondeu o problema por tanto tempo.
+   // =====================================================================
+
+   /** Instalar/baixar modulo e acao do CATALOGO (direito base), nao do modulo:
+    *  o modulo pode nem existir no ambiente ainda para ter bits marcados. */
+   public static function canInstallModules(): bool {
+      return self::canBase(self::BASE_INSTALL);
+   }
+
+   /** Ativar / Desativar um modulo instalado. */
+   public static function canToggleModule(string $moduleKey): bool {
+      return self::canAdmin($moduleKey, self::TOGGLE);
+   }
+
+   /** Atualizar um modulo instalado. */
+   public static function canUpdateModule(string $moduleKey): bool {
+      return self::canAdmin($moduleKey, self::MOD_UPDATE);
+   }
+
+   /** Desinstalar um modulo. */
+   public static function canUninstallModule(string $moduleKey): bool {
+      return self::canAdmin($moduleKey, self::UNINSTALL);
+   }
+
+   /**
+    * Resolve a permissao de UMA acao do catalogo. Usado pelo endpoint e pela UI
+    * (mesmo veredito nos dois lados). Acao desconhecida => negado (fail-closed).
+    */
+   public static function canRunModuleAction(string $action, string $moduleKey): bool {
+      switch ($action) {
+         case 'install':
+         case 'download':
+            return self::canInstallModules();
+         case 'redownload':
+            // Reparo de artefato: serve tanto ao fluxo de instalacao quanto ao
+            // de atualizacao de um modulo ja presente.
+            return self::canUpdateModule($moduleKey) || self::canInstallModules();
+         case 'enable':
+         case 'disable':
+            return self::canToggleModule($moduleKey);
+         case 'update':
+            return self::canUpdateModule($moduleKey);
+         case 'uninstall':
+            return self::canUninstallModule($moduleKey);
+         case 'purge_data':
+            return self::canPurgeModuleDataForModule($moduleKey);
+      }
+      return false;
+   }
+
+   /** Porteiro do endpoint de acoes: quem nao ve o catalogo nem modulo algum
+    *  nao tem o que fazer ali (a autorizacao REAL e por acao, acima). */
+   public static function canReachModuleActions(): bool {
+      return self::canBase(self::BASE_VIEW_CATALOG) || self::canViewAnyModule();
    }
    /** @deprecated o "modulos global" antigo nao existe mais; equivale a ter acesso a algum */
    public static function canViewModules(): bool {
@@ -478,15 +554,91 @@ class PluginNextoolPermissionManager {
             | self::BASE_VIEW_VERSION | self::BASE_SEND_CONTACT;
          return ($bit & $useBits) ? 'use' : 'admin';
       }
-      // Direito de modulo: admin = Configurar/Apagar dados/ciclo de vida; resto = uso.
+      // Direito de modulo: o bloco FIXO e sempre admin; alem dele, o modulo pode
+      // DECLARAR bits proprios de administracao (getModuleAdminRights) -- ex.: o par
+      // Ver/Gerenciar de cada menu. Sem declaracao, o comportamento e o historico.
       $adminBits = self::CONFIGURE | self::PURGE_DATA | self::MANAGE_ITEMS | self::TOGGLE
          | self::MOD_UPDATE | self::UNINSTALL | self::VIEW_LOGS;
-      return ($bit & $adminBits) ? 'admin' : 'use';
+      if ($bit & $adminBits) {
+         return 'admin';
+      }
+      foreach (self::moduleDeclaredAdminBits($field) as $declared) {
+         if ($bit & $declared) {
+            return 'admin';
+         }
+      }
+      return 'use';
    }
 
    // =====================================================================
    // Internos
    // =====================================================================
+
+   /**
+    * Bits que o MODULO declara como administracao propria (familia ambar). Lidos
+    * do proprio modulo via BaseModule::getModuleAdminRights(). Retorna [] quando o
+    * modulo nao declara nada (comportamento historico dos demais modulos).
+    *
+    * @return int[] lista de bits
+    */
+   public static function moduleDeclaredAdminBits(string $rightNameOrKey): array {
+      static $cache = [];
+      $key = self::normalizeModuleKey(
+         strpos($rightNameOrKey, self::MODULE_RIGHT_PREFIX) === 0
+            ? substr($rightNameOrKey, strlen(self::MODULE_RIGHT_PREFIX))
+            : $rightNameOrKey
+      );
+      if (isset($cache[$key])) {
+         return $cache[$key];
+      }
+      $bits = [];
+      try {
+         if (class_exists('PluginNextoolModuleManager')) {
+            $mod = PluginNextoolModuleManager::getInstance()->getModule($key);
+            if ($mod && method_exists($mod, 'getModuleAdminRights')) {
+               $bits = array_keys($mod->getModuleAdminRights());
+            }
+         }
+      } catch (\Throwable $e) {
+         $bits = [];
+      }
+      return $cache[$key] = $bits;
+   }
+
+   /**
+    * O perfil "ve alguma coisa" deste modulo? Antes era sempre o bit ACCESS; agora
+    * o modulo pode declarar uma MASCARA de visualizacao (getViewMask) -- necessario
+    * quando o modulo troca o bit generico "acessar" por um Ver por menu.
+    */
+   public static function canViewModuleAny(string $moduleKey): bool {
+      if (self::hasGlobalAdminAccess()) {
+         return true;
+      }
+      return self::haveModuleRight($moduleKey, self::moduleViewMask($moduleKey));
+   }
+
+   public static function moduleViewMask(string $moduleKey): int {
+      static $cache = [];
+      $key = self::normalizeModuleKey($moduleKey);
+      if (isset($cache[$key])) {
+         return $cache[$key];
+      }
+      $mask = self::ACCESS;
+      try {
+         if (class_exists('PluginNextoolModuleManager')) {
+            $mod = PluginNextoolModuleManager::getInstance()->getModule($key);
+            if ($mod && method_exists($mod, 'getViewMask')) {
+               $declared = (int) $mod->getViewMask();
+               if ($declared > 0) {
+                  $mask = $declared;
+               }
+            }
+         }
+      } catch (\Throwable $e) {
+         // mantem ACCESS
+      }
+      return $cache[$key] = $mask;
+   }
 
    public static function getModuleRightName(string $moduleKey): string {
       return self::MODULE_RIGHT_PREFIX . self::normalizeModuleKey($moduleKey);

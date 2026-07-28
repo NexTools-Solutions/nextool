@@ -391,8 +391,55 @@ abstract class PluginNextoolBaseModule {
     * @return array<int,string|array{short:string,long:string}> Mapa bit => rótulo
     */
    public function getProfileRights(): array {
-      return $this->getUsabilityRights()
-         + PluginNextoolPermissionManager::getAdminRightLabels($this->hasCatalog());
+      // Ordem de INSERCAO define a ordem das colunas (bits >= 1024): usabilidade
+      // (azul) -> administracao propria do modulo (ambar) -> bloco fixo (ambar).
+      $rights = $this->getUsabilityRights();
+
+      foreach ($this->getModuleAdminRights() as $bit => $label) {
+         $bit = (int) $bit;
+         // Guarda fail-closed: o modulo NAO pode redefinir o bloco fixo nem o ACCESS
+         // (o catalogo le esses bits posicionalmente nos ~39 modulos). Colisao em
+         // uniao de arrays apagaria a coluna em silencio.
+         $reservado = PluginNextoolPermissionManager::ACCESS
+            | PluginNextoolPermissionManager::CONFIGURE | PluginNextoolPermissionManager::MANAGE_ITEMS
+            | PluginNextoolPermissionManager::TOGGLE | PluginNextoolPermissionManager::MOD_UPDATE
+            | PluginNextoolPermissionManager::UNINSTALL | PluginNextoolPermissionManager::VIEW_LOGS
+            | PluginNextoolPermissionManager::PURGE_DATA;
+         if ($bit & $reservado) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[PERMISSOES] modulo %s declarou bit reservado (%d) em getModuleAdminRights - ignorado',
+               $this->getModuleKey(), $bit
+            ));
+            continue;
+         }
+         if (!isset($rights[$bit])) {
+            $rights[$bit] = $label;
+         }
+      }
+
+      return $rights + PluginNextoolPermissionManager::getAdminRightLabels($this->hasCatalog());
+   }
+
+   /**
+    * Bits de ADMINISTRACAO PROPRIOS do modulo (familia ambar/laranja), alem do bloco
+    * fixo da base. Use para o par "Ver <menu>" / "Gerenciar <menu>" quando o modulo
+    * tem console com varias telas. Bits permitidos: faixa livre de uso (1<<10..1<<19)
+    * e a faixa alta MODULE_ADMIN_EXTRA_MASK (1<<27..1<<30). NUNCA redeclarar o bloco
+    * fixo (CONFIGURE/MANAGE_ITEMS/TOGGLE/MOD_UPDATE/UNINSTALL/VIEW_LOGS/PURGE_DATA).
+    *
+    * @return array<int,string|array{short:string,long:string}> Mapa bit => rotulo
+    */
+   public function getModuleAdminRights(): array {
+      return [];
+   }
+
+   /**
+    * Mascara que caracteriza "o perfil VE alguma coisa deste modulo" (menu NexTool e
+    * porta de entrada do console). Default: o bit ACCESS. Modulos que aposentaram o
+    * ACCESS generico em favor de um "Ver" por menu declaram aqui o OR dos seus VER.
+    */
+   public function getViewMask(): int {
+      return PluginNextoolPermissionManager::ACCESS;
    }
 
    /**
