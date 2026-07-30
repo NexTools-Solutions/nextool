@@ -258,6 +258,11 @@ class PluginNextoolPermissionManager {
             return self::canToggleModule($moduleKey);
          case 'update':
             return self::canUpdateModule($moduleKey);
+         case 'finalize_update':
+            // Fase 2 do update (issue #158): conclui a migração iniciada por
+            // update/redownload/download. Quem pode INICIAR pode concluir -- por isso o
+            // mesmo veredito do 'redownload', que cobre os dois pontos de entrada.
+            return self::canUpdateModule($moduleKey) || self::canInstallModules();
          case 'uninstall':
             return self::canUninstallModule($moduleKey);
          case 'purge_data':

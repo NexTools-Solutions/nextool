@@ -67,7 +67,7 @@ $statusBadge = $module->isEnabled()
                <td><?php echo Html::entities_deep($module->getName()); ?></td>
             </tr>
             <tr>
-               <th>Module Key</th>
+               <th><?php echo __('Chave do módulo', 'nextool'); ?></th>
                <td><code><?php echo Html::entities_deep($module->getModuleKey()); ?></code></td>
             </tr>
             <tr>

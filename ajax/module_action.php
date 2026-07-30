@@ -77,14 +77,15 @@ function nextoolBuildModuleRedirectUrl(string $returnTab, string $moduleFilter =
 // purge_data -> PURGE_DATA. Fail-closed para acao desconhecida.
 if (!PluginNextoolPermissionManager::canRunModuleAction($action, $moduleKey)) {
    $denyMessages = [
-      'install'     => __('Você não tem permissão para instalar módulos.', 'nextool'),
-      'download'    => __('Você não tem permissão para instalar módulos.', 'nextool'),
-      'redownload'  => __('Você não tem permissão para atualizar este módulo.', 'nextool'),
-      'enable'      => __('Você não tem permissão para ativar ou desativar este módulo.', 'nextool'),
-      'disable'     => __('Você não tem permissão para ativar ou desativar este módulo.', 'nextool'),
-      'update'      => __('Você não tem permissão para atualizar este módulo.', 'nextool'),
-      'uninstall'   => __('Você não tem permissão para desinstalar este módulo.', 'nextool'),
-      'purge_data'  => __('Você não tem permissão para apagar os dados deste módulo.', 'nextool'),
+      'install'         => __('Você não tem permissão para instalar módulos.', 'nextool'),
+      'download'        => __('Você não tem permissão para instalar módulos.', 'nextool'),
+      'redownload'      => __('Você não tem permissão para atualizar este módulo.', 'nextool'),
+      'enable'          => __('Você não tem permissão para ativar ou desativar este módulo.', 'nextool'),
+      'disable'         => __('Você não tem permissão para ativar ou desativar este módulo.', 'nextool'),
+      'update'          => __('Você não tem permissão para atualizar este módulo.', 'nextool'),
+      'finalize_update' => __('Você não tem permissão para atualizar este módulo.', 'nextool'),
+      'uninstall'       => __('Você não tem permissão para desinstalar este módulo.', 'nextool'),
+      'purge_data'      => __('Você não tem permissão para apagar os dados deste módulo.', 'nextool'),
    ];
    http_response_code(403);
    echo json_encode([
@@ -183,10 +184,22 @@ switch ($action) {
    case 'redownload':
       $result = $manager->redownloadModule($moduleKey);
       break;
+   case 'finalize_update':
+      // FASE 2 do update (issue #158): roda numa requisição SEPARADA da que baixou os
+      // arquivos -- é o que garante que a migração execute o código NOVO do módulo.
+      $result = $manager->finalizeModuleUpgrade($moduleKey);
+      break;
 }
 
 $msgType = $result['message_type'] ?? (!empty($result['success']) ? INFO : ERROR);
-Session::addMessageAfterRedirect($result['message'], false, $msgType);
+
+// Fase 1 não enfileira mensagem: quem fala com o usuário é a fase 2, que conhece o
+// resultado REAL da migração. Sem isso o cliente veria "atualizado com sucesso" antes de
+// a migração sequer ter rodado (e um segundo aviso depois).
+$pendingUpgrade = !empty($result['pending_upgrade']);
+if (!$pendingUpgrade) {
+   Session::addMessageAfterRedirect($result['message'], false, $msgType);
+}
 
 $validTabs = PluginNextoolMainConfig::getValidTabIds();
 $returnTab = 'PluginNextoolMainConfig$1';
@@ -211,9 +224,11 @@ if ($requestedReturnTab !== '' && in_array($requestedReturnTab, $validTabs, true
 $redirectUrl = nextoolBuildModuleRedirectUrl($returnTab, $moduleFilter);
 
 echo json_encode([
-   'success'      => !empty($result['success']),
-   'message'      => (string) ($result['message'] ?? ''),
-   'message_type' => $msgType,
-   'redirect_url' => $redirectUrl,
+   'success'         => !empty($result['success']),
+   'message'         => (string) ($result['message'] ?? ''),
+   'message_type'    => $msgType,
+   'redirect_url'    => $redirectUrl,
+   // Sinaliza ao front que falta a fase 2 (finalize_update) antes de recarregar.
+   'pending_upgrade' => $pendingUpgrade,
 ]);
 exit;

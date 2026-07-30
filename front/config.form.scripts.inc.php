@@ -311,6 +311,36 @@ function nextoolExecuteModuleAction(btn, action, moduleKey, endpoint) {
             return;
          }
          var data = result.data;
+
+         // FASE 2 do update (issue #158): a fase 1 só trocou os arquivos em disco. A
+         // classe do módulo carregada NAQUELA requisição era a antiga -- o PHP não
+         // redefine classe já carregada -- então a migração precisa de uma requisição
+         // NOVA, que já carrega o código novo. Só depois dela recarregamos a página, e a
+         // mensagem exibida é o resultado REAL da migração (não um "sucesso" otimista).
+         if (data && data.pending_upgrade) {
+            btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i><?php echo Html::entities_deep(__('Concluindo atualização...', 'nextool')); ?>';
+            nextoolPostJson(endpoint, {
+               action: 'finalize_update',
+               module: moduleKey,
+               forcetab: forcetab,
+               module_filter: moduleFilter
+            })
+               .then(function (finalizeResult) {
+                  var fdata = finalizeResult.data;
+                  if (fdata && fdata.redirect_url) {
+                     window.location.assign(String(fdata.redirect_url));
+                     return;
+                  }
+                  window.location.reload();
+               })
+               .catch(function () {
+                  // Rede de segurança: mesmo sem a fase 2, o CAMINHO B do
+                  // syncInstalledVersionsFromDisk() converge no próximo carregamento.
+                  window.location.reload();
+               });
+            return;
+         }
+
          if (data && data.redirect_url) {
             window.location.assign(String(data.redirect_url));
             return;

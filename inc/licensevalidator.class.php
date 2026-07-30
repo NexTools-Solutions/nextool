@@ -429,7 +429,17 @@ class PluginNextoolLicenseValidator {
       }
 
       // Monta payload para API
-      $domain = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '');
+      // O domain sai do url_base do GLPI, não do $_SERVER: em contexto CLI (cron, console)
+      // não existe HTTP_HOST e a telemetria ia sem domínio -- e é justamente o cron que
+      // faz a maior parte das validações. Mesmo critério do distributionclient. Cai para
+      // o $_SERVER só se o url_base não estiver configurado.
+      $domain = '';
+      if (!empty($GLOBALS['CFG_GLPI']['url_base'])) {
+         $domain = (string) (parse_url((string) $GLOBALS['CFG_GLPI']['url_base'], PHP_URL_HOST) ?: '');
+      }
+      if ($domain === '') {
+         $domain = (string) ($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? ''));
+      }
 
       $clientInfo = [
          'plugin_version' => PluginNextoolConfig::getPluginVersion(),

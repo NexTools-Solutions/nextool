@@ -86,6 +86,25 @@ class PluginNextoolModuleManager {
    private bool $rowMapPreloaded = false;
 
    /**
+    * Módulos cujos arquivos PHP foram SUBSTITUÍDOS nesta requisição (download/update/
+    * redownload). A classe carregada em memória é a ANTIGA e continuará antiga até o
+    * fim do request -- o PHP não redefine uma classe já carregada, e isso independe do
+    * OPcache (invalidar o bytecode só afeta os PRÓXIMOS requests).
+    *
+    * Consequência: nesta requisição é PROIBIDO executar upgrade()/install()/runMigrations()
+    * desses módulos e, principalmente, gravar version/schema-marker -- seria registrar
+    * "migrado para a versão nova" tendo rodado a migração ANTIGA, e o estado TRAVA
+    * (o bump apaga a divergência que faria o sync reexecutar, e o marker desliga o guard
+    * de schema-drift). Ver issue #158.
+    *
+    * A migração real acontece na FASE 2: finalizeModuleUpgrade() (disparada pela UI) ou,
+    * como rede de segurança, o CAMINHO B do syncInstalledVersionsFromDisk() no próximo boot.
+    *
+    * @var array<string, bool> module_key => true
+    */
+   private array $staleClassModules = [];
+
+   /**
     * Construtor privado (padrão Singleton)
     */
    private function __construct() {
@@ -863,18 +882,20 @@ class PluginNextoolModuleManager {
     * @param bool   $success
     * @param string $message
     * @param array  $context
+    * @param array  $extraResult Chaves extras devolvidas ao chamador (ex.: pending_upgrade).
+    *                            O $context vai só para o audit log; isto vai na RESPOSTA.
     * @return array
     */
-   private function buildModuleActionResult($moduleKey, $action, $success, $message, array $context = []) {
+   private function buildModuleActionResult($moduleKey, $action, $success, $message, array $context = [], array $extraResult = []) {
       $this->logModuleAction($moduleKey, $action, array_merge($context, [
          'result'  => $success ? 1 : 0,
          'message' => $message,
       ]));
 
-      return [
+      return array_merge($extraResult, [
          'success' => $success,
          'message' => $message,
-      ];
+      ]);
    }
 
    public function downloadRemoteModule($moduleKey) {
@@ -932,12 +953,19 @@ class PluginNextoolModuleManager {
          }
       }
 
+      // Download sobre módulo JÁ instalado troca os arquivos sem tocar em version: o disco
+      // fica à frente do banco e a migração precisa da fase 2 (classe nova). Sinalizamos
+      // para a UI concluir explicitamente; se ela não concluir, o CAMINHO B do
+      // syncInstalledVersionsFromDisk() converge no próximo request. Ver issue #158.
+      $needsFinalize = $result['success'] && $this->isInstalled($moduleKey);
+
       return $this->buildModuleActionResult(
          $moduleKey,
          $action,
          $result['success'],
          $result['message'],
-         $baseContext
+         $needsFinalize ? array_merge($baseContext, ['pending_upgrade' => true]) : $baseContext,
+         $needsFinalize ? ['pending_upgrade' => true] : []
       );
    }
 
@@ -967,6 +995,11 @@ class PluginNextoolModuleManager {
 
       $details = sprintf(__('Módulo %s v%s baixado do ContainerAPI.', 'nextool'), $moduleKey, $result['version'] ?? 'unknown');
       Toolbox::logInFile('plugin_nextool', $details);
+      // A partir daqui os arquivos em disco são os NOVOS, mas a classe em memória
+      // continua a ANTIGA por todo o resto do request. Marcar ANTES do discoverModules()
+      // é essencial: é ele quem chama syncInstalledVersionsFromDisk(), que sem esta marca
+      // migraria/bumparia com a definição velha (issue #158).
+      $this->staleClassModules[$moduleKey] = true;
       $this->discoverModules(true);
       $this->syncAvailableVersion($moduleKey, $result['version'] ?? null);
 
@@ -986,8 +1019,6 @@ class PluginNextoolModuleManager {
     * @return array{success: bool, message: string}
     */
    public function redownloadModule(string $moduleKey): array {
-      global $DB;
-
       $action = 'redownload';
       $baseContext = [
          'origin'            => 'module_redownload',
@@ -1029,27 +1060,14 @@ class PluginNextoolModuleManager {
 
       $newModule = $this->getModule($moduleKey);
       if ($newModule !== null) {
-         $newVersion = $newModule->getVersion();
-         // discoverModules(true) acima já roda o guard de schema-drift (migra+marca).
-         // Ainda assim, honramos "nunca bumpar sem upgrade bem-sucedido": rodamos a
-         // migração idempotente antes do bump explícito. Só bumpa se convergir.
-         if ($this->runModuleUpgradeSafely($newModule, $row['version'] ?? null, $newVersion, $moduleKey)) {
-            $DB->update(
-               'glpi_plugin_nextool_main_modules',
-               [
-                  'version'  => $newVersion,
-                  'date_mod' => date('Y-m-d H:i:s'),
-               ],
-               ['module_key' => $moduleKey]
-            );
-            $this->writeSchemaMarker($moduleKey, (string) $newVersion);
-         } else {
-            Toolbox::logInFile('plugin_nextool', sprintf(
-               "[ModuleManager] redownloadModule: upgrade de %s falhou pós-download; version NÃO bumpada\n",
-               $moduleKey
-            ));
-         }
-
+         // FASE 1 (ver $staleClassModules): a classe em memória continua a ANTIGA -- os
+         // arquivos foram trocados nesta mesma requisição. Não migramos e não bumpamos
+         // version aqui; isso trava o estado (issue #158). A migração fica para a fase 2
+         // (finalizeModuleUpgrade), disparada pela UI, com o sync do boot como retry.
+         //
+         // onEnable() ainda roda com a definição antiga: é reativação de hooks/cron do
+         // que já estava ligado, não migração de schema -- e a fase 2 recarrega o módulo
+         // logo em seguida.
          if ($wasEnabled) {
             $newModule->onEnable();
          }
@@ -1058,8 +1076,9 @@ class PluginNextoolModuleManager {
       $this->clearCache();
 
       return $this->buildModuleActionResult($moduleKey, $action, true,
-         __('Arquivos do módulo substituídos com sucesso. Dados do banco preservados.', 'nextool'),
-         $baseContext);
+         __('Arquivos do módulo substituídos. Dados do banco preservados. Concluindo a atualização...', 'nextool'),
+         array_merge($baseContext, ['pending_upgrade' => true]),
+         ['pending_upgrade' => true]);
    }
 
    public function updateModule($moduleKey) {
@@ -1100,32 +1119,27 @@ class PluginNextoolModuleManager {
                   $baseContext
                );
             }
-            // Módulo estava BLOQUEADO -> não entrava em $this->modules, então o
-            // guard de schema-drift do discoverModules o ignorava. Aqui rodamos a
-            // migração idempotente explicitamente ANTES de bumpar (regra "nunca
-            // bumpar sem upgrade bem-sucedido").
+            // FASE 1 (ver $staleClassModules): os arquivos acabaram de ser trocados, a
+            // classe em memória ainda é a antiga. Não migramos nem bumpamos aqui --
+            // só registramos a versão DISPONÍVEL. A migração vai na fase 2.
             $unblockedVersion = $module->getVersion();
-            if (!$this->runModuleUpgradeSafely($module, $row['version'] ?? null, $unblockedVersion, $moduleKey)) {
-               return $this->buildModuleActionResult($moduleKey, $action, false,
-                  __('Falha ao aplicar rotinas de upgrade do módulo.', 'nextool'), $baseContext);
-            }
             $DB->update(
                'glpi_plugin_nextool_main_modules',
                [
-                  'version'           => $unblockedVersion,
                   'available_version' => $download['version'] ?? $unblockedVersion,
                   'date_mod'          => date('Y-m-d H:i:s'),
                ],
                ['module_key' => $moduleKey]
             );
-            $this->writeSchemaMarker($moduleKey, (string) $unblockedVersion);
             $this->clearCache();
             return $this->buildModuleActionResult($moduleKey, $action, true,
-               __('Módulo atualizado com sucesso (compatibilidade restaurada).', 'nextool'),
+               __('Arquivos do módulo baixados (compatibilidade restaurada). Concluindo a atualização...', 'nextool'),
                array_merge($baseContext, [
-                  'from_version' => $row['version'] ?? 'unknown',
-                  'to_version'   => $module->getVersion(),
-               ])
+                  'from_version'    => $row['version'] ?? 'unknown',
+                  'to_version'      => $unblockedVersion,
+                  'pending_upgrade' => true,
+               ]),
+               ['pending_upgrade' => true]
             );
          }
          return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não encontrado no diretório local.', 'nextool'), $baseContext);
@@ -1250,29 +1264,130 @@ class PluginNextoolModuleManager {
          return $this->buildModuleActionResult($moduleKey, $action, true, __('Módulo já está na versão mais recente. Versão sincronizada.', 'nextool'), $baseContext);
       }
 
-      $upgradeOk = $module->upgrade($currentVersion, $targetVersion);
-      if (!$upgradeOk) {
-         return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao aplicar rotinas de upgrade do módulo.', 'nextool'), $baseContext);
-      }
-
+      // ------------------------------------------------------------------
+      // FASE 1 -- só troca de arquivos. NÃO roda upgrade() e NÃO grava version.
+      //
+      // A classe do módulo carregada nesta requisição é a ANTIGA (o PHP não redefine
+      // classe já carregada; invalidar o OPcache só afeta os próximos requests). Rodar
+      // upgrade() aqui executa a migração da versão VELHA e, pior, gravar version+marker
+      // logo em seguida TRAVA o estado: some a divergência que faria o sync reexecutar e
+      // o marker desliga o guard de schema-drift. Era o bug da issue #158 -- as tabelas
+      // ficavam sem as linhas/colunas que a versão nova semeia e nem limpar cache curava.
+      //
+      // Só registramos a versão DISPONÍVEL. A migração real é a FASE 2:
+      // finalizeModuleUpgrade(), que a UI dispara logo em seguida (já com o bytecode novo)
+      // e que o CAMINHO B do syncInstalledVersionsFromDisk() refaz sozinho, com retry, se
+      // a UI não chegar a disparar.
+      // ------------------------------------------------------------------
       $DB->update(
          'glpi_plugin_nextool_main_modules',
          [
-            'version'            => $targetVersion,
             'available_version'  => $downloadedVersion ?: $targetVersion,
             'date_mod'           => date('Y-m-d H:i:s'),
          ],
          ['module_key' => $moduleKey]
       );
-      $this->writeSchemaMarker($moduleKey, (string) $targetVersion);
+
+      $this->clearCache();
+
+      return $this->buildModuleActionResult($moduleKey, $action, true,
+         __('Arquivos do módulo baixados. Concluindo a atualização...', 'nextool'),
+         array_merge($baseContext, [
+            'from_version'    => $currentVersion,
+            'to_version'      => $targetVersion,
+            'pending_upgrade' => true,
+         ]),
+         ['pending_upgrade' => true]
+      );
+   }
+
+   /**
+    * FASE 2 do update: aplica a migração do módulo com o código NOVO já carregado.
+    *
+    * Precisa rodar numa requisição DIFERENTE da que baixou os arquivos -- é justamente
+    * isso que garante que $module->upgrade() executa a definição nova (ver
+    * $staleClassModules e issue #158). Chamada pela UI logo após a fase 1.
+    *
+    * Idempotente e seguro fora de ordem:
+    *  - banco já na versão do disco  -> nada a fazer (o sync do boot pode ter convergido antes);
+    *  - upgrade falha                -> version NÃO é bumpada, a divergência permanece e o
+    *                                    CAMINHO B do sync tenta de novo no próximo request.
+    *
+    * @return array{success: bool, message: string}
+    */
+   public function finalizeModuleUpgrade(string $moduleKey): array {
+      global $DB;
+
+      $action = 'finalize_update';
+      $baseContext = [
+         'origin'            => 'module_finalize_update',
+         'requested_modules' => [$moduleKey],
+      ];
+
+      // Guard de contrato: se os arquivos foram trocados NESTA requisição, a classe em
+      // memória é a antiga e finalizar aqui reintroduziria exatamente o bug.
+      if (isset($this->staleClassModules[$moduleKey])) {
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            __('A atualização precisa ser concluída em uma nova requisição. Recarregue a página.', 'nextool'),
+            $baseContext);
+      }
+
+      $row = $this->getModuleRow($moduleKey);
+      if ($row === null || !(bool) ($row['is_installed'] ?? 0)) {
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            __('Módulo precisa estar instalado para atualizar.', 'nextool'), $baseContext);
+      }
+
+      $module = $this->getModule($moduleKey);
+      if ($module === null) {
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            __('Módulo não encontrado no diretório local.', 'nextool'), $baseContext);
+      }
+
+      $dbVersion   = $row['version'] ?? null;
+      $diskVersion = $module->getVersion();
+      if ($diskVersion === null || $diskVersion === '') {
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            __('Não foi possível ler a versão do módulo em disco.', 'nextool'), $baseContext);
+      }
+
+      if ($dbVersion === $diskVersion) {
+         // Já convergiu (a fase 2 é idempotente: o sync do boot pode ter chegado antes).
+         return $this->buildModuleActionResult($moduleKey, $action, true,
+            sprintf(__('Módulo atualizado com sucesso para a versão %s.', 'nextool'), $diskVersion),
+            array_merge($baseContext, ['to_version' => $diskVersion]));
+      }
+
+      if (!$this->runModuleUpgradeSafely($module, $dbVersion, $diskVersion, $moduleKey)) {
+         // version NÃO é bumpada: a divergência fica de pé e o CAMINHO B do sync
+         // retenta a cada request até convergir.
+         return $this->buildModuleActionResult($moduleKey, $action, false,
+            __('Os arquivos foram atualizados, mas as rotinas de migração do módulo falharam. O sistema tentará novamente automaticamente; consulte os logs do NexTool.', 'nextool'),
+            array_merge($baseContext, ['from_version' => $dbVersion, 'to_version' => $diskVersion]));
+      }
+
+      $DB->update(
+         'glpi_plugin_nextool_main_modules',
+         [
+            'version'  => $diskVersion,
+            'date_mod' => date('Y-m-d H:i:s'),
+         ],
+         ['module_key' => $moduleKey]
+      );
+      $this->writeSchemaMarker($moduleKey, (string) $diskVersion);
+      if ($dbVersion !== null && $dbVersion !== '' && $dbVersion !== $diskVersion) {
+         @unlink($this->schemaMarkerPath($moduleKey, $dbVersion)); // higiene do marker antigo
+      }
 
       $this->clearCache();
       $this->refreshModules();
 
-      return $this->buildModuleActionResult($moduleKey, $action, true, __('Módulo atualizado com sucesso.', 'nextool'), array_merge($baseContext, [
-         'from_version' => $currentVersion,
-         'to_version'   => $targetVersion,
-      ]));
+      return $this->buildModuleActionResult($moduleKey, $action, true,
+         sprintf(__('Módulo atualizado com sucesso para a versão %s.', 'nextool'), $diskVersion),
+         array_merge($baseContext, [
+            'from_version' => $dbVersion,
+            'to_version'   => $diskVersion,
+         ]));
    }
 
    private function getModuleRow(string $moduleKey): ?array {
@@ -1512,6 +1627,14 @@ class PluginNextoolModuleManager {
 
          $row = $this->getModuleRow($moduleKey);
          if ($row === null || (int) ($row['is_installed'] ?? 0) !== 1) {
+            continue;
+         }
+
+         // Arquivos substituídos NESTA requisição: a classe em memória é a antiga.
+         // Migrar/bumpar aqui grava um estado mentiroso e trava o auto-reparo -- a
+         // convergência fica para a fase 2 (finalizeModuleUpgrade) ou para o próximo
+         // request, que já carrega a definição nova. Ver $staleClassModules e issue #158.
+         if (isset($this->staleClassModules[$moduleKey])) {
             continue;
          }
 
@@ -2085,8 +2208,18 @@ class PluginNextoolModuleManager {
     * @return bool True se salvou com sucesso
     */
    private function saveCache() {
+      // Requisição que substituiu arquivos de módulo NÃO persiste cache. A chave do cache
+      // é derivada do filemtime dos arquivos (getCacheKey()), então um cache salvo aqui
+      // nasceria "válido" apontando para os arquivos NOVOS -- e no request seguinte o
+      // discoverModules() sairia pelo loadCache(), que NÃO chama
+      // syncInstalledVersionsFromDisk(). Isso mataria a rede de segurança que converge o
+      // módulo quando a fase 2 não é disparada (issue #158).
+      if (!empty($this->staleClassModules)) {
+         return false;
+      }
+
       $cacheFilePath = $this->cachePath . '/' . $this->cacheFile;
-      
+
       // Prepara dados para cache (armazena apenas metadados, não instâncias)
       $cacheData = [
          'key'     => $this->getCacheKey(),

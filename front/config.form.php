@@ -306,11 +306,14 @@ foreach ($allModuleKeys as $moduleKey) {
    $moduleCanUninstall = PluginNextoolPermissionManager::canUninstallModule($moduleKey);
 
    // Ordenação por grupo de estado:
-   // 1=Update disponível, 2=Instalados DESATIVADOS ("Ativar"), 3=Ativos ("Configurações"),
-   // 4=Disponível para instalar, 5=Vitrine PAID (sem licença), 6=Download (FREE), 7=Bloqueados
-   // Os DESATIVADOS sobem (grupo 2, ACIMA dos ativos) para ficar fácil ver que estão off.
+   // 1=Update disponível, 2=Ativos ("Configurações"), 3=Instalados DESATIVADOS ("Ativar"),
+   // 4=Disponível para instalar, 5=PAID JÁ LICENCIADO ("Download"), 6=Vitrine PAID (sem
+   // licença, "Licenciar"), 7=Download (FREE), 8=Bloqueados
    // Buckets de exibição (menor = mais no topo). Dentro de cada um, ordena por downloads.
-   $sortGroup = 7; // default: bloqueados/edge cases
+   // O que o cliente PAGOU vem antes do que ele ainda não comprou (grupo 5 > 6): antes o
+   // PAID licenciado caía no mesmo balde dos FREE (abaixo da vitrine) e o módulo comprado
+   // aparecia no FIM da lista -- o inverso da expectativa de quem já pagou.
+   $sortGroup = 8; // default: bloqueados/edge cases
    if (!empty($updateAvailable)) {
       $sortGroup = 1;
    } elseif ($isEnabled && $moduleDownloaded) {
@@ -319,10 +322,12 @@ foreach ($allModuleKeys as $moduleKey) {
       $sortGroup = 3; // Instalado mas DESATIVADO -> botão "Ativar"
    } elseif ($canUseModule && $moduleDownloaded) {
       $sortGroup = 4;
+   } elseif ($isPaid && $canUseModule && $requiresRemoteDownload) {
+      $sortGroup = 5; // PAID com entitlement ativo: comprado, falta baixar -> "Download"
    } elseif ($isPaid && !$canUseModule && $requiresRemoteDownload) {
-      $sortGroup = 5; // Vitrine PAID: sem licença, botão "Licenciar" visível
+      $sortGroup = 6; // Vitrine PAID: sem licença, botão "Licenciar" visível
    } elseif ($canUseModule && $requiresRemoteDownload) {
-      $sortGroup = 6; // FREE disponível para download
+      $sortGroup = 7; // FREE disponível para download
    }
 
    // Módulos novos (<30 dias): apenas marca a flag $isNewModule; NÃO promove mais ao
@@ -418,12 +423,14 @@ usort($modulesState, static function ($a, $b) {
    // (incompatíveis não são mais forçados ao fim: viraram vitrine com Licenciar/Interesse,
    //  precisam ficar visíveis para conversão -- sorteiam pelos buckets/downloads normais.)
    // 1. Grupo de estado (menor = mais prioritário)
-   $ga = $a['_sort_group'] ?? 7;
-   $gb = $b['_sort_group'] ?? 7;
+   $ga = $a['_sort_group'] ?? 8;
+   $gb = $b['_sort_group'] ?? 8;
    if ($ga !== $gb) {
       return $ga <=> $gb;
    }
-   // 2. Dentro do mesmo grupo: PAID antes de FREE (nos grupos de descoberta)
+   // 2. Dentro do mesmo grupo: PAID antes de FREE (nos grupos de descoberta). Os grupos
+   //    5/6/7 já são homogêneos por tier -- isto pesa mesmo nos grupos 4 (baixado, pronto
+   //    para instalar) e 8 (bloqueados), que continuam misturando PAID e FREE.
    if ($ga >= 4) {
       $pa = ($a['is_paid'] ?? false) ? 0 : 1;
       $pb = ($b['is_paid'] ?? false) ? 0 : 1;
@@ -525,7 +532,7 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
 
 <?php if (!$nextool_is_standalone): ?>
 <div class="m-3" id="nextool-config-form">
-   <h3>NexTool Solutions - Conectando soluções, gerando valor</h3>
+   <h3>NexTool Solutions - <?php echo __('Conectando soluções, gerando valor', 'nextool'); ?></h3>
      <!-- Abas internas do Nextool -->
      <?php if ($firstTabKey === null): ?>
         <div class="alert alert-warning mt-3">
