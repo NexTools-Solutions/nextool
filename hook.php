@@ -107,6 +107,25 @@ function plugin_nextool_install() {
    }
    $migration->executeMigration();
 
+   // Chave de criptografia dos módulos (#161): migra do arquivo oculto para glpi_configs
+   // (cifrada pelo GLPIKey da instância) já no install/upgrade da base, sem esperar o
+   // primeiro acesso de um módulo. Idempotente e não-fatal: se falhar, os módulos seguem
+   // lendo o arquivo pelo fallback. Ver PluginNextoolSecretVault.
+   $vaultfile = NEXTOOL_PHP_DIR . '/inc/secretvault.class.php';
+   if (file_exists($vaultfile)) {
+      require_once $vaultfile;
+      if (class_exists('PluginNextoolSecretVault')) {
+         try {
+            // createIfMissing=false: aqui só MIGRAMOS uma chave existente. Instalação nova
+            // sem módulo que cifre não precisa de chave -- ela nasce no primeiro uso real.
+            PluginNextoolSecretVault::getModulesEncryptionKey(false);
+         } catch (\Throwable $e) {
+            Toolbox::logInFile('plugin_nextool',
+               'Falha ao migrar a chave de criptografia dos módulos: ' . $e->getMessage() . "\n");
+         }
+      }
+   }
+
    // F1a -- garante o registro base de config no install. NÃO gera mais client_identifier
    // localmente (a identidade é cunhada pelo ContainerAPI via enroll no provisionamento ativo).
    $configfile = NEXTOOL_PHP_DIR . '/inc/config.class.php';

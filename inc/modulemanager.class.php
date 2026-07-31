@@ -1366,6 +1366,14 @@ class PluginNextoolModuleManager {
             array_merge($baseContext, ['from_version' => $dbVersion, 'to_version' => $diskVersion]));
       }
 
+      // Guard de drift (#159): a migração acabou de rodar com o CÓDIGO NOVO; este é o
+      // momento certo de conferir se o schema real bate com o declarado no install.sql.
+      // Pega o caso clássico -- coluna acrescentada no CREATE TABLE sem o ALTER
+      // correspondente no upgrade.sql, que nunca chega a quem já tinha a tabela.
+      // Só ADICIONA o que falta; nunca dropa nem altera tipo. Não-fatal: um problema
+      // aqui não pode reverter um upgrade que deu certo.
+      $this->runSchemaGuard($moduleKey);
+
       $DB->update(
          'glpi_plugin_nextool_main_modules',
          [
@@ -1581,6 +1589,44 @@ class PluginNextoolModuleManager {
             $moduleKey, $from ?? 'null', $to ?? 'null', $e->getMessage()
          ));
          return false;
+      }
+   }
+
+   /**
+    * Roda o guard de drift de schema do módulo (issue #159).
+    *
+    * Compara o schema declarado no `sql/install.sql` com o real (via tabelas-sombra, ver
+    * PluginNextoolSchemaGuard) e ADICIONA as colunas que faltarem. Não-fatal por contrato:
+    * é uma rede de segurança, não pode derrubar o fluxo que a chamou.
+    *
+    * @return void
+    */
+   private function runSchemaGuard(string $moduleKey): void {
+      try {
+         // getModulePath() do BaseModule é protected; o manager tem o seu, público.
+         $modulePath = $this->getModulePath($moduleKey);
+         if (!is_string($modulePath) || $modulePath === '') {
+            return;
+         }
+         $installSql = rtrim($modulePath, '/') . '/sql/install.sql';
+         if (!is_file($installSql)) {
+            return;
+         }
+         require_once NEXTOOL_PHP_DIR . '/inc/schemaguard.class.php';
+         if (!class_exists('PluginNextoolSchemaGuard')) {
+            return;
+         }
+         // O guard cria/dropa tabelas-sombra: silencia eco de Migration/DDL na UI.
+         ob_start(static function () { return ''; });
+         try {
+            PluginNextoolSchemaGuard::inspectAndHeal($moduleKey, $installSql);
+         } finally {
+            if (ob_get_level() > 0) { @ob_end_clean(); }
+         }
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[SCHEMA] guard de drift de %s não pôde rodar: %s\n", $moduleKey, $e->getMessage()
+         ));
       }
    }
 

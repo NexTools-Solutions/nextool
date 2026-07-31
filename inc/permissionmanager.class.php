@@ -241,6 +241,24 @@ class PluginNextoolPermissionManager {
    }
 
    /**
+    * Ver a aba de Logs de um modulo (bit "Ver logs").
+    *
+    * Helper unico para o gate que TODA aba de log de modulo precisa aplicar: o
+    * `Search::show()` NAO aplica o `canView()` do itemtype, entao sem esta checagem
+    * explicita a grade lista a auditoria administrativa para qualquer perfil que
+    * alcance a aba -- e o bit "Ver logs" fica inerte na matriz de perfil.
+    *
+    * Uso no topo do `front/<mod>.logs.tab.inc.php`:
+    *   if (!PluginNextoolPermissionManager::canViewModuleLogs('<mod>')) {
+    *      Html::displayRightError();
+    *      return;
+    *   }
+    */
+   public static function canViewModuleLogs(string $moduleKey): bool {
+      return self::canAdmin($moduleKey, self::VIEW_LOGS);
+   }
+
+   /**
     * Resolve a permissao de UMA acao do catalogo. Usado pelo endpoint e pela UI
     * (mesmo veredito nos dois lados). Acao desconhecida => negado (fail-closed).
     */

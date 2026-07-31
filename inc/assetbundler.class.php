@@ -43,6 +43,19 @@ class PluginNextoolAssetBundler {
    public static function collapseHooks(): void {
       global $PLUGIN_HOOKS;
 
+      // SOMENTE GLPI 11. O GLPI 10 valida o asset de plugin com
+      // `file_exists($plugin_root_dir . "/{$file}")` (src/Html.php, add_javascript/add_css) --
+      // e a URL do bundle carrega query string, então o caminho testado inclui o
+      // "?type=js&files=..." e o file_exists dá false. Resultado no G10: o asset NÃO é
+      // emitido (CSS/JS dos módulos somem da página) e ainda sai um
+      // "file not found from plugin nextool!" no log. Sem o bundle, o G10 segue com as N
+      // URLs individuais -- mais requests, porém funcionando.
+      // Portar o bundle para o G10 exige uma URL SEM query string (o hash de invalidação
+      // teria de sair da URL), o que é um desenho à parte. Ver pendência do bundle no G10.
+      if ((int) explode('.', GLPI_VERSION)[0] < 11) {
+         return;
+      }
+
       $map = [
          'add_javascript' => 'js',
          'add_css'        => 'css',
