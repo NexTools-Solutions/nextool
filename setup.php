@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.6.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.6.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -96,6 +96,26 @@ function plugin_nextool_boot() {
          \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
             'nextool',
             '#^/ajax/module_ajax\\.php#',
+            \Glpi\Http\Firewall::STRATEGY_NO_CHECK
+         );
+         // Assets buscados pelo browser (script/link) NAO podem cair no fallback
+         // AUTHENTICATED do firewall: ele responde 302 /?redirect=<asset> ao fetch
+         // deslogado, e plugins de SSO (ex.: samlsso) persistem esse redirect e
+         // despejam o usuario no asset cru apos o login (KB glpi-dev, armadilha 89).
+         // - nextool-tabs.(js|css).php e os wrappers *-*.js/css.php: publicos ou
+         //   roteados ao module_assets.php, que tem guard proprio (401 sem redirect);
+         // - module_assets.php / module_bundle.php: exigem sessao INTERNAMENTE e
+         //   negam em 401 seco, sem gerar redirect.
+         // No GLPI 10 o Apache serve front/*.php direto (sem firewall) e o guard
+         // interno cumpre o mesmo papel.
+         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
+            'nextool',
+            '#^/front/[\\w.-]+\\.(js|css)\\.php$#',
+            \Glpi\Http\Firewall::STRATEGY_NO_CHECK
+         );
+         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
+            'nextool',
+            '#^/front/module_(assets|bundle)\\.php#',
             \Glpi\Http\Firewall::STRATEGY_NO_CHECK
          );
       }

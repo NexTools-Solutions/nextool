@@ -71,9 +71,18 @@ if (($qpos = strpos($filename, '?')) !== false) {
    $filename = substr($filename, 0, $qpos);
 }
 
-// Assets do plugin exigem sessão autenticada.
+// Assets do plugin exigem sessão autenticada -- mas a recusa é 401 SEM redirect:
+// checkLoginUser() redirecionaria para /?redirect=<este asset>, e plugins de SSO
+// (ex.: samlsso) persistem esse redirect e despejam o usuário no asset cru após
+// o login. Fetch de asset nunca é destino navegável; negar seco não muda nada
+// para o browser (o <script>/<link> só falha, como já falhava com o 302).
 require_once GLPI_ROOT . '/inc/includes.php';
-Session::checkLoginUser();
+if (!Session::getLoginUserID()) {
+   http_response_code(401);
+   header('Content-Type: text/plain; charset=UTF-8');
+   header('Cache-Control: no-store');
+   die('Autenticação necessária.');
+}
 
 // Libera o lock de sessão imediatamente após validar o login.
 // Arquivos servidos por este router (CSS/JS dos módulos) apenas LEEM config -

@@ -42,8 +42,16 @@ if (!in_array($type, ['js', 'css'], true) || $files === '') {
 }
 
 // Bundle exige sessão autenticada (mesma política do module_assets.php).
+// Recusa em 401 SEM redirect: checkLoginUser() redirecionaria para
+// /?redirect=<bundle> e envenenaria o retorno pós-login dos plugins de SSO
+// (mesma razão do guard do module_assets.php).
 require_once GLPI_ROOT . '/inc/includes.php';
-Session::checkLoginUser();
+if (!Session::getLoginUserID()) {
+   http_response_code(401);
+   header('Content-Type: text/plain; charset=UTF-8');
+   header('Cache-Control: no-store');
+   die('Autenticação necessária.');
+}
 
 // Libera o lock de sessão imediatamente (mesmo fix do module_assets.php):
 // os wrappers incluídos apenas LEEM config/sessão.
