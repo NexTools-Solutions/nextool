@@ -249,7 +249,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
 // Verificação de permissão depende da ação
 $action = $_POST['action'] ?? '';
 
-$validActions = ['', 'validate_license', 'accept_policies', 'unlink_environment'];
+$validActions = ['', 'validate_license', 'accept_policies', 'unlink_environment', 'save_uninstall_mode'];
 if (!in_array($action, $validActions, true)) {
    http_response_code(400);
    die(json_encode(['success' => false, 'message' => __('Ação inválida.', 'nextool')]));
@@ -296,6 +296,34 @@ if ($action === 'unlink_environment') {
       __('Vínculo de provisionamento removido localmente. Para provisionar novamente, solicite ao administrador o reset deste ambiente no servidor.', 'nextool'),
       false,
       INFO
+   );
+
+   plugin_nextool_redirect_after_action();
+   exit;
+}
+
+if ($action === 'save_uninstall_mode') {
+   // #160: escolha manter/apagar na desinstalação da base. O modal de confirmação do
+   // core não é interceptável e plugin_nextool_uninstall() roda sem argumentos, então
+   // a intenção é persistida ANTES, aqui, e lida pelo hook na hora do uninstall.
+   $mode = (($_POST['uninstall_mode'] ?? 'keep') === 'purge_all') ? 'purge_all' : 'keep';
+   Config::setConfigurationValues('plugin:nextool', ['uninstall_mode' => $mode]);
+
+   PluginNextoolConfigAudit::log([
+      'section' => 'general',
+      'action'  => 'save_uninstall_mode',
+      'result'  => 1,
+      'message' => $mode === 'purge_all'
+         ? __('Modo de desinstalação: APAGAR TUDO (módulos, dados e arquivos).', 'nextool')
+         : __('Modo de desinstalação: manter dados (padrão).', 'nextool'),
+   ]);
+
+   Session::addMessageAfterRedirect(
+      $mode === 'purge_all'
+         ? __('Atenção: ao desinstalar o plugin, TODOS os dados dos módulos serão apagados permanentemente.', 'nextool')
+         : __('Modo de desinstalação salvo: os dados serão preservados ao desinstalar.', 'nextool'),
+      false,
+      $mode === 'purge_all' ? WARNING : INFO
    );
 
    plugin_nextool_redirect_after_action();

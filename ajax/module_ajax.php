@@ -138,24 +138,86 @@ require_once GLPI_ROOT . '/inc/includes.php';
 // Para endpoints autenticados (não-stateless), precisamos restaurar a sessão
 // real do usuário: ler o session ID do cookie, setar via session_id() e chamar
 // session_start() para carregar os dados da sessão do filesystem.
+require_once NEXTOOL_PHP_DIR . '/inc/ajaxsessionguard.inc.php';
+
 $sessName = session_name();
 $sessId   = $_COOKIE[$sessName] ?? null;
 
-if (!empty($sessId) && is_string($sessId) && session_id() !== $sessId) {
-   // Fechar sessão vazia se o Kernel a iniciou (não deve acontecer para
-   // stateless, mas proteção defensiva)
-   if (session_status() === PHP_SESSION_ACTIVE) {
-      session_abort();
-   }
-   @ini_set('session.use_cookies', '1');
-   session_id($sessId);
-   session_start();
-} elseif (session_status() !== PHP_SESSION_ACTIVE) {
-   @ini_set('session.use_cookies', '1');
-   session_start();
+// O ID vem de cookie, ou seja, é input do usuário. Restringir ao alfabeto de
+// session id impede path traversal no is_file() do guard e lixo no session_id().
+if (!is_string($sessId) || preg_match('/^[A-Za-z0-9,\-]{1,128}$/', $sessId) !== 1) {
+   // Sem cookie (bot, crawler, healthcheck, link colado) ou cookie malformado.
+   // O comportamento anterior era session_start() sem ID: cunhava uma sessão
+   // vazia E devolvia Set-Cookie, fabricando um sess_ de 0 byte por request
+   // anônimo. Endpoint autenticado não tem caso de uso para isso.
+   plugin_nextool_ajax_session_expired();
 }
 
-Session::checkLoginUser();
+// Rede de segurança para a corrida com o GC e para save_handler != files, onde
+// o guard abaixo não sabe responder. Em modo estrito o PHP recusa um ID
+// inexistente e gera outro - divergência que detectamos logo depois.
+@ini_set('session.use_strict_mode', '1');
+
+// Só restaura se a sessão REALMENTE existir no storage. Esta é a única camada
+// que impede o Set-Cookie de ser emitido, porque quem o emite é o próprio
+// session_start(). Sem ela, um ID já coletado pelo GC vira sessão nova vazia ->
+// checkLoginUser estoura -> Session::destroy() do core -> sess_ de 0 byte com
+// mtime fresco que o polling renova a cada 15/30s e o GC nunca coleta ->
+// 401 travado até o reload (incidente 2026-08).
+if (!plugin_nextool_session_exists($sessId)) {
+   plugin_nextool_ajax_session_expired();
+}
+
+if (session_status() === PHP_SESSION_ACTIVE) {
+   session_abort();
+}
+// use_cookies=1 no caminho feliz: com session.cookie_lifetime > 0, é o reenvio
+// do cookie a cada request que mantém o cookie deslizante. Nos caminhos de erro
+// o guard força 0 + header_remove.
+@ini_set('session.use_cookies', '1');
+session_id($sessId);
+session_start();
+
+// Corrida: o GC pode ter apagado o arquivo entre o is_file() e o start. Com
+// use_strict_mode=1 o PHP rejeita o ID e gera outro. session_abort() encerra SEM
+// gravar (nenhum arquivo nasce) e o header_remove tira o Set-Cookie do ID novo,
+// que sobrescreveria o cookie bom no browser.
+if (session_id() !== $sessId) {
+   session_abort();
+   if (!headers_sent()) {
+      header_remove('Set-Cookie');
+   }
+   plugin_nextool_ajax_session_expired();
+}
+
+// Tratar a expiração AQUI, não deixar subir. Se a SessionExpiredException chega
+// ao AccessErrorListener do core, ele chama Session::destroy(), que ZERA o
+// arquivo mantendo a sessão ativa - o mesmo zumbi de 0 byte auto-renovado.
+// session_abort() deixa o arquivo intacto (mtime não avança) e o GC o coleta na
+// hora certa. AccessDeniedHttpException NÃO é capturada: 403 é a resposta certa
+// e o core não destrói a sessão nela.
+try {
+   Session::checkLoginUser();
+} catch (\Glpi\Exception\SessionExpiredException $e) {
+   session_abort();
+   if (!headers_sent()) {
+      header_remove('Set-Cookie');
+   }
+   plugin_nextool_ajax_session_expired();
+}
+
+// RENOVAÇÃO DA SESSÃO. Numa request normal o Kernel chama Session::start(), que
+// é session_start() + Session::initVars() - e o initVars reescreve
+// glpi_currenttime em TODA request. Neste path stateless o initVars roda num
+// $_SESSION vazio (SessionStart.php) e é DESCARTADO pelo session_start() acima.
+// Sem esta linha o payload gravado é idêntico ao lido, o session.lazy_write=On
+// PULA a gravação, o mtime do sess_ nunca avança e o GC mata a sessão de quem
+// só deixa a aba aberta pollando.
+// Custo de lock: ZERO. É atribuição em memória; a gravação sai no
+// session_write_close() logo abaixo, que já existia. E vem DEPOIS do
+// checkLoginUser de propósito: renovar antes de validar daria mtime fresco a uma
+// sessão inválida, que é exatamente o zumbi que este bloco existe para matar.
+Session::initVars();
 
 // Reaplica CSRF para endpoints autenticados.
 // (O CheckCsrfListener é bypassado quando o path é stateless.)
@@ -196,7 +258,7 @@ if (!in_array($method, $bodylessMethods, true)) {
 // velho deixa de ser uma combinação quebrada.
 if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION_ACTIVE) {
    $nxPreCloseTokens = $_SESSION['glpicsrftokens'] ?? [];
-   register_shutdown_function(static function () use ($nxPreCloseTokens): void {
+   register_shutdown_function(static function () use ($nxPreCloseTokens, $sessId): void {
       $memTokens = $_SESSION['glpicsrftokens'] ?? [];
       if (!is_array($memTokens)) {
          return;
@@ -213,6 +275,13 @@ if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION
       @ini_set('session.use_cookies', '0');
       @session_cache_limiter('');
       if (!@session_start()) {
+         return;
+      }
+      // Com use_strict_mode=1, um GC entre o write_close e o shutdown faria o
+      // PHP regenerar o ID aqui - e re-persistiríamos tokens numa sessão que não
+      // é a do usuário. Abortar deixa o storage intocado.
+      if (session_id() !== $sessId) {
+         session_abort();
          return;
       }
       $diskTokens = $_SESSION['glpicsrftokens'] ?? [];

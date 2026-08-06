@@ -265,5 +265,76 @@ declare(strict_types=1);
          <?php PluginNextoolConfigAudit::showSimpleList(); ?>
       </div>
    </div>
+
+   <?php if ($canManageAdminTabs): ?>
+   <div class="card shadow-sm nextool-tab-card mt-3">
+      <div class="card-body">
+         <h5 class="fw-semibold mb-2">
+            <i class="ti ti-plug-connected-x me-1"></i>
+            <?php echo __('Provisionamento do ambiente', 'nextool'); ?>
+         </h5>
+         <p class="text-muted mb-2">
+            <?php echo __('Remove o segredo de comunicação LOCAL deste ambiente (a identidade é preservada). Use quando o suporte NexTool resetar o provisionamento no servidor, ou ao descomissionar este GLPI. A próxima Sincronização gera um segredo novo automaticamente.', 'nextool'); ?>
+         </p>
+         <form method="post" action="<?php echo Plugin::getWebDir('nextool') . '/front/config.save.php'; ?>"
+               onsubmit="return confirm('<?php echo Html::entities_deep(__('Remover o vínculo de provisionamento local? A próxima Sincronização irá reprovisionar este ambiente.', 'nextool')); ?>');">
+            <?php echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); ?>
+            <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$3' : 'PluginNextoolSetup$1']); ?>
+            <?php echo Html::hidden('action', ['value' => 'unlink_environment']); ?>
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+               <i class="ti ti-plug-connected-x me-1"></i><?php echo __('Desvincular ambiente', 'nextool'); ?>
+            </button>
+         </form>
+      </div>
+   </div>
+   <?php endif; ?>
+
+   <?php
+      // #160: escolha do comportamento na DESINSTALAÇÃO da base. O modal do core não é
+      // interceptável, então a intenção é persistida aqui e lida pelo hook de uninstall.
+      $nextoolUninstallMode = (Config::getConfigurationValues('plugin:nextool')['uninstall_mode'] ?? 'keep');
+      $nextoolUninstallPurge = ($nextoolUninstallMode === 'purge_all');
+   ?>
+   <div class="card shadow-sm nextool-tab-card mt-3">
+      <div class="card-body">
+         <h5 class="fw-semibold mb-2">
+            <i class="ti ti-trash me-1"></i>
+            <?php echo __('Desinstalação do plugin', 'nextool'); ?>
+         </h5>
+         <p class="text-muted mb-2">
+            <?php echo __('Define o que acontece com os dados dos módulos quando o plugin base for desinstalado pela tela de plugins do GLPI.', 'nextool'); ?>
+         </p>
+         <form method="post" action="<?php echo Plugin::getWebDir('nextool') . '/front/config.save.php'; ?>">
+            <?php echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); ?>
+            <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$3' : 'PluginNextoolSetup$1']); ?>
+            <?php echo Html::hidden('action', ['value' => 'save_uninstall_mode']); ?>
+            <div class="form-check mb-1">
+               <input class="form-check-input" type="radio" name="uninstall_mode" id="nextool-uninstall-keep"
+                      value="keep" <?php echo $nextoolUninstallPurge ? '' : 'checked'; ?> <?php echo $canManageAdminTabs ? '' : 'disabled'; ?>>
+               <label class="form-check-label" for="nextool-uninstall-keep">
+                  <strong><?php echo __('Manter dados (padrão)', 'nextool'); ?></strong> --
+                  <?php echo __('módulos, tabelas, arquivos e chave de cifra são preservados; reinstalar o plugin traz tudo de volta como estava.', 'nextool'); ?>
+               </label>
+            </div>
+            <div class="form-check mb-2">
+               <input class="form-check-input" type="radio" name="uninstall_mode" id="nextool-uninstall-purge"
+                      value="purge_all" <?php echo $nextoolUninstallPurge ? 'checked' : ''; ?> <?php echo $canManageAdminTabs ? '' : 'disabled'; ?>>
+               <label class="form-check-label" for="nextool-uninstall-purge">
+                  <strong class="text-danger"><?php echo __('Apagar tudo', 'nextool'); ?></strong> --
+                  <?php echo __('remove permanentemente os dados de TODOS os módulos (tabelas e arquivos), o registro de módulos e a chave de cifra.', 'nextool'); ?>
+               </label>
+            </div>
+            <div class="alert alert-warning small p-2 mb-2">
+               <i class="ti ti-alert-triangle me-1"></i>
+               <?php echo __('Com "Manter dados", após desinstalar o plugin os dados só poderão ser apagados REINSTALANDO o plugin (o botão "Apagar dados" por módulo deixa de existir junto com a interface).', 'nextool'); ?>
+            </div>
+            <?php if ($canManageAdminTabs): ?>
+            <button type="submit" class="btn btn-sm btn-outline-primary">
+               <i class="ti ti-device-floppy me-1"></i><?php echo __('Salvar modo de desinstalação', 'nextool'); ?>
+            </button>
+            <?php endif; ?>
+         </form>
+      </div>
+   </div>
 <?php if (!$nextool_is_standalone): ?></div><?php endif; ?>
 <?php endif; ?>

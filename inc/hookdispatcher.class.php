@@ -35,6 +35,9 @@ class PluginNextoolHookDispatcher {
    /** @var array[] preItemUpdate[itemType] = [ [class, method], ... ] */
    private static $preItemUpdate = [];
 
+   /** @var array[] itemPurge[itemType] = [ [class, method], ... ] */
+   private static $itemPurge = [];
+
    /** @var array[] postShowItem[itemType] = [ [class, method], ... ] */
    private static $postShowItem = [];
 
@@ -88,6 +91,22 @@ class PluginNextoolHookDispatcher {
          self::$preItemUpdate[$itemType] = [];
       }
       self::$preItemUpdate[$itemType][] = $callback;
+   }
+
+   /**
+    * Registra callback para item_purge (APÓS a exclusão definitiva do item).
+    * O callback recebe o CommonDBTM $item já purgado (fields ainda populados).
+    * Uso: módulos que mantêm dados vinculados a sub-itens nativos (ex.:
+    * contracthours limpa timer/task_map quando uma TicketTask é excluída).
+    *
+    * @param string $itemType Ex.: 'TicketTask'
+    * @param array  $callback [className, methodName]
+    */
+   public static function registerItemPurge($itemType, array $callback) {
+      if (!isset(self::$itemPurge[$itemType])) {
+         self::$itemPurge[$itemType] = [];
+      }
+      self::$itemPurge[$itemType][] = $callback;
    }
 
    /**
@@ -207,6 +226,27 @@ class PluginNextoolHookDispatcher {
       return $item;
    }
 
+   /**
+    * Dispatcher genérico para item_purge[itemType]. Dispara APÓS a exclusão
+    * definitiva -- não há o que abortar, então toda exceção é apenas logada
+    * (fail-open: um bug de handler nunca pode impedir a exclusão nativa).
+    */
+   public static function dispatchItemPurge(string $itemType, CommonDBTM $item): CommonDBTM {
+      foreach (self::$itemPurge[$itemType] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_purge %s: %s - %s',
+               $itemType,
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
    // ========================================
    // Wrappers nomeados (compat com callers $PLUGIN_HOOKS em setup.php)
    // ========================================
@@ -263,6 +303,10 @@ class PluginNextoolHookDispatcher {
 
    public static function dispatchItemUpdateTicketValidation(CommonDBTM $item) {
       return self::dispatchItemUpdate('TicketValidation', $item);
+   }
+
+   public static function dispatchItemPurgeTicketTask(CommonDBTM $item) {
+      return self::dispatchItemPurge('TicketTask', $item);
    }
 
    public static function dispatchItemAddTicketTask(CommonDBTM $item) {
@@ -496,6 +540,200 @@ class PluginNextoolHookDispatcher {
    // NOTA: render de search options 'specific' (giveItem) NÃO fica aqui - já
    // existe ponto de extensão via PluginNextoolHookProviderInterface::giveItem()
    // (módulo declara getHookProviders(); ver hookprovidersdispatcher.class.php).
+
+   // ==========================================================================
+   // NOTIFICAÇÕES ENTRE MÓDULOS (publish/sink)
+   // ==========================================================================
+   // Um módulo PUBLICA um evento; outro módulo (hoje o smartnotify) o CONSOME.
+   // O emissor não conhece o consumidor, não conhece o schema dele e não quebra
+   // quando ele não está instalado.
+   //
+   // Por que PUSH e não PULL: o sino do smartnotify roda em polling por usuário
+   // logado. Abrir esse caminho quente para N provedores de terceiros faria cada
+   // ciclo pagar o custo de todos os módulos instalados. Aqui o emissor publica
+   // uma vez, o consumidor persiste, e a leitura é uma query só.
+   //
+   // AUDIÊNCIA, NÃO DESTINATÁRIOS: o emissor declara uma audiência LÓGICA
+   // (ex.: 'module_admins') e a resolução acontece na LEITURA, dentro da sessão
+   // de quem abre o sino. Sem isso, quem emite em cron (sem sessão) não teria
+   // como resolver destinatário, e cada evento viraria N linhas no banco - além
+   // de criar uma ACL paralela ao modelo de permissões do plugin.
+
+   /** Teto do buffer de publicações feitas antes de existir um sink. */
+   private const NOTIFICATION_BUFFER_MAX = 200;
+
+   /** @var array<string, array> sources[sourceKey] = meta declarada pelo módulo */
+   private static $notificationSources = [];
+
+   /** @var callable[] sinks registrados (na prática, um: o smartnotify) */
+   private static $notificationSinks = [];
+
+   /** @var array[] publicações feitas antes de o sink existir */
+   private static $notificationBuffer = [];
+
+   /**
+    * Declara uma fonte de notificação (metadado puro, sem efeito colateral).
+    * O consumidor usa isto para montar a tela de configuração e as preferências
+    * por usuário - por isso a declaração acontece no onInit() do módulo, mesmo
+    * que nenhum evento seja publicado naquele request.
+    *
+    * @param string $sourceKey formato '<modulo>.<evento>', ex.: 'glpisync.sync_failed'
+    * @param array  $meta      label, description, icon, color, severity,
+    *                          default_enabled, dedup_window (segundos)
+    */
+   public static function registerNotificationSource(string $sourceKey, array $meta): void {
+      if (!preg_match('/^[a-z0-9_]+\.[a-z0-9_]+$/', $sourceKey)) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            '[HookDispatcher] notification source ignorada - chave inválida "%s" (esperado <modulo>.<evento>)',
+            $sourceKey
+         ));
+         return;
+      }
+      $module = substr($sourceKey, 0, (int)strpos($sourceKey, '.'));
+
+      // Bit que o usuário precisa ter NO MÓDULO EMISSOR para receber este aviso.
+      // A permissão vive no direito do emissor (`plugin_nextool_module_<module>`),
+      // NUNCA no módulo de notificações: centralizar lá significaria um bit por
+      // módulo emissor num único direito, e `rights` é int(11) = 22 colunas no
+      // total. Com 30+ módulos publicando, o orçamento estoura -- e o módulo de
+      // notificações passaria a hospedar permissões que não são dele.
+      $scope = (string)($meta['required_scope'] ?? 'use');
+      if (!in_array($scope, ['use', 'admin'], true)) {
+         $scope = 'use';
+      }
+
+      self::$notificationSources[$sourceKey] = [
+         'key'             => $sourceKey,
+         'module'          => $module,
+         'label'           => (string)($meta['label'] ?? $sourceKey),
+         'description'     => (string)($meta['description'] ?? ''),
+         'icon'            => (string)($meta['icon'] ?? 'ti ti-bell'),
+         'color'           => (string)($meta['color'] ?? 'secondary'),
+         'severity'        => (string)($meta['severity'] ?? 'info'),
+         'default_enabled' => !isset($meta['default_enabled']) || (bool)$meta['default_enabled'],
+         'dedup_window'    => max(0, (int)($meta['dedup_window'] ?? 0)),
+         'required_bit'    => max(0, (int)($meta['required_bit'] ?? 0)),
+         'required_scope'  => $scope,
+      ];
+   }
+
+   /**
+    * Fontes declaradas por todos os módulos ativos. Consumido pelo sink para
+    * montar configuração e preferências.
+    */
+   public static function getNotificationSources(): array {
+      return self::$notificationSources;
+   }
+
+   /**
+    * Registra o consumidor. Ao registrar, DRENA o buffer: um módulo que publicou
+    * durante o próprio onInit() não pode perder o evento só porque carregou antes
+    * do consumidor - a ordem de boot dos módulos é alfabética e não é contrato.
+    *
+    * @param callable $sink fn(array $notification): void
+    */
+   public static function registerNotificationSink(callable $sink): void {
+      self::$notificationSinks[] = $sink;
+
+      if (!empty(self::$notificationBuffer)) {
+         $pending = self::$notificationBuffer;
+         self::$notificationBuffer = [];
+         foreach ($pending as $notification) {
+            self::deliverNotification($notification);
+         }
+      }
+   }
+
+   /**
+    * Publica um evento. Sem sink registrado, guarda no buffer (limitado) e o
+    * request termina sem efeito nenhum - publicar NUNCA pode quebrar o emissor.
+    *
+    * @return int quantidade de sinks que receberam (0 = ninguém consumiu ainda)
+    */
+   public static function dispatchNotification(array $payload): int {
+      $notification = self::normalizeNotification($payload);
+      if ($notification === null) {
+         return 0;
+      }
+
+      if (empty(self::$notificationSinks)) {
+         if (count(self::$notificationBuffer) < self::NOTIFICATION_BUFFER_MAX) {
+            self::$notificationBuffer[] = $notification;
+         }
+         return 0;
+      }
+
+      return self::deliverNotification($notification);
+   }
+
+   /**
+    * Entrega a todos os sinks. Sink que estoura é registrado e ignorado: falha
+    * do consumidor não pode derrubar a operação de quem publicou.
+    */
+   private static function deliverNotification(array $notification): int {
+      $delivered = 0;
+      foreach (self::$notificationSinks as $sink) {
+         try {
+            call_user_func($sink, $notification);
+            $delivered++;
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] notification sink falhou (%s): %s',
+               $notification['source_key'],
+               $e->getMessage()
+            ));
+         }
+      }
+      return $delivered;
+   }
+
+   /**
+    * Valida e completa o payload. Devolve null quando o evento é inutilizável
+    * (sem chave ou sem título) - descartar cedo evita lixo no feed do consumidor.
+    */
+   private static function normalizeNotification(array $payload): ?array {
+      $sourceKey = trim((string)($payload['source_key'] ?? ''));
+      $title     = trim((string)($payload['title'] ?? ''));
+      if ($sourceKey === '' || $title === '') {
+         return null;
+      }
+
+      $meta   = self::$notificationSources[$sourceKey] ?? [];
+      $module = $meta['module'] ?? (strpos($sourceKey, '.') !== false
+         ? substr($sourceKey, 0, (int)strpos($sourceKey, '.'))
+         : $sourceKey);
+
+      // Audiência LÓGICA - resolvida na leitura, na sessão do leitor.
+      // module_admins (default): quem administra o módulo emissor.
+      $audience = $payload['audience'] ?? [];
+      if (!is_array($audience) || empty($audience['type'])) {
+         $audience = ['type' => 'module_admins'];
+      }
+      if (empty($audience['module'])) {
+         $audience['module'] = $module;
+      }
+
+      $severity = (string)($payload['severity'] ?? $meta['severity'] ?? 'info');
+      if (!in_array($severity, ['info', 'warning', 'critical'], true)) {
+         $severity = 'info';
+      }
+
+      return [
+         'source_key'   => $sourceKey,
+         'module'       => $module,
+         'title'        => $title,
+         'message'      => (string)($payload['message'] ?? ''),
+         'url'          => (string)($payload['url'] ?? ''),
+         'severity'     => $severity,
+         'audience'     => $audience,
+         'entities_id'  => isset($payload['entities_id']) ? (int)$payload['entities_id'] : null,
+         'dedup_key'    => (string)($payload['dedup_key'] ?? $sourceKey),
+         'dedup_window' => max(0, (int)($payload['dedup_window'] ?? $meta['dedup_window'] ?? 0)),
+         'expires_at'   => $payload['expires_at'] ?? null,
+         'data'         => is_array($payload['data'] ?? null) ? $payload['data'] : [],
+         'date'         => (string)($payload['date'] ?? $_SESSION['glpi_currenttime'] ?? date('Y-m-d H:i:s')),
+      ];
+   }
 
    /**
     * Ocupa um slot $PLUGIN_HOOKS[<hook>]['nextool'][<itemType>] com um dispatcher

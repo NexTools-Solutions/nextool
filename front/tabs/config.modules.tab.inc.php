@@ -184,6 +184,7 @@ declare(strict_types=1);
                        data-module-install-ready="<?php echo (!$module['is_installed'] && $module['module_downloaded']) ? '1' : '0'; ?>"
                        data-module-update="<?php echo $module['update_available'] ? '1' : '0'; ?>"
                        data-module-tier="<?php echo $tier; ?>"
+                       data-module-blocked="<?php echo !empty($module['blocked_reason']) ? '1' : '0'; ?>"
                        data-module-category="<?php echo Html::entities_deep($moduleCategory); ?>"
                        data-module-downloads="<?php echo $dlCount; ?>"
                        <?php if ($screenshotUrl !== ''): ?>data-screenshot-url="<?php echo Html::entities_deep($screenshotUrl); ?>"<?php endif; ?>>
@@ -244,6 +245,16 @@ declare(strict_types=1);
                            </ul>
                            <?php else: ?>
                            <p class="card-text text-muted small mb-2"><?php echo Html::entities_deep($module['description']); ?></p>
+                           <?php endif; ?>
+
+                           <?php if (!empty($module['blocked_reason'])): ?>
+                           <!-- Módulo bloqueado pelo guard de manifesto (#237): sem esta faixa o
+                                bloqueio era invisível (card normal, motivo só no log) e o sintoma
+                                para o admin era idêntico a "perdi as permissões". -->
+                           <div class="alert alert-danger small p-2 mb-2">
+                              <span class="badge bg-danger text-white me-1"><?php echo __('Bloqueado', 'nextool'); ?></span>
+                              <?php echo Html::entities_deep($module['blocked_reason']); ?>
+                           </div>
                            <?php endif; ?>
 
                            <?php if (!$module['catalog_is_enabled']): ?>

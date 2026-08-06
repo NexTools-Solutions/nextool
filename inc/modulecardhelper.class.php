@@ -41,6 +41,26 @@ class PluginNextoolModuleCardHelper {
          return self::renderBadge(__('Sem permissão para visualizar ações deste módulo.', 'nextool'));
       }
 
+      // Módulo BLOQUEADO por manifesto (#237): o código está em disco mas o guard de
+      // compatibilidade impediu o carregamento (min_plugin_version, major errada,
+      // module.json inválido). Sem esta superfície, o card aparecia normal, o módulo
+      // sumia de menus/abas e o motivo morria no log -- sintoma idêntico a "perdi as
+      // permissões". O CTA "Atualizar" usa a action update, que para módulo bloqueado
+      // re-baixa a versão compatível por design (updateModule -> forceDownload).
+      if (!empty($state['blocked_reason'])) {
+         if ($canUpdateMod && !empty($state['distribution_configured'])) {
+            $primary = self::renderActionForm(
+               $state, 'update', __('Atualizar', 'nextool'),
+               'btn btn-sm btn-warning module-action', 'ti ti-arrow-up'
+            );
+         } else {
+            $primary = self::renderBadge(__('Aguardando atualização compatível', 'nextool'), 'badge bg-warning text-dark me-1');
+         }
+         $secondary = [];
+         self::appendExternalLinks($state, $secondary);
+         return $primary . self::wrapDropdown($secondary);
+      }
+
       $catalogDisabled = empty($state['catalog_is_enabled']);
 
       if (!$canManage) {

@@ -220,12 +220,37 @@ function plugin_nextool_uninstall() {
    global $DB;
 
    $manager = PluginNextoolModuleManager::getInstance();
-   // ATENÇÃO: NÃO desinstalamos os módulos aqui. Desinstalar o plugin base preserva os
-   // módulos INTEGRALMENTE -- registro em glpi_plugin_nextool_main_modules (is_installed/
-   // is_enabled/config), tabelas de dados e arquivos no runtime -- para que reinstalar o
-   // base no mesmo GLPI traga os módulos de volta exatamente como estavam, sem reativação
-   // manual. A remoção real de um módulo (tabelas + arquivos) é exclusiva do botão
-   // "Apagar dados" por módulo (purgeModuleData), nunca do uninstall do plugin base.
+   // ATENÇÃO: por PADRÃO NÃO desinstalamos os módulos aqui. Desinstalar o plugin base
+   // preserva os módulos INTEGRALMENTE -- registro em glpi_plugin_nextool_main_modules
+   // (is_installed/is_enabled/config), tabelas de dados e arquivos no runtime -- para que
+   // reinstalar o base no mesmo GLPI traga os módulos de volta exatamente como estavam.
+   // A remoção real de um módulo (tabelas + arquivos) é exclusiva do botão "Apagar dados"
+   // por módulo (purgeModuleData) OU do modo "Apagar tudo" abaixo.
+
+   // #160: escolha manter/apagar persistida na aba Licenciamento (o modal do core não é
+   // interceptável e este hook roda sem argumentos -- a intenção é lida da config).
+   $nextoolUninstallMode = 'keep';
+   if (class_exists('Config')) {
+      $baseCfg = Config::getConfigurationValues('plugin:nextool');
+      $nextoolUninstallMode = (($baseCfg['uninstall_mode'] ?? 'keep') === 'purge_all') ? 'purge_all' : 'keep';
+   }
+
+   if ($nextoolUninstallMode === 'purge_all') {
+      // APAGAR TUDO: purge de cada módulo registrado (tabelas + arquivos) enquanto o
+      // manager e o registro ainda existem. Percorre o BANCO (não o disco): pega também
+      // módulo cujo diretório já sumiu mas deixou tabelas.
+      if ($DB->tableExists('glpi_plugin_nextool_main_modules')) {
+         foreach ($DB->request(['SELECT' => 'module_key', 'FROM' => 'glpi_plugin_nextool_main_modules']) as $modRow) {
+            $modKey = (string)($modRow['module_key'] ?? '');
+            if ($modKey === '') { continue; }
+            try {
+               $manager->purgeModuleData($modKey);
+            } catch (\Throwable $e) {
+               Toolbox::logInFile('plugin_nextool', sprintf('Uninstall purge_all: falha ao purgar %s: %s', $modKey, $e->getMessage()));
+            }
+         }
+      }
+   }
 
    $sqlfile = NEXTOOL_PHP_DIR . '/sql/uninstall.sql';
    if (file_exists($sqlfile)) {
@@ -262,9 +287,28 @@ function plugin_nextool_uninstall() {
    // domínio reuse o segredo (o identifier é determinístico por domínio) e evita
    // o 409 do bootstrap (identifier_already_provisioned). Reset intencional é via
    // "Desvincular ambiente" (cliente) ou "Resetar provisionamento" (admin), nunca
-   // no uninstall.
+   // no uninstall -- vale INCLUSIVE no modo "Apagar tudo".
 
-   Toolbox::logInFile('plugin_nextool', 'Plugin base desinstalado: tabelas-base removidas; MÓDULOS (registro, tabelas e arquivos), pasta de módulos e vínculo de provisionamento PRESERVADOS.');
+   if ($nextoolUninstallMode === 'purge_all') {
+      // Complemento do APAGAR TUDO: derruba o registro de módulos, os arquivos do
+      // runtime (files/_plugins/nextool inteiro) e o context plugin:nextool -- que
+      // carrega a flag uninstall_mode E a chave de cifra dos módulos. As credenciais
+      // já cifradas somem junto com as tabelas purgadas acima, então a chave não
+      // deixa nada ilegível para trás.
+      $ddlMethod = method_exists($DB, 'doQuery') ? 'doQuery' : 'query';
+      try {
+         $DB->$ddlMethod('DROP TABLE IF EXISTS `glpi_plugin_nextool_main_modules`');
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'Uninstall purge_all: falha ao dropar main_modules: ' . $e->getMessage());
+      }
+      if (is_dir(NEXTOOL_DOC_DIR)) {
+         nextool_delete_dir(NEXTOOL_DOC_DIR);
+      }
+      $DB->delete('glpi_configs', ['context' => 'plugin:nextool']);
+      Toolbox::logInFile('plugin_nextool', 'Plugin base desinstalado em modo APAGAR TUDO: módulos purgados, registro e arquivos removidos, chave de cifra apagada; vínculo de provisionamento PRESERVADO.');
+   } else {
+      Toolbox::logInFile('plugin_nextool', 'Plugin base desinstalado: tabelas-base removidas; MÓDULOS (registro, tabelas e arquivos), pasta de módulos e vínculo de provisionamento PRESERVADOS.');
+   }
 
    PluginNextoolPermissionManager::removeRights();
 

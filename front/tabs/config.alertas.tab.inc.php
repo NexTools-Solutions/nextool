@@ -39,7 +39,10 @@ $alertsEndpoint = Plugin::getWebDir('nextool') . '/ajax/alerts.php';
          <?php else: ?>
             <div class="list-group" id="nextool-alerts-list">
                <?php foreach ($alertHistory as $alert):
-                  $isUnread = empty($alert['is_read']);
+                  // Leitura POR USUÁRIO (2026-08-06): "Novo" e o botão de marcar lido
+                  // seguem o estado DESTE usuário, não mais o global.
+                  $isUnread = empty($alert['is_read_user']);
+                  $isExpired = !empty($alert['is_expired']);
                   $typeIcon = PluginNextoolAlertManager::getTypeIcon($alert['alert_type']);
                   $typeBadge = PluginNextoolAlertManager::getTypeBadgeClass($alert['alert_type']);
                ?>
@@ -53,14 +56,16 @@ $alertsEndpoint = Plugin::getWebDir('nextool') . '/ajax/alerts.php';
                               <span class="badge <?php echo $typeBadge; ?>" style="font-size: 0.65rem;">
                                  <?php echo Html::entities_deep(ucfirst($alert['alert_type'])); ?>
                               </span>
-                              <?php if ($isUnread): ?>
+                              <?php if ($isExpired): ?>
+                              <span class="badge bg-secondary" style="font-size: 0.6rem;"><?php echo __('Expirado', 'nextool'); ?></span>
+                              <?php elseif ($isUnread): ?>
                               <span class="badge bg-warning text-dark" style="font-size: 0.6rem;"><?php echo __('Novo', 'nextool'); ?></span>
                               <?php endif; ?>
                            </div>
                            <div class="small text-muted mb-1">
                               <?php echo Html::entities_deep($alert['date_received']); ?>
-                              <?php if (!$isUnread && $alert['date_read']): ?>
-                                 &middot; <?php echo __('Lido em', 'nextool'); ?> <?php echo Html::entities_deep($alert['date_read']); ?>
+                              <?php if (!$isUnread && !empty($alert['date_read_user'])): ?>
+                                 &middot; <?php echo __('Lido em', 'nextool'); ?> <?php echo Html::entities_deep($alert['date_read_user']); ?>
                               <?php endif; ?>
                            </div>
                            <div class="small nextool-alert-body"><?php echo PluginNextoolAlertManager::sanitizeBody($alert['body']); ?></div>

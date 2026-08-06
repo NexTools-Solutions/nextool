@@ -391,7 +391,9 @@ class PluginNextoolModuleManager {
             'is_installed'       => 1,
             // Não alteramos is_enabled aqui; ativação é responsabilidade do enableModule()
             'is_available' => isset($row['is_available']) ? $row['is_available'] : 0,
-            'config'       => json_encode($module->getDefaultConfig()),
+            // A config persistida NÃO é sobrescrita na reinstalação (#228): a linha
+            // existente carrega a configuração do cliente, e getConfig() já aplica os
+            // defaults por baixo na leitura (chave nova ganha default sem regravar).
             'date_mod'     => date('Y-m-d H:i:s'),
          ];
          
@@ -1573,6 +1575,35 @@ class PluginNextoolModuleManager {
       ?string $to,
       string $moduleKey
    ): bool {
+      global $DB;
+
+      // Serializa upgrades do MESMO módulo entre processos (advisory lock MySQL).
+      // Sem isto, dois workers rodando o upgrade simultaneamente quebravam: um DROP
+      // do vencedor caía no meio do upgrade.sql do outro => erro 1146 + abort do
+      // restante do arquivo (Portfolio 2026-07-28, contracthours 3.8.0->4.0.0).
+      // Timeout 10s: upgrades são rápidos -- o perdedor espera e re-executa o
+      // upgrade idempotente em seguida (inócuo), em vez de rodar em paralelo.
+      // Falha ao obter o lock => retorna false: o caller mantém a divergência e o
+      // próximo request converge (mesma semântica de upgrade que falhou).
+      $lockName = 'nextool_module_upgrade_' . preg_replace('/[^a-z0-9_]/i', '', $moduleKey);
+      $locked   = false;
+      try {
+         $res = $DB->doQuery("SELECT GET_LOCK('{$lockName}', 10) AS l");
+         $row = $res ? $DB->fetchAssoc($res) : null;
+         $locked = ((int)($row['l'] ?? 0) === 1);
+      } catch (\Throwable $e) {
+         // Backend sem suporte/erro no lock: seguir sem serialização (comportamento
+         // antigo) é preferível a nunca migrar.
+         $locked = true;
+      }
+      if (!$locked) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[ModuleManager] upgrade de %s (%s -> %s) PULADO: outro processo detém o lock '%s' há >10s\n",
+            $moduleKey, $from ?? 'null', $to ?? 'null', $lockName
+         ));
+         return false;
+      }
+
       // Reconciliação de schema em BACKGROUND (carregamento, não ação do usuário): a
       // Migration do GLPI ecoa a tela de progresso direto no HTML. Capturamos e
       // descartamos esse output para não vazar mensagem fixa na UI (mesmo motivo do
@@ -1589,6 +1620,12 @@ class PluginNextoolModuleManager {
             $moduleKey, $from ?? 'null', $to ?? 'null', $e->getMessage()
          ));
          return false;
+      } finally {
+         try {
+            $DB->doQuery("SELECT RELEASE_LOCK('{$lockName}')");
+         } catch (\Throwable $e) {
+            // lock expira sozinho com a conexão; nada a fazer
+         }
       }
    }
 
@@ -1705,7 +1742,10 @@ class PluginNextoolModuleManager {
             // módulo SEM runMigrations() tem o schema todo no install.sql (criado no
             // install), então não há drift incremental a curar: só marca.
             $healed = true;
-            if (method_exists($module, 'runMigrations')) {
+            // is_callable, não method_exists: um runMigrations() protected (caso real:
+            // geolocation) passa no method_exists, estoura Error na chamada e o guard
+            // registra "NÃO reconciliado" em TODO boot sem nunca convergir.
+            if (is_callable([$module, 'runMigrations'])) {
                // A Migration do GLPI ecoa a tela de progresso ("Tarefa concluída. (0 segundo)")
                // direto no HTML (Migration::outputMessageToHtml -> <p class="center">). Este guard
                // roda em BACKGROUND no carregamento da página (não é ação do usuário), então
@@ -1754,6 +1794,14 @@ class PluginNextoolModuleManager {
             continue; // mantém divergente para nova tentativa no próximo request
          }
 
+         // Guard de drift (#159): mesmo racional do finalizeModuleUpgrade() -- a
+         // migração acabou de rodar com o código novo; conferir o schema declarado
+         // no install.sql antes de registrar a versão. Sem isto, o deploy
+         // runtime-first (rsync/FTP) ficava sem a rede de segurança. Não-fatal.
+         if ($isUpgrade) {
+            $this->runSchemaGuard($moduleKey);
+         }
+
          $DB->update(
             'glpi_plugin_nextool_main_modules',
             [
@@ -1795,6 +1843,8 @@ class PluginNextoolModuleManager {
    }
 
    public function purgeModuleData(string $moduleKey): array {
+      global $DB;
+
       $action = 'purge_data';
       $module = $this->getModule($moduleKey);
       $customPurgeSuccess = false;
@@ -1810,6 +1860,11 @@ class PluginNextoolModuleManager {
          }
       }
 
+      // O drop roda ANTES de apagar o diretório: getModuleDataTables() resolve as
+      // tabelas pelo getDataTables() do objeto, que precisa do código em disco; na
+      // ordem inversa o lookup degradava pro fallback por convenção de nome.
+      $tablesDropped = $this->dropTablesForModule($moduleKey);
+
       if ($this->moduleDirectoryExists($moduleKey)) {
          try {
             $directoryRemoved = $this->deleteModuleDirectory($moduleKey);
@@ -1819,7 +1874,6 @@ class PluginNextoolModuleManager {
          }
       }
 
-      $tablesDropped = $this->dropTablesForModule($moduleKey);
       $success = $customPurgeSuccess || $tablesDropped || $directoryRemoved;
 
       $messageType = null;
@@ -1837,6 +1891,20 @@ class PluginNextoolModuleManager {
       }
 
       if ($success) {
+         // Sem isto ficava uma linha fantasma em main_modules: diretório e tabelas
+         // somem, mas is_installed/version/config antigos sobrevivem -- e o
+         // syncInstalledVersionsFromDisk() nunca a reconcilia (itera só o disco).
+         // Zera em vez de deletar: available_version/billing_tier/is_available vêm
+         // do catálogo e mantêm o card "disponível para instalar" sem novo sync.
+         if ($DB->tableExists('glpi_plugin_nextool_main_modules')) {
+            $DB->update('glpi_plugin_nextool_main_modules', [
+               'is_installed' => 0,
+               'is_enabled'   => 0,
+               'config'       => null,
+               'version'      => null,
+               'date_mod'     => date('Y-m-d H:i:s'),
+            ], ['module_key' => $moduleKey]);
+         }
          $this->clearCache();
          $this->refreshModules();
       }
@@ -1908,13 +1976,24 @@ class PluginNextoolModuleManager {
 
       $droppedAny = false;
 
+      // doQuery() existe a partir do GLPI 10.0.7; em 10.0.0-10.0.6 (dentro do MIN do
+      // artefato único) só há query(). Mesmo shim de BaseModule::execDdl().
+      $ddlMethod = method_exists($DB, 'doQuery') ? 'doQuery' : 'query';
+
       foreach ($tables as $table) {
          if (!$DB->tableExists($table)) {
             continue;
          }
          // Usa DROP TABLE IF EXISTS direto para evitar erro quando purgeData/uninstall.sql já removeu a tabela
-         $DB->doQuery("DROP TABLE IF EXISTS `" . $DB->escape($table) . "`");
-         $droppedAny = true;
+         try {
+            $DB->$ddlMethod("DROP TABLE IF EXISTS `" . $DB->escape($table) . "`");
+            $droppedAny = true;
+         } catch (\Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               "[SQL] dropTablesForModule(%s): DROP de %s falhou: %s\n",
+               $moduleKey, $table, $e->getMessage()
+            ));
+         }
       }
 
       return $droppedAny;

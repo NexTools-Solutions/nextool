@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.6.1');
+define('PLUGIN_NEXTOOL_VERSION', '6.7.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -212,6 +212,13 @@ function plugin_init_nextool() {
    // pagina de busca pura) e remove a 2a barra de rolagem. Nao afeta telas puras.
    $PLUGIN_HOOKS['add_css']['nextool'][] = 'front/nextool-tabs.css.php';
 
+   // JS global: window.NexToolSession, guarda de sessao compartilhada pelos modulos
+   // com polling. Precisa vir ANTES do JS dos modulos (que o consomem com guarda) e
+   // leva ?fv= porque este arquivo e servido com max-age=3600 sem versionamento
+   // proprio -- sem o stamp, uma correcao aqui levaria ate 1h para chegar no browser.
+   $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-session.js.php?fv='
+      . (string) @filemtime(NEXTOOL_PHP_DIR . '/front/nextool-session.js.php');
+
    // JS global: intercepta o ENTER nas abas de modulo (grades Search::show e forms de
    // config) para nao recarregar a pagina. Servido via front/*.php porque o GLPI 11
    // (Symfony) NAO serve .js estatico de plugin por path direto (/plugins/X/js/*.js ->
@@ -293,6 +300,22 @@ function plugin_init_nextool() {
       $hookdispatcherfile = NEXTOOL_PHP_DIR . '/inc/hookdispatcher.class.php';
       if (file_exists($hookdispatcherfile)) {
          require_once $hookdispatcherfile;
+         // Fonte de notificação da PRÓPRIA BASE: os avisos da NexTool (aba Alertas)
+         // também são publicados no canal e entregues POR USUÁRIO no sino do módulo
+         // de notificações, para quem enxerga as abas admin da base. A audiência é
+         // 'base_admins', resolvida pelo consumidor na LEITURA (a base não é módulo
+         // instalável -- não existe direito plugin_nextool_module_nextool para
+         // required_bit; o sink trata este emissor como caso próprio).
+         if (class_exists('PluginNextoolHookDispatcher')
+             && method_exists('PluginNextoolHookDispatcher', 'registerNotificationSource')) {
+            PluginNextoolHookDispatcher::registerNotificationSource('nextool.server_alert', [
+               'label'       => __('Avisos da NexTool', 'nextool'),
+               'description' => __('Comunicados oficiais recebidos do servidor NexTool (os mesmos da aba Alertas).', 'nextool'),
+               'icon'        => 'ti ti-bell-ringing',
+               'color'       => 'purple',
+               'severity'    => 'info',
+            ]);
+         }
       }
 
       // Só carrega módulos se plugin já foi instalado
@@ -442,6 +465,9 @@ function plugin_init_nextool() {
                $nxInstall($PLUGIN_HOOKS, 'item_add',        'TicketTask',       'dispatchItemAddTicketTask');
                $nxInstall($PLUGIN_HOOKS, 'item_update',     'TicketValidation', 'dispatchItemUpdateTicketValidation');
                $nxInstall($PLUGIN_HOOKS, 'item_update',     'TicketTask',       'dispatchItemUpdateTicketTask');
+               // item_purge: pós-exclusão definitiva de sub-item. Módulos que mantêm
+               // dados atrelados (ex.: contracthours timer<->TicketTask) limpam aqui.
+               $nxInstall($PLUGIN_HOOKS, 'item_purge',      'TicketTask',       'dispatchItemPurgeTicketTask');
                $nxInstall($PLUGIN_HOOKS, 'item_add',        'ITILFollowup',     'dispatchItemAddITILFollowup');
                $nxInstall($PLUGIN_HOOKS, 'item_add',        'ITILSolution',     'dispatchItemAddITILSolution');
 

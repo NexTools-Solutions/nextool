@@ -90,6 +90,9 @@ require_once NEXTOOL_PHP_DIR . '/inc/modulecardhelper.class.php';
 
 $manager = PluginNextoolModuleManager::getInstance();
 $loadedModules = $manager->getAllModules();
+// Módulos bloqueados por manifesto (#237): module_key => motivo. Sem isto o card
+// aparecia normal e o bloqueio era invisível na UI (motivo só no log).
+$blockedModules = $manager->getBlockedModules();
 
 // Catálogo agora vem direto do banco (fonte única da verdade)
 // PluginNextoolModuleCatalog::all() já lê de glpi_plugin_nextool_main_modules
@@ -182,6 +185,7 @@ foreach ($allModuleKeys as $moduleKey) {
    $stats['total']++;
 
    $moduleInstance = $loadedModules[$moduleKey] ?? null;
+   $blockedReason  = $blockedModules[$moduleKey] ?? null;
    $isInstalled = (bool) ($meta['is_installed'] ?? false);
    $isEnabled   = (bool) ($meta['is_enabled'] ?? false);
    $installedVersion = $meta['version'] ?? null;
@@ -362,6 +366,7 @@ foreach ($allModuleKeys as $moduleKey) {
       'can_download'      => $canDownloadModule,
       'catalog_is_enabled'=> $catalogIsEnabled,
       'update_available'  => $updateAvailable,
+      'blocked_reason'    => $blockedReason,
       'has_module_data'   => $hasModuleData,
       'author'            => [
          'name' => NEXTOOL_AUTHOR_NAME,
@@ -415,6 +420,7 @@ foreach ($allModuleKeys as $moduleKey) {
          'has_zip_extension'       => $hasZipExtension,
          'website_url'             => $meta['website_url'] ?? null,
          'compat_glpi_majors'      => $meta['compat_glpi_majors'] ?? null,
+         'blocked_reason'          => $blockedReason,
       ]),
    ];
 }

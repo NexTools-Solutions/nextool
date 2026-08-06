@@ -140,8 +140,11 @@ abstract class PluginNextoolBaseModule {
     * Executa processos de upgrade entre versões.
     *
     * Roda upgrade.sql (se existir) antes de delegar para install(). O upgrade.sql
-    * é idempotente por convenção (ALTER TABLE MODIFY, ADD COLUMN IF NOT EXISTS, etc.)
-    * e roda sempre que o módulo é atualizado, independente das versões $from/$to.
+    * é idempotente por convenção (ALTER TABLE MODIFY, CREATE TABLE IF NOT EXISTS,
+    * INSERT IGNORE) e roda sempre que o módulo é atualizado, independente das
+    * versões $from/$to. Coluna nova em tabela EXISTENTE não vai no SQL: use
+    * addColumnIfNotExists()/execDdl() num override deste método (ADD COLUMN IF NOT
+    * EXISTS é MariaDB-only -- 1064 no MySQL 8 -- e o SQL cru não tem o shim G10).
     * Para migrations destrutivas raras, sobrescreva este método no módulo.
     *
     * @param string|null $currentVersion

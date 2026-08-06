@@ -504,6 +504,35 @@ class PluginNextoolLicenseValidator {
             $httpCode,
             $responseTimeMs
          );
+
+         // AUTO-CURA do secret stale (2026-08-06, caso real NX2-5d594ee2): quando o
+         // provisionamento é resetado no servidor (suporte) ou o secret órfão morre,
+         // TODA requisição assinada responde 401 com code=environment_not_provisioned
+         // -- e o plugin ficava nesse 401 para sempre (só re-bootstrapa sem secret
+         // local; reinstalar preserva o secret morto por design). Aqui: limpa o
+         // secret local (identifier PRESERVADO), re-bootstrapa na hora -- o servidor
+         // sem secret re-provisiona o MESMO identifier -- e repete a validação UMA vez.
+         if ($httpCode === 401
+             && is_array($responseData)
+             && (($responseData['code'] ?? '') === 'environment_not_provisioned')) {
+            $healedSecret = self::healStaleSecret($distributionBaseUrl, $distributionClientIdentifier);
+            if ($healedSecret !== null) {
+               $distributionClientSecret = $healedSecret['secret'];
+               if ($healedSecret['identifier'] !== $distributionClientIdentifier) {
+                  // Re-enroll por substituição (FREE órfão): o servidor cunhou identidade nova.
+                  $distributionClientIdentifier = $healedSecret['identifier'];
+                  $clientId = $healedSecret['identifier'];
+               }
+               $responseData = self::callDistributionLicenseAPI(
+                  $apiEndpoint,
+                  $distributionClientIdentifier,
+                  $distributionClientSecret,
+                  $payload,
+                  $httpCode,
+                  $responseTimeMs
+               );
+            }
+         }
       } else {
          $responseData = self::callValidationAPI($apiEndpoint, $apiSecret, $payload, $httpCode, $responseTimeMs);
       }
@@ -1753,8 +1782,11 @@ class PluginNextoolLicenseValidator {
    private static function persistAlerts(array $alerts): void {
       global $DB;
       $table = 'glpi_plugin_nextool_main_alerts';
+      // Shim de DDL: doQuery() só existe a partir do GLPI 10.0.7 (mesmo padrão de
+      // BaseModule::execDdl -- o artefato único suporta 10.0.0+).
+      $ddlMethod = method_exists($DB, 'doQuery') ? 'doQuery' : 'query';
       if (!$DB->tableExists($table)) {
-         $DB->doQuery("CREATE TABLE IF NOT EXISTS `{$table}` (
+         $DB->$ddlMethod("CREATE TABLE IF NOT EXISTS `{$table}` (
             `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             `remote_alert_id` INT UNSIGNED NOT NULL,
             `title` VARCHAR(255) NOT NULL,
@@ -1763,24 +1795,131 @@ class PluginNextoolLicenseValidator {
             `is_read` TINYINT NOT NULL DEFAULT 0,
             `date_received` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             `date_read` TIMESTAMP NULL DEFAULT NULL,
+            `date_start` TIMESTAMP NULL DEFAULT NULL,
+            `date_end` TIMESTAMP NULL DEFAULT NULL,
             UNIQUE KEY `uq_remote_alert` (`remote_alert_id`)
          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+      } else {
+         // Janela de validade (#107): instalação antiga não tem as colunas -- sem
+         // elas o alerta local nunca expira e o popup reabre após o fim da janela.
+         foreach (['date_start', 'date_end'] as $col) {
+            if (!$DB->fieldExists($table, $col, false)) {
+               try {
+                  $DB->$ddlMethod("ALTER TABLE `{$table}` ADD COLUMN `{$col}` TIMESTAMP NULL DEFAULT NULL");
+               } catch (Throwable $e) {
+                  Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao adicionar coluna ' . $col . ' em main_alerts - ' . $e->getMessage());
+               }
+            }
+         }
       }
       foreach ($alerts as $alert) {
          $remoteId = (int)($alert['id'] ?? 0);
          if ($remoteId <= 0) { continue; }
-         $existing = $DB->request(['FROM' => $table, 'WHERE' => ['remote_alert_id' => $remoteId], 'LIMIT' => 1]);
-         if (count($existing) > 0) { continue; }
+         $data = [
+            'title'      => trim((string)($alert['title'] ?? '')),
+            'body'       => trim((string)($alert['body'] ?? '')),
+            'alert_type' => trim((string)($alert['alert_type'] ?? 'info')),
+            'date_start' => !empty($alert['date_start']) ? (string)$alert['date_start'] : null,
+            'date_end'   => !empty($alert['date_end']) ? (string)$alert['date_end'] : null,
+         ];
          try {
-            $DB->insert($table, [
-               'remote_alert_id' => $remoteId,
-               'title'           => trim((string)($alert['title'] ?? '')),
-               'body'            => trim((string)($alert['body'] ?? '')),
-               'alert_type'      => trim((string)($alert['alert_type'] ?? 'info')),
-            ]);
+            $existing = $DB->request(['FROM' => $table, 'WHERE' => ['remote_alert_id' => $remoteId], 'LIMIT' => 1]);
+            if (count($existing) > 0) {
+               // UPSERT (#107): alerta editado no admin (texto/validade) reflete na
+               // próxima sincronização. is_read/date_read são preservados de propósito
+               // -- edição não reabre o popup para quem já leu.
+               $DB->update($table, $data, ['remote_alert_id' => $remoteId]);
+            } else {
+               $DB->insert($table, array_merge(['remote_alert_id' => $remoteId], $data));
+               // Alerta NOVO também vai pro canal de notificações (sino por usuário,
+               // audiência = admins da base). Só no INSERT: edição não re-notifica.
+               self::publishAlertNotification($remoteId, $data);
+            }
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir alerta #' . $remoteId . ' - ' . $e->getMessage());
          }
+      }
+   }
+
+   /**
+    * Auto-cura do secret HMAC stale: limpa o secret LOCAL (identifier preservado)
+    * e re-bootstrapa imediatamente. Chamado apenas quando o servidor respondeu
+    * 401 code=environment_not_provisioned -- ou seja, o servidor NÃO tem secret
+    * para este identifier (reset de provisionamento) e o bootstrap re-provisiona
+    * a MESMA identidade (provisionSecret($identifier)); nenhum secret trafega
+    * fora do canal normal de bootstrap.
+    *
+    * @return array{identifier: string, secret: string}|null null = cura falhou
+    *         (fica o 401 desta rodada; próxima sincronização tenta de novo)
+    */
+   private static function healStaleSecret(string $distributionBaseUrl, string $clientIdentifier): ?array {
+      try {
+         require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
+         require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
+
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'LicenseValidator: 401 environment_not_provisioned para %s -- secret local stale; iniciando auto-cura (re-bootstrap do mesmo identifier).',
+            $clientIdentifier
+         ));
+
+         $boot = PluginNextoolDistributionClient::bootstrapClientSecret($distributionBaseUrl, $clientIdentifier);
+         $secret = isset($boot['secret']) ? trim((string)$boot['secret']) : '';
+         if ($secret === '') {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               'LicenseValidator: auto-cura falhou (bootstrap sem secret; erro=%s http=%s).',
+               (string)($boot['error'] ?? '-'), (string)($boot['http_code'] ?? '-')
+            ));
+            return null;
+         }
+
+         // reenrolled=true: FREE órfão ganhou identidade NOVA (caminho reenroll-v1).
+         $newIdentifier = !empty($boot['reenrolled']) && !empty($boot['environment_id'])
+            ? trim((string)$boot['environment_id'])
+            : $clientIdentifier;
+
+         // Persiste nos 3 lugares (main_configs + distribution + provisioning).
+         PluginNextoolConfig::adoptIdentity($newIdentifier, $secret);
+
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'LicenseValidator: auto-cura OK -- secret re-provisionado para %s%s.',
+            $newIdentifier,
+            $newIdentifier !== $clientIdentifier ? ' (identidade NOVA por re-enroll)' : ' (mesma identidade)'
+         ));
+
+         return ['identifier' => $newIdentifier, 'secret' => $secret];
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: auto-cura do secret falhou - ' . $e->getMessage());
+         return null;
+      }
+   }
+
+   /**
+    * Publica um alerta recém-recebido no canal de notificações (sino por usuário
+    * via módulo de notificações). Fail-silent por contrato do canal: publicar
+    * nunca pode quebrar a sincronização; ambiente sem o módulo consumidor apenas
+    * não exibe (o popup/aba Alertas continuam cobrindo).
+    */
+   private static function publishAlertNotification(int $remoteId, array $data): void {
+      try {
+         if (!class_exists('PluginNextoolHookDispatcher')
+             || !method_exists('PluginNextoolHookDispatcher', 'dispatchNotification')) {
+            return;
+         }
+         $severityMap = ['critical' => 'critical', 'warning' => 'warning', 'promo' => 'info', 'info' => 'info'];
+         PluginNextoolHookDispatcher::dispatchNotification([
+            'source_key' => 'nextool.server_alert',
+            'title'      => (string)($data['title'] ?? ''),
+            'message'    => strip_tags((string)($data['body'] ?? '')),
+            'url'        => '/plugins/nextool/front/nextoolconfig.form.php?id=1&forcetab=' . rawurlencode('PluginNextoolMainConfig$4'),
+            'severity'   => $severityMap[(string)($data['alert_type'] ?? 'info')] ?? 'info',
+            // Audiência resolvida na LEITURA pelo consumidor: admins da base
+            // (canAccessAdminTabs) -- nunca "todos os usuários".
+            'audience'   => ['type' => 'base_admins'],
+            'dedup_key'  => 'nextool.server_alert:' . $remoteId,
+            'expires_at' => $data['date_end'] ?? null,
+         ]);
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao publicar alerta #' . $remoteId . ' no canal - ' . $e->getMessage());
       }
    }
 }
