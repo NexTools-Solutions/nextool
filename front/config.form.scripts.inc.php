@@ -616,7 +616,7 @@ function nextoolInitCoreUpdateModal() {
       var targetVer = targetVersionEl ? targetVersionEl.textContent : (window._nextoolTargetVersion || '?');
 
       var clip = [];
-      clip.push('=== ' + <?php echo json_encode(__('Relatório de Bloqueio — Atualização NexTool', 'nextool')); ?> + ' ===');
+      clip.push('=== ' + <?php echo json_encode(__('Relatório de Bloqueio – Atualização NexTool', 'nextool')); ?> + ' ===');
       clip.push(<?php echo json_encode(__('Versão atual:', 'nextool')); ?> + ' ' + currentVer);
       clip.push(<?php echo json_encode(__('Versão alvo:', 'nextool')); ?> + ' ' + targetVer);
       clip.push('');
@@ -1691,7 +1691,8 @@ function nextoolUnlinkAccount(btn) {
 // do status a cada 3s; quando o vínculo confirma no site, vira verde (via nextoolRefreshLinkStatus).
 var nextoolLinkPollTimer = null;
 function nextoolStopLinkPolling() {
-   if (nextoolLinkPollTimer) { clearInterval(nextoolLinkPollTimer); nextoolLinkPollTimer = null; }
+   // setTimeout auto-reagendado (fix #243): clearTimeout cobre o timer pendente.
+   if (nextoolLinkPollTimer) { clearTimeout(nextoolLinkPollTimer); nextoolLinkPollTimer = null; }
 }
 function nextoolStartLinkPolling() {
    nextoolStopLinkPolling();
@@ -1701,35 +1702,84 @@ function nextoolStartLinkPolling() {
       statusBox.innerHTML = '<span class="spinner-border spinner-border-sm text-warning me-2"></span><span>'
          + <?php echo json_encode(__('Aguardando confirmação no portal...', 'nextool')); ?> + '</span>';
    }
-   nextoolLinkPollTimer = setInterval(function () {
+   // Fix do incidente smagalhaes (#243): o setInterval fixo de 3s sem .catch e sem
+   // caminho de parada martelou 401 por 36h (~43k requests). Agora: setTimeout
+   // auto-reagendado com escada de recuo em falha [3s,10s,30s,2min], parada após
+   // 5 falhas seguidas (ou sinal suppressed do servidor) com botao "Tentar novamente".
+   var failStreak = 0;
+   var POLL_LADDER_MS = [3000, 10000, 30000, 120000];
+   function nextoolShowPollStopped() {
+      var box = document.getElementById('nextool-account-link-status');
+      if (!box) { return; }
+      box.className = 'alert alert-warning mb-3';
+      box.innerHTML = '<i class="ti ti-alert-triangle me-1"></i> '
+         + <?php echo json_encode(__('Não foi possível consultar o status do vínculo agora. Tente novamente em instantes.', 'nextool')); ?>
+         + ' <button type="button" class="btn btn-sm btn-outline-warning ms-2" onclick="nextoolStartLinkPolling();">'
+         + <?php echo json_encode(__('Tentar novamente', 'nextool')); ?> + '</button>';
+   }
+   function nextoolScheduleNextPoll() {
+      var delay = failStreak > 0
+         ? POLL_LADDER_MS[Math.min(failStreak, POLL_LADDER_MS.length) - 1]
+         : POLL_LADDER_MS[0];
+      nextoolLinkPollTimer = setTimeout(nextoolPollTick, delay);
+   }
+   function nextoolPollFailed() {
+      failStreak++;
+      if (failStreak >= 5) {
+         nextoolStopLinkPolling();
+         nextoolShowPollStopped();
+         return;
+      }
+      nextoolScheduleNextPoll();
+   }
+   function nextoolPollTick() {
       nextoolPostJson(NEXTOOL_ACCOUNT_ENDPOINT, { action: 'refresh_status' }).then(function (res) {
          var d = res.data || {};
-         if (res.ok && d.success && d.linked) {
+         if (d && d.suppressed) {
+            // Backoff server-side ativo: parar de vez (a janela pode ser de minutos).
             nextoolStopLinkPolling();
-            // Vinculo recem-confirmado: mostra a view celebrativa (esconde o modal normal).
-            // O catalogo/modulos so aparecem apos recarregar a pagina.
-            var mc = document.querySelector('#nextool-account-link-modal .modal-content');
-            var successView = document.getElementById('nextool-account-link-success');
-            if (mc && successView) {
-               ['.modal-header', '.modal-body', '.modal-footer'].forEach(function (sel) {
-                  var el = mc.querySelector(sel);
-                  if (el) { el.classList.add('d-none'); }
-               });
-               successView.classList.remove('d-none');
-            } else {
-               // Fallback: se a view nao existir, mantem a confirmacao simples no status.
-               var statusBox = document.getElementById('nextool-account-link-status');
-               if (statusBox) {
-                  statusBox.className = 'alert alert-success mb-3';
-                  statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i> '
-                     + <?php echo json_encode(__('Conta vinculada. Recarregue a página para atualizar a lista.', 'nextool')); ?>
-                     + ' <button type="button" class="btn btn-sm btn-success ms-2" onclick="window.location.reload();"><i class="ti ti-refresh me-1"></i>'
-                     + <?php echo json_encode(__('Recarregar agora', 'nextool')); ?> + '</button>';
-               }
-            }
+            nextoolShowPollStopped();
+            return;
          }
+         if (!res.ok || !d.success) {
+            nextoolPollFailed();
+            return;
+         }
+         failStreak = 0;
+         if (!d.linked) {
+            nextoolScheduleNextPoll();
+            return;
+         }
+         nextoolHandleLinkConfirmed();
+      }).catch(function () {
+         nextoolPollFailed();
       });
-   }, 3000);
+   }
+   function nextoolHandleLinkConfirmed() {
+      nextoolStopLinkPolling();
+      // Vinculo recem-confirmado: mostra a view celebrativa (esconde o modal normal).
+      // O catalogo/modulos so aparecem apos recarregar a pagina.
+      var mc = document.querySelector('#nextool-account-link-modal .modal-content');
+      var successView = document.getElementById('nextool-account-link-success');
+      if (mc && successView) {
+         ['.modal-header', '.modal-body', '.modal-footer'].forEach(function (sel) {
+            var el = mc.querySelector(sel);
+            if (el) { el.classList.add('d-none'); }
+         });
+         successView.classList.remove('d-none');
+      } else {
+         // Fallback: se a view nao existir, mantem a confirmacao simples no status.
+         var statusBox = document.getElementById('nextool-account-link-status');
+         if (statusBox) {
+            statusBox.className = 'alert alert-success mb-3';
+            statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i> '
+               + <?php echo json_encode(__('Conta vinculada. Recarregue a página para atualizar a lista.', 'nextool')); ?>
+               + ' <button type="button" class="btn btn-sm btn-success ms-2" onclick="window.location.reload();"><i class="ti ti-refresh me-1"></i>'
+               + <?php echo json_encode(__('Recarregar agora', 'nextool')); ?> + '</button>';
+         }
+      }
+   }
+   nextoolScheduleNextPoll();
 }
 (function () {
    var m = document.getElementById('nextool-account-link-modal');

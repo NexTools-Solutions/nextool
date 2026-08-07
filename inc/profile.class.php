@@ -195,7 +195,7 @@ class PluginNextoolProfile extends Profile {
       echo '<div class="nt-legend">'
          . '<span><i style="background:#2560c9"></i>' . __s('Usabilidade (usar)', 'nextool') . '</span>';
       if (!$isHelpdesk) {
-         echo '<span><i style="background:#b3720c"></i>' . __s('Administracao (configurar)', 'nextool') . '</span>'
+         echo '<span><i style="background:#b3720c"></i>' . __s('Administração (configurar)', 'nextool') . '</span>'
             . '<span><i style="background:#c33044"></i>' . __s('Super-direito (acesso total)', 'nextool') . '</span>';
       }
       echo '</div>';

@@ -83,7 +83,7 @@ function plugin_nextool_install() {
       $owner = function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'php') : 'apache';
       Session::addMessageAfterRedirect(
          sprintf(
-            __('NexTool: o diretorio de modulos (%s) nao esta gravavel. Execute: chown -R %s:%s %s', 'nextool'),
+            __('NexTool: o diretório de módulos (%s) não está gravável. Execute: chown -R %s:%s %s', 'nextool'),
             NEXTOOL_MODULES_BASE,
             $owner,
             $owner,

@@ -80,6 +80,10 @@ $hasValidatedPlan = $licenseViewState['hasValidatedPlan'];
 $hasAssignedLicense = $licenseViewState['hasAssignedLicense'];
 $hasAcceptedPolicies = $licenseViewState['hasAcceptedPolicies'];
 $requiresPolicyAcceptance = $licenseViewState['requiresPolicyAcceptance'];
+// Linha de estado de comunicação com o servidor (hero, issue #244).
+$nextoolCommLineText  = $licenseViewState['commLineText'];
+$nextoolCommLineIcon  = $licenseViewState['commLineIcon'];
+$nextoolCommLineClass = $licenseViewState['commLineClass'];
 
 // Carrega ModuleManager para listar módulos
 require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';

@@ -58,6 +58,7 @@ class PluginNextoolLicenseValidator {
       'plugin:nextool_entitlement',
       'plugin:nextool_core_update',
       'plugin:nextool_managed_services',
+      'plugin:nextool_comm_state',
    ];
 
    /**
@@ -205,6 +206,9 @@ class PluginNextoolLicenseValidator {
       global $DB;
 
       $force_refresh = !empty($options['force_refresh']);
+      // Ação MANUAL explícita do admin fura o backoff de auth (mas o resultado é
+      // registrado). Cron/polling/fluxos automáticos nunca passam bypass (issue #243).
+      $bypassCommBackoff = !empty($options['bypass_comm_backoff']);
       if (PluginNextoolConfig::isDebugEnabled()) {
          Toolbox::logInFile('plugin_nextool', sprintf(
             "[DEBUG] [LicenseValidator] validateLicense() force_refresh=%s\n",
@@ -495,6 +499,42 @@ class PluginNextoolLicenseValidator {
       $httpCode        = null;
       $responseTimeMs  = null;
 
+      // Backoff de auth (issue #243): ambiente em 401 determinístico NÃO martela o
+      // servidor -- devolve o estado em cache até a janela abrir. Sem rede e SEM
+      // linha em validation_attempts (não é um evento de comunicação).
+      if ($useDistributionValidation && !$bypassCommBackoff
+          && ($commSuppression = PluginNextoolCommBackoff::shouldSuppress()) !== null) {
+         $cachedModules = [];
+         if (!empty($licenseConfig['cached_modules'])) {
+            $decoded = json_decode($licenseConfig['cached_modules'], true);
+            if (is_array($decoded)) {
+               $cachedModules = $decoded;
+            }
+         }
+         $lastResultCached = isset($licenseConfig['last_validation_result'])
+            ? ((int) $licenseConfig['last_validation_result'] === 1)
+            : false;
+         return [
+            'valid'               => $lastResultCached,
+            'message'             => sprintf(
+               __('Comunicação com o servidor NexTool pausada após falhas de autenticação. Nova tentativa automática em %d s.', 'nextool'),
+               (int) $commSuppression['retry_in']
+            ),
+            'allowed_modules'     => $lastResultCached ? $cachedModules : [],
+            'source'              => 'auth_backoff',
+            'http_code'           => null,
+            'response_time_ms'    => null,
+            'consecutive_failures'=> (int) ($licenseConfig['consecutive_failures'] ?? 0),
+            'license_status'      => $licenseConfig['license_status'] ?? null,
+            'expires_at'          => $licenseConfig['expires_at'] ?? null,
+            'warnings'            => [],
+            'plan'                => $plan ?? 'FREE',
+            'licenses'            => [],
+            'error_code'          => $commSuppression['last_error_code'],
+            'retry_in'            => (int) $commSuppression['retry_in'],
+         ];
+      }
+
       if ($useDistributionValidation) {
          $responseData = self::callDistributionLicenseAPI(
             $apiEndpoint,
@@ -535,6 +575,22 @@ class PluginNextoolLicenseValidator {
          }
       } else {
          $responseData = self::callValidationAPI($apiEndpoint, $apiSecret, $payload, $httpCode, $responseTimeMs);
+      }
+
+      // Classifica o resultado FINAL da comunicação (depois da auto-cura) para o
+      // backoff (#243) e a linha de estado do hero (#244). Rede/5xx não sobe escada.
+      if ($useDistributionValidation) {
+         $respArr = is_array($responseData) ? $responseData : null;
+         if ($respArr === null || $httpCode === null || $httpCode >= 500) {
+            PluginNextoolCommBackoff::registerNetworkFailure($httpCode);
+         } elseif (PluginNextoolCommBackoff::isAuthFailure($httpCode, $respArr)) {
+            PluginNextoolCommBackoff::registerAuthFailure(
+               $httpCode,
+               isset($respArr['code']) ? (string) $respArr['code'] : null
+            );
+         } else {
+            PluginNextoolCommBackoff::registerSuccess($httpCode);
+         }
       }
 
       $valid           = false;
@@ -646,6 +702,19 @@ class PluginNextoolLicenseValidator {
                $message = (string)$responseData['error'];
             } else {
                $message = __('Licença inválida ou não autorizada.', 'nextool');
+            }
+
+            // signature_mismatch (issue nextool-ecosystem#5): o servidor TEM secret e a
+            // assinatura divergiu -- a cura é o Reset de provisionamento no portal, NUNCA
+            // a auto-cura (o guard está na condição do heal: só environment_not_provisioned;
+            // re-provisionar às cegas com secret vivo no servidor seria brecha CR-01).
+            if (in_array($httpCode, [401, 403], true)
+                && (($responseData['code'] ?? '') === 'signature_mismatch')) {
+               $message = __('As credenciais deste ambiente divergem do servidor; solicite ao suporte o Reset de provisionamento – na 6.7.0+ o ambiente se recupera sozinho no Sincronizar seguinte ao reset.', 'nextool');
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  'LicenseValidator: signature_mismatch para %s (reset de provisionamento necessário; auto-cura NÃO se aplica).',
+                  $clientId ?: '(sem identificador)'
+               ));
             }
          }
 
@@ -791,6 +860,11 @@ class PluginNextoolLicenseValidator {
          'plan'                => $plan,
          'warnings'            => $warnings,
          'licenses'            => $licensesSnapshot,
+         // 'code' machine-readable do 401 do ContainerAPI (environment_not_provisioned,
+         // signature_mismatch) -- consumido por config.save.php e pelo hero (#244).
+         'error_code'          => (is_array($responseData) && !empty($responseData['code']))
+            ? (string) $responseData['code']
+            : null,
       ];
    }
 

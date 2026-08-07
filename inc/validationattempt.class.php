@@ -291,7 +291,8 @@ class PluginNextoolValidationAttempt extends PluginNextoolBaseAuditLog implement
          'client_identifier'=> $data['client_identifier'] ?? null,
          'license_status'   => self::truncate($data['license_status'] ?? null, 32),
          'plan'             => self::truncate($data['plan'] ?? null, 32),
-         'allowed_modules'  => isset($data['allowed_modules']) ? (string)$data['allowed_modules'] : null,
+         // 'allowed_modules' NÃO entra: a coluna não existe nesta tabela (só em
+         // main_module_audit) e o CommonDBTM::add descartava a chave em silêncio.
          'force_refresh'    => !empty($data['force_refresh']) ? 1 : 0,
          'cache_hit'        => !empty($data['cache_hit']) ? 1 : 0,
          'user_id'          => isset($data['user_id']) ? (int)$data['user_id'] : null,

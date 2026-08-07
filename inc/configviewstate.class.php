@@ -77,7 +77,13 @@ class PluginNextoolConfigViewState {
       $accountLinked = ((string) ($accountLinkState['linked'] ?? '0')) === '1';
       $hasAcceptedPolicies = !empty($licenseConfig['policies_accepted_at'] ?? null) || $accountLinked;
 
+      $commLine = self::resolveCommLine($licenseConfig);
+
       return [
+         'commLineText'             => $commLine['text'],
+         'commLineIcon'             => $commLine['icon'],
+         'commLineClass'            => $commLine['class'],
+         'commLineLevel'            => $commLine['level'],
          'licenseStatusCode'        => $licenseStatusCode,
          'licenseWarnings'          => $licenseWarnings,
          'allowedModules'           => $allowedModules,
@@ -94,6 +100,125 @@ class PluginNextoolConfigViewState {
          'hasAcceptedPolicies'      => $hasAcceptedPolicies,
          'requiresPolicyAcceptance' => !$hasAcceptedPolicies,
       ];
+   }
+
+   /**
+    * Linha de estado de comunicação com o servidor NexTool (hero, issue #244).
+    * Derivada do comm_state (PluginNextoolCommBackoff) + cache de licença. O hero
+    * fica burro: só renderiza text/icon/class.
+    *
+    * @param array<string, mixed> $licenseConfig
+    * @return array{text:string, icon:string, class:string, level:string}
+    */
+   private static function resolveCommLine(array $licenseConfig): array {
+      require_once NEXTOOL_PHP_DIR . '/inc/commbackoff.class.php';
+      $state = PluginNextoolCommBackoff::getState();
+      $suppression = PluginNextoolCommBackoff::shouldSuppress();
+
+      $lastErrorCode = (string) ($state['last_error_code'] ?? '');
+      $authStreak = (int) ($state['auth_streak'] ?? 0);
+      $lastCommOk = (int) ($state['last_comm_ok_at'] ?? 0);
+      $lastNetFail = (int) ($state['last_network_failure_at'] ?? 0);
+      $lastAuthFail = (int) ($state['last_auth_failure_at'] ?? 0);
+      $lastValidationTs = !empty($licenseConfig['last_validation_date'])
+         ? (int) strtotime((string) $licenseConfig['last_validation_date'])
+         : 0;
+
+      // 1) Credenciais divergentes (signature_mismatch): cura = Reset no portal.
+      if ($authStreak > 0 && $lastErrorCode === 'signature_mismatch') {
+         return [
+            'text'  => __('Credenciais divergem do servidor – solicite o reset de provisionamento ao suporte NexTool.', 'nextool'),
+            'icon'  => 'ti-shield-x',
+            'class' => 'text-danger fw-bold',
+            'level' => 'mismatch',
+         ];
+      }
+
+      // 2) Sem provisionamento: a auto-cura (6.7.0) resolve no Sincronizar.
+      if ($authStreak > 0 && $lastErrorCode === 'environment_not_provisioned') {
+         return [
+            'text'  => __('Provisionamento em recuperação automática – clique em Sincronizar para concluir.', 'nextool'),
+            'icon'  => 'ti-refresh-alert',
+            'class' => 'text-warning fw-semibold',
+            'level' => 'recovering',
+         ];
+      }
+
+      // 2b) Falha de auth genérica (401 sem code — servidor antigo): backoff ativo.
+      if ($authStreak > 0 && $lastAuthFail > $lastCommOk) {
+         $eta = $suppression !== null
+            ? sprintf(__('em %s', 'nextool'), self::humanizeInterval((int) $suppression['retry_in']))
+            : __('no próximo Sincronizar', 'nextool');
+         return [
+            'text'  => sprintf(__('Falha de autenticação com o servidor NexTool – nova tentativa automática %s.', 'nextool'), $eta),
+            'icon'  => 'ti-shield-x',
+            'class' => 'text-warning fw-semibold',
+            'level' => 'auth_failed',
+         ];
+      }
+
+      // 3) Rede/5xx mais recente que o último OK: servidor inacessível.
+      if ($lastNetFail > 0 && $lastNetFail > $lastCommOk) {
+         $negativeCacheRemaining = 0;
+         if (!empty($licenseConfig['last_failure_date'])) {
+            $negativeCacheRemaining = (int) strtotime((string) $licenseConfig['last_failure_date']) + 600 - time();
+         }
+         $eta = $negativeCacheRemaining > 0
+            ? sprintf(__('em %s', 'nextool'), self::humanizeInterval($negativeCacheRemaining))
+            : __('no próximo Sincronizar', 'nextool');
+         return [
+            'text'  => sprintf(__('Servidor NexTool inacessível – nova tentativa automática %s.', 'nextool'), $eta),
+            'icon'  => 'ti-plug-connected-x',
+            'class' => 'text-warning fw-semibold',
+            'level' => 'unreachable',
+         ];
+      }
+
+      // 4) Conectado (há histórico de validação).
+      if ($lastValidationTs > 0) {
+         return [
+            'text'  => sprintf(
+               __('Servidor NexTool: conectado (última validação %s).', 'nextool'),
+               self::humanizeAge(time() - $lastValidationTs)
+            ),
+            'icon'  => 'ti-plug-connected',
+            'class' => 'text-white-50 fw-semibold',
+            'level' => 'ok',
+         ];
+      }
+
+      // 5) Nunca validou.
+      return [
+         'text'  => __('Servidor NexTool: aguardando primeira sincronização.', 'nextool'),
+         'icon'  => 'ti-plug',
+         'class' => 'text-white-50 fw-semibold',
+         'level' => 'unknown',
+      ];
+   }
+
+   /** "agora", "há 5 min", "há 3 h", "há 2 dias" (sem helpers G11-only). */
+   private static function humanizeAge(int $seconds): string {
+      if ($seconds < 60) {
+         return __('agora', 'nextool');
+      }
+      if ($seconds < 3600) {
+         return sprintf(__('há %d min', 'nextool'), (int) floor($seconds / 60));
+      }
+      if ($seconds < 86400) {
+         return sprintf(__('há %d h', 'nextool'), (int) floor($seconds / 3600));
+      }
+      return sprintf(_n('há %d dia', 'há %d dias', (int) floor($seconds / 86400), 'nextool'), (int) floor($seconds / 86400));
+   }
+
+   /** "45 s", "3 min", "1 h" — duração futura curta (ETA de retentativa). */
+   private static function humanizeInterval(int $seconds): string {
+      if ($seconds < 60) {
+         return sprintf(__('%d s', 'nextool'), max($seconds, 1));
+      }
+      if ($seconds < 3600) {
+         return sprintf(__('%d min', 'nextool'), (int) ceil($seconds / 60));
+      }
+      return sprintf(__('%d h', 'nextool'), (int) ceil($seconds / 3600));
    }
 
    /**

@@ -412,7 +412,8 @@ if ($action === 'accept_policies') {
    ]);
 
    $result = PluginNextoolLicenseValidator::validateLicense([
-      'force_refresh' => true,
+      'force_refresh'       => true,
+      'bypass_comm_backoff' => true, // ação manual explícita fura o backoff (#243)
       'context'       => [
          'origin'            => 'policies_acceptance',
          'requested_modules' => ['catalog_bootstrap'],
@@ -616,14 +617,15 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
    PluginNextoolLicenseConfig::resetCache();
 
    $result = PluginNextoolLicenseValidator::validateLicense([
-      'force_refresh' => true,
+      'force_refresh'       => true,
+      'bypass_comm_backoff' => true, // Sincronizar manual fura o backoff (#243)
       'context'       => [
          'source' => 'config_form',
          'origin' => 'manual_validation',
       ],
    ]);
 
-   $resultError = $result['error'] ?? null;
+   $resultErrorCode = $result['error_code'] ?? null;
    if (!empty($result['valid'])) {
       // Usa diretamente a mensagem retornada pelo validador (já enriquecida com o plano),
       // evitando redundâncias do tipo "Licença válida: Licença válida (LICENCIADO)".
@@ -648,12 +650,20 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
       $licenseStatus = strtoupper((string)($result['license_status'] ?? ''));
       $planLabel = !empty($result['plan']) ? $result['plan'] : 'FREE';
 
-      if ($resultError === 'unauthorized') {
+      // Branches por 'code' machine-readable do 401 (substitui o antigo teste morto
+      // $result['error'] === 'unauthorized' -- validateLicense nunca retornou 'error').
+      if ($resultErrorCode === 'environment_not_provisioned') {
          $msg = __('Ainda estamos preparando este ambiente na plataforma NexTool. Aguarde alguns instantes e clique novamente em "Sincronizar" para concluir. Enquanto isso, o ambiente permanece no plano gratuito.', 'nextool');
          Session::addMessageAfterRedirect(
             $msg,
             false,
             INFO
+         );
+      } elseif ($resultErrorCode === 'signature_mismatch') {
+         Session::addMessageAfterRedirect(
+            __('As credenciais deste ambiente divergem do servidor; solicite ao suporte o Reset de provisionamento – na 6.7.0+ o ambiente se recupera sozinho no Sincronizar seguinte ao reset.', 'nextool'),
+            false,
+            WARNING
          );
       } elseif ($licenseStatus === 'SUSPENDED') {
          $contactUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?forcetab=PluginNextoolMainConfig%242';
@@ -674,7 +684,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
       } elseif ($licenseStatus === 'INACTIVE') {
          if (strtoupper($planLabel) === 'FREE') {
             Session::addMessageAfterRedirect(
-               __('Sincronização concluída com sucesso. Seu ambiente está no plano gratuito — todos os módulos gratuitos estão disponíveis.', 'nextool'),
+               __('Sincronização concluída com sucesso. Seu ambiente está no plano gratuito – todos os módulos gratuitos estão disponíveis.', 'nextool'),
                false,
                INFO
             );
@@ -691,7 +701,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
          Session::addMessageAfterRedirect($msg, false, WARNING);
       } elseif (empty($licensesInfo)) {
          Session::addMessageAfterRedirect(
-            __('Sincronização concluída com sucesso. Nenhuma licença comercial vinculada — o ambiente opera no plano gratuito.', 'nextool'),
+            __('Sincronização concluída com sucesso. Nenhuma licença comercial vinculada – o ambiente opera no plano gratuito.', 'nextool'),
             false,
             INFO
          );

@@ -16,6 +16,8 @@ declare(strict_types=1);
  * - $nextoolHeroHideSync (bool) oculta botão Sincronizar
  * - $nextoolHeroForcetab (string) forcetab de retorno após sincronização
  * - $nextoolHeroShowCoreUpdate (bool) exibe botão para modal de atualização
+ * - $nextoolCommLineText/Icon/Class (string) linha de estado de comunicação (#244,
+ *   calculada em PluginNextoolConfigViewState::fromLicenseConfig)
  *
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
@@ -45,6 +47,13 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                   <?php else: ?>
                      <?php echo Html::entities_deep($heroPlanDescription); ?>
                   <?php endif; ?>
+                  <br>
+               <?php endif; ?>
+               <?php if (!empty($nextoolCommLineText)): ?>
+                  <span class="small <?php echo isset($nextoolCommLineClass) ? $nextoolCommLineClass : 'text-white-50'; ?>" id="nextool-comm-state-line">
+                     <i class="ti <?php echo isset($nextoolCommLineIcon) ? $nextoolCommLineIcon : 'ti-plug'; ?>"></i>
+                     <?php echo Html::entities_deep($nextoolCommLineText); ?>
+                  </span>
                   <br>
                <?php endif; ?>
                <span class="small text-warning fw-semibold">

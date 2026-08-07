@@ -467,6 +467,7 @@ class PluginNextoolDistributionClient {
 
    private function extractManifestData(array $response): array {
       $data = json_decode($response['body'], true);
+      $this->registerCommOutcome($response, is_array($data) ? $data : null);
       if (!is_array($data)) {
          throw new RuntimeException(__('Resposta inválida do ContainerAPI.', 'nextool'));
       }
@@ -613,6 +614,7 @@ class PluginNextoolDistributionClient {
 
    private function decodeJsonResponse(array $response, string $errorPrefix): array {
       $data = json_decode($response['body'], true);
+      $this->registerCommOutcome($response, is_array($data) ? $data : null);
       if (!is_array($data)) {
          throw new RuntimeException($errorPrefix . ' ' . __('Resposta inválida do ContainerAPI.', 'nextool'));
       }
@@ -621,6 +623,27 @@ class PluginNextoolDistributionClient {
          throw new RuntimeException($errorPrefix . ' ' . $message);
       }
       return $data;
+   }
+
+   /**
+    * Alimenta o backoff/estado de comunicação (#243/#244) a partir de qualquer
+    * resposta assinada deste cliente (link-code, link-status, unlink, manifesto).
+    * Estas chamadas são user-triggered e por isso NÃO são suprimidas aqui -- quem
+    * suprime o polling automático é o ajax/account_action.php.
+    */
+   private function registerCommOutcome(array $response, ?array $data): void {
+      require_once NEXTOOL_PHP_DIR . '/inc/commbackoff.class.php';
+      $httpCode = isset($response['http_code']) ? (int) $response['http_code'] : null;
+      if ($httpCode === null || $httpCode >= 500 || $data === null) {
+         PluginNextoolCommBackoff::registerNetworkFailure($httpCode);
+      } elseif (PluginNextoolCommBackoff::isAuthFailure($httpCode, $data)) {
+         PluginNextoolCommBackoff::registerAuthFailure(
+            $httpCode,
+            isset($data['code']) ? (string) $data['code'] : null
+         );
+      } else {
+         PluginNextoolCommBackoff::registerSuccess($httpCode);
+      }
    }
 
 

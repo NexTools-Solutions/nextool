@@ -83,6 +83,21 @@ if ($baseUrl === '' || $identifier === '' || $secret === '') {
    exit;
 }
 
+// Backoff de auth (#243): o polling automático do modal (refresh_status) respeita a
+// janela de supressão -- responde 200 com suppressed=true em vez do antigo 502 em loop
+// (o JS para/desacelera ao ver o sinal). Ações explícitas (generate_link_code, unlink)
+// furam a supressão por decisão do owner (o resultado delas realimenta o backoff).
+require_once NEXTOOL_PHP_DIR . '/inc/commbackoff.class.php';
+if ($action === 'refresh_status' && ($supp = PluginNextoolCommBackoff::shouldSuppress()) !== null) {
+   echo json_encode([
+      'success'    => false,
+      'suppressed' => true,
+      'retry_in'   => (int) $supp['retry_in'],
+      'message'    => __('Comunicação com o servidor pausada após falhas de autenticação. Aguardando janela de nova tentativa.', 'nextool'),
+   ]);
+   exit;
+}
+
 $client = new PluginNextoolDistributionClient($baseUrl, $identifier, $secret);
 
 try {

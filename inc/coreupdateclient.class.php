@@ -120,6 +120,18 @@ class PluginNextoolCoreUpdateClient {
       ));
 
       $data = json_decode($response['body'], true);
+
+      // Alimenta o backoff/estado de comunicação (#243/#244). User-triggered: sem supressão.
+      require_once NEXTOOL_PHP_DIR . '/inc/commbackoff.class.php';
+      $httpCode = (int) $response['http_code'];
+      if (!is_array($data) || $httpCode >= 500) {
+         PluginNextoolCommBackoff::registerNetworkFailure($httpCode);
+      } elseif (PluginNextoolCommBackoff::isAuthFailure($httpCode, $data)) {
+         PluginNextoolCommBackoff::registerAuthFailure($httpCode, isset($data['code']) ? (string) $data['code'] : null);
+      } else {
+         PluginNextoolCommBackoff::registerSuccess($httpCode);
+      }
+
       if (!is_array($data)) {
          throw new RuntimeException(__('Resposta inválida do ContainerAPI ao solicitar manifesto do core.', 'nextool'));
       }
