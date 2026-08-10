@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.8.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.8.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -213,11 +213,14 @@ function plugin_init_nextool() {
    $PLUGIN_HOOKS['add_css']['nextool'][] = 'front/nextool-tabs.css.php';
 
    // JS global: window.NexToolSession, guarda de sessao compartilhada pelos modulos
-   // com polling. Precisa vir ANTES do JS dos modulos (que o consomem com guarda) e
-   // leva ?fv= porque este arquivo e servido com max-age=3600 sem versionamento
-   // proprio -- sem o stamp, uma correcao aqui levaria ate 1h para chegar no browser.
-   $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-session.js.php?fv='
-      . (string) @filemtime(NEXTOOL_PHP_DIR . '/front/nextool-session.js.php');
+   // com polling. Precisa vir ANTES do JS dos modulos (que o consomem com guarda).
+   // SEM query string no path: o GLPI 10 valida o registro com file_exists() na string
+   // INTEIRA -- com "?fv=" o arquivo "nao existe", vira warning em TODO request e o
+   // script fica FORA da pagina (fix de sessao inerte no G10; incidente paerro
+   // 2026-08-10). O cache-bust ja vem do core: a URL final ganha ?v=<versao dos files
+   // do plugin> nos 2 majors ($options['version'] em Html::script) -- bump de release
+   // rebusta; edicao sem bump aguarda o max-age de 1h, aceitavel em producao.
+   $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-session.js.php';
 
    // JS global: intercepta o ENTER nas abas de modulo (grades Search::show e forms de
    // config) para nao recarregar a pagina. Servido via front/*.php porque o GLPI 11
