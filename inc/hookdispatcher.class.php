@@ -714,8 +714,49 @@ class PluginNextoolHookDispatcher {
       }
 
       $severity = (string)($payload['severity'] ?? $meta['severity'] ?? 'info');
-      if (!in_array($severity, ['info', 'warning', 'critical'], true)) {
+      if (!in_array($severity, ['info', 'success', 'warning', 'critical'], true)) {
          $severity = 'info';
+      }
+
+      // 'resolves' (2026-08-10): dedup_keys de avisos que ESTE evento encerra --
+      // um "resolvido" verde expira os vermelhos correspondentes no consumidor.
+      // Saneado a lista curta de strings; consumidor antigo simplesmente ignora.
+      $resolves = [];
+      foreach ((array)($payload['resolves'] ?? []) as $chave) {
+         if (is_string($chave) && trim($chave) !== '') {
+            $resolves[] = substr(trim($chave), 0, 191);
+         }
+         if (count($resolves) >= 10) {
+            break;
+         }
+      }
+
+      // 'on_duplicate' (2026-08-10): comportamento na janela de dedup.
+      //   increment (default) - só conta a repetição (texto congela na 1ª ocorrência);
+      //   refresh            - aviso VIVO: atualiza título/mensagem/url além de contar
+      //                        (ex.: "fila com 500 pendentes" -> 300 -> 100).
+      $onDuplicate = (string)($payload['on_duplicate'] ?? 'increment');
+      if (!in_array($onDuplicate, ['increment', 'refresh'], true)) {
+         $onDuplicate = 'increment';
+      }
+
+      // 'actions' (2026-08-10): até 3 ações rápidas {label, url} para o consumidor
+      // renderizar como LINKS (nunca executar ação por GET - a página de destino é
+      // quem confirma/valida CSRF). Contrato preparado; consumidor pode adotar depois.
+      $actions = [];
+      foreach ((array)($payload['actions'] ?? []) as $acao) {
+         if (!is_array($acao)) {
+            continue;
+         }
+         $label = trim((string)($acao['label'] ?? ''));
+         $url   = trim((string)($acao['url'] ?? ''));
+         if ($label === '' || $url === '') {
+            continue;
+         }
+         $actions[] = ['label' => substr($label, 0, 60), 'url' => substr($url, 0, 255)];
+         if (count($actions) >= 3) {
+            break;
+         }
       }
 
       return [
@@ -730,6 +771,9 @@ class PluginNextoolHookDispatcher {
          'dedup_key'    => (string)($payload['dedup_key'] ?? $sourceKey),
          'dedup_window' => max(0, (int)($payload['dedup_window'] ?? $meta['dedup_window'] ?? 0)),
          'expires_at'   => $payload['expires_at'] ?? null,
+         'resolves'     => $resolves,
+         'on_duplicate' => $onDuplicate,
+         'actions'      => $actions,
          'data'         => is_array($payload['data'] ?? null) ? $payload['data'] : [],
          'date'         => (string)($payload['date'] ?? $_SESSION['glpi_currenttime'] ?? date('Y-m-d H:i:s')),
       ];
