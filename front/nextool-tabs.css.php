@@ -47,8 +47,28 @@ header('Cache-Control: public, max-age=3600');
  */
 [class*="nextool"] .small:not(td):not(th),
 [id*="nextool"] .small:not(td):not(th),
-[id^="rt-tab-"] .small:not(td):not(th) {
+[id^="rt-tab-"] .small:not(td):not(th),
+[id$="-tab"] .small:not(td):not(th) {
    width: auto !important;
+}
+/* O seletor [id$="-tab"] cobre os containers de aba de modulo que nao carregam
+ * "nextool" no id (ex.: #ticketflow-fluxos-tab, #problemflow-rules-tab). Ele
+ * substitui os blocos <style> "nextool-unified-small-fix" que cada modulo
+ * duplicava inline (removidos em 2026-08-15) -- as secoes colapsaveis internas
+ * (#<mod>_api_collapse etc.) sao descendentes do container e ficam cobertas. */
+
+/*
+ * Indicador de colapso (chevron) das secoes de config dos modulos: animacao de
+ * rotacao ao expandir/recolher. Era um <style> inline duplicado em ~48 abas de
+ * modulo (blueprint de config); centralizado aqui em 2026-08-15. A classe e
+ * prefixada (so os modulos NexTool a usam), entao a regra e global por classe.
+ * Modulos que dependem desta regra exigem base >= 6.9.1 (min_plugin_version).
+ */
+.nextool-collapse-indicator {
+   transition: transform .2s ease;
+}
+[aria-expanded="true"] .nextool-collapse-indicator {
+   transform: rotate(180deg);
 }
 
 /*

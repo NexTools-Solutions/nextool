@@ -142,7 +142,10 @@ class PluginNextoolHookProvidersDispatcher {
       foreach (self::getProviders() as $provider) {
          try {
             $result = $provider->giveItem($itemtype, $ID, $data, $num);
-            if ($result !== false) {
+            // false E null significam "não tratei": um provider que devolve
+            // null não pode curto-circuitar os demais (aconteceu com o
+            // smartassign e matou o giveItem de todos os módulos, 2026-08-15).
+            if ($result !== false && $result !== null) {
                return $result;
             }
          } catch (Throwable $e) {
