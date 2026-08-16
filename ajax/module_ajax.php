@@ -29,6 +29,15 @@ if (!defined('GLPI_ROOT')) {
    define('GLPI_ROOT', $candidate);
 }
 
+// Bootstrap do GLPI: no GLPI 11 o kernel já bootou antes de servir este arquivo
+// (o guard vira no-op); no GLPI 10 o arquivo chega SEM o core carregado -- sem
+// este include, __()/Session dão fatal e TODO AJAX de módulo responde 500 no
+// major 10 (regressão de refatoração pega pela bateria nextool-e2e --glpi 10,
+// 2026-08-16; os demais entry points de ajax/ têm o include incondicional).
+if (!function_exists('__')) {
+   include GLPI_ROOT . '/inc/includes.php';
+}
+
 require_once dirname(__DIR__) . '/inc/modulespath.inc.php';
 
 // Detecta módulo e arquivo usando PATH_INFO (preferencial) ou query string
@@ -140,8 +149,18 @@ require_once GLPI_ROOT . '/inc/includes.php';
 // session_start() para carregar os dados da sessão do filesystem.
 require_once NEXTOOL_PHP_DIR . '/inc/ajaxsessionguard.inc.php';
 
+// GLPI 10 (bootstrap legado): o includes.php acima JÁ iniciou a sessão real do
+// usuário -- o problema que a restauração abaixo resolve (kernel stateless do
+// G11: cookies off, sessão não iniciada) não existe lá. "Restaurar de novo"
+// abortaria a sessão viva e o strict-mode cunharia outra vazia (Set-Cookie novo,
+// resposta 200 vazia -- pego pela bateria nextool-e2e --glpi 10, 2026-08-16).
+$nxSessionJaViva = (session_status() === PHP_SESSION_ACTIVE)
+   && (Session::getLoginUserID() !== false);
+
 $sessName = session_name();
 $sessId   = $_COOKIE[$sessName] ?? null;
+
+if (!$nxSessionJaViva) {
 
 // O ID vem de cookie, ou seja, é input do usuário. Restringir ao alfabeto de
 // session id impede path traversal no is_file() do guard e lixo no session_id().
@@ -190,6 +209,8 @@ if (session_id() !== $sessId) {
    plugin_nextool_ajax_session_expired();
 }
 
+}  // fim do if (!$nxSessionJaViva) -- restauração só no caminho stateless (G11)
+
 // Tratar a expiração AQUI, não deixar subir. Se a SessionExpiredException chega
 // ao AccessErrorListener do core, ele chama Session::destroy(), que ZERA o
 // arquivo mantendo a sessão ativa - o mesmo zumbi de 0 byte auto-renovado.
@@ -217,7 +238,12 @@ try {
 // session_write_close() logo abaixo, que já existia. E vem DEPOIS do
 // checkLoginUser de propósito: renovar antes de validar daria mtime fresco a uma
 // sessão inválida, que é exatamente o zumbi que este bloco existe para matar.
-Session::initVars();
+// Session::initVars() SÓ EXISTE no GLPI 11 -- no 10 o includes.php do bootstrap
+// legado já renovou glpi_currenttime no boot (fatal silencioso sem o guard;
+// pego pela bateria nextool-e2e --glpi 10, 2026-08-16).
+if (method_exists('Session', 'initVars')) {
+   Session::initVars();
+}
 
 // Reaplica CSRF para endpoints autenticados.
 // (O CheckCsrfListener é bypassado quando o path é stateless.)
