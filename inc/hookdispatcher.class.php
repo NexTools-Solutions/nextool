@@ -826,4 +826,38 @@ class PluginNextoolHookDispatcher {
          $PLUGIN_HOOKS[$hookName]['nextool'][$itemType] = $value;
       }
    }
+
+   /**
+    * Registra um callback ARBITRÁRIO ([classe, método]) num slot por-itemtype
+    * `$PLUGIN_HOOKS[$hook]['nextool'][$itemType]` de forma append-safe: slot
+    * vazio -> set; igual -> idempotente; ocupado por outro -> encadeia os dois
+    * em sequência. Fonte ÚNICA do helper que estava copiado em
+    * `workflow.class.php` e `ticketrules.class.php` (ME-11).
+    *
+    * Difere de installHook(): aqui o callback é do MÓDULO (não um dispatchMethod
+    * desta classe), e a semântica é de hook de OBJETO (`Plugin::doHook($name,
+    * $item)`, branch is_object) -- o retorno do callback NÃO é usado pelo core
+    * (mutação por referência ao objeto), então encadear é só "chamar os dois".
+    *
+    * @param array  $PLUGIN_HOOKS por referência (global do GLPI)
+    * @param string $hookName     ex.: 'pre_item_update'
+    * @param string $itemType     ex.: 'Ticket', 'TicketTask'
+    * @param array  $callback     [class, method]
+    */
+   public static function appendItemHook(array &$PLUGIN_HOOKS, string $hookName, string $itemType, array $callback): void {
+      $existing = $PLUGIN_HOOKS[$hookName]['nextool'][$itemType] ?? null;
+
+      if ($existing === null) {
+         $PLUGIN_HOOKS[$hookName]['nextool'][$itemType] = $callback;
+         return;
+      }
+      if ($existing === $callback) {
+         return; // já registrado (idempotência)
+      }
+      // Slot ocupado por handler de outro módulo -- encadeia sem substituir.
+      $PLUGIN_HOOKS[$hookName]['nextool'][$itemType] = static function ($data) use ($existing, $callback) {
+         call_user_func($existing, $data);
+         call_user_func($callback, $data);
+      };
+   }
 }
