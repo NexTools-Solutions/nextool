@@ -212,13 +212,25 @@ abstract class PluginNextoolBaseObservability {
 
    /**
     * Última linha de defesa: remove padrões de credencial de um texto livre.
-    * Padrões DEFAULT; o módulo pode sobrescrever para acrescentar os seus
-    * (ex.: glpisync -> user_token/app_token; smartassign -> xkeysib/AKIA).
+    * O DEFAULT cobre a UNIÃO dos padrões em uso no ecossistema (6.10.1) --
+    * tokens de provedor com prefixo conhecido, chave AWS, header Authorization
+    * e pares chave=valor de credencial. O módulo pode sobrescrever para
+    * acrescentar padrões próprios; um default forte evita que quem delega
+    * herde redação fraca.
     */
    public static function stripSecretsFromText(string $texto): string {
-      $texto = preg_replace('/(apikey\s*[:=]\s*)\S+/i', '$1<oculto>', $texto);
-      $texto = preg_replace('/(Bearer\s+)\S+/i', '$1<oculto>', $texto);
-      $texto = preg_replace('/(token\s*[:=]\s*)\S+/i', '$1<oculto>', $texto);
+      // Tokens com prefixo de provedor conhecido: o valor inteiro some.
+      $texto = preg_replace('/\b(?:xkeysib|xsmtpsib|sk-ant|sk_live|sk-proj|ghp|xoxb)[-_][A-Za-z0-9_\-]{8,}/i', '<oculto>', $texto);
+      $texto = preg_replace('/\bAKIA[0-9A-Z]{16}\b/', '<oculto>', $texto);
+      // Headers de autenticação (a linha inteira, antes dos pares chave=valor).
+      // Whitespace HORIZONTAL apenas ([ \t]): \s cruzaria \n e engoliria a linha seguinte.
+      $texto = preg_replace('/(Authorization:[ \t]*)\S+([ \t]+\S+)?/i', '$1<oculto>', $texto);
+      $texto = preg_replace('/(Bearer[ \t]+)\S+/i', '$1<oculto>', $texto);
+      // Pares chave=valor / chave: valor (prefixos cobrem user_token, app_token,
+      // webhook_token, evolution_api_key, client_secret etc.).
+      $texto = preg_replace('/(\w*api[_-]?key[ \t]*[:=][ \t]*)\S+/i', '$1<oculto>', $texto);
+      $texto = preg_replace('/(\w*token[ \t]*[:=][ \t]*)\S+/i', '$1<oculto>', $texto);
+      $texto = preg_replace('/(\w*(?:senha|password|secret)[ \t]*[:=][ \t]*)\S+/i', '$1<oculto>', $texto);
       return (string) $texto;
    }
 
