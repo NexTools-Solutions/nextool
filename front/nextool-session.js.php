@@ -23,6 +23,17 @@
  * -------------------------------------------------------------------------
  * @license GPLv3+
  */
+// Bootstrap: no GLPI 11 o kernel Symfony ja carregou o core antes de servir este
+// arquivo, mas no GLPI 10 ele e acessado por PATH DIRETO (sem kernel) -- sem o
+// include abaixo, o __() das strings i18n nao existe e a resposta vira Fatal/500,
+// deixando o ambiente sem window.NexToolSession. Condicional: no 11 o GLPI_ROOT
+// ja esta definido e o require_once nao reexecuta o core.
+if (!defined('GLPI_ROOT')) {
+   // Este arquivo esta em plugins/nextool/front/ -> GLPI_ROOT = 4 niveis acima
+   define('GLPI_ROOT', dirname(__FILE__, 4));
+}
+require_once GLPI_ROOT . '/inc/includes.php';
+
 header('Content-Type: application/javascript; charset=UTF-8');
 header('Cache-Control: public, max-age=3600');
 
