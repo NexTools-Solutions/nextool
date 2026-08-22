@@ -547,6 +547,26 @@ abstract class PluginNextoolBaseModule {
    private static $configCache = [];
 
    /**
+    * Invalida o memo per-request de getConfig().
+    *
+    * Público porque o ModuleManager precisa poder limpá-lo de fora: os dois
+    * caches (este e o moduleRowCache do manager) guardam a mesma coluna `config`
+    * e têm de ser invalidados em conjunto, senão uma leitura posterior no mesmo
+    * request devolve valor obsoleto.
+    *
+    * @param string|null $moduleKey null limpa TUDO (usado em clearCache /
+    *                               enable-disable, onde qualquer módulo pode ter
+    *                               mudado).
+    */
+   public static function invalidateConfigCache(?string $moduleKey = null): void {
+      if ($moduleKey === null) {
+         self::$configCache = [];
+         return;
+      }
+      unset(self::$configCache[$moduleKey]);
+   }
+
+   /**
     * Obtém configuração atual do módulo
     *
     * Memoizado por request: getConfig() é chamado em múltiplos pontos do mesmo
@@ -564,26 +584,47 @@ abstract class PluginNextoolBaseModule {
          return self::$configCache[$moduleKey];
       }
 
-      $iterator = $DB->request([
-         'FROM'  => 'glpi_plugin_nextool_main_modules',
-         'WHERE' => ['module_key' => $moduleKey],
-         'LIMIT' => 1
-      ]);
-
       $defaults = $this->getDefaultConfig();
 
-      if (count($iterator)) {
-         $data = $iterator->current();
-         $config = json_decode($data['config'] ?? '{}', true);
-         // Mescla os defaults POR BAIXO do config persistido: chaves novas do
-         // getDefaultConfig() (ex.: poll_enabled/sync_status adicionadas depois do
-         // primeiro save) passam a valer o default em vez de ficarem silenciosamente
-         // OFF. O config salvo continua sobrescrevendo os defaults (inclusive um 0
-         // explicito, que o usuario setou de proposito, prevalece).
-         return self::$configCache[$moduleKey] = array_merge($defaults, is_array($config) ? $config : []);
+      // Fast-path: quando o ModuleManager já pré-carregou as linhas em bulk
+      // (loadActiveModules -> preloadModuleRowCache, antes do loop de onInit),
+      // a coluna `config` já está em memória e o SELECT abaixo seria uma
+      // repetição unitária de leitura já feita. Retorna null quando NÃO houve
+      // preload, e aí o caminho antigo roda intacto.
+      $config = null;
+      if (class_exists('PluginNextoolModuleManager')) {
+         $preloaded = PluginNextoolModuleManager::getInstance()->getPreloadedRawConfig($moduleKey);
+         if ($preloaded === false) {
+            // Pré-carregado e o módulo não está na tabela: defaults, sem query.
+            return self::$configCache[$moduleKey] = $defaults;
+         }
+         if (is_array($preloaded)) {
+            $config = $preloaded;
+         }
       }
 
-      return self::$configCache[$moduleKey] = $defaults;
+      if ($config === null) {
+         $iterator = $DB->request([
+            'FROM'  => 'glpi_plugin_nextool_main_modules',
+            'WHERE' => ['module_key' => $moduleKey],
+            'LIMIT' => 1
+         ]);
+
+         if (!count($iterator)) {
+            return self::$configCache[$moduleKey] = $defaults;
+         }
+
+         $data = $iterator->current();
+         $decoded = json_decode($data['config'] ?? '{}', true);
+         $config = is_array($decoded) ? $decoded : [];
+      }
+
+      // Mescla os defaults POR BAIXO do config persistido: chaves novas do
+      // getDefaultConfig() (ex.: poll_enabled/sync_status adicionadas depois do
+      // primeiro save) passam a valer o default em vez de ficarem silenciosamente
+      // OFF. O config salvo continua sobrescrevendo os defaults (inclusive um 0
+      // explicito, que o usuario setou de proposito, prevalece).
+      return self::$configCache[$moduleKey] = array_merge($defaults, $config);
    }
 
    /**
@@ -610,9 +651,16 @@ abstract class PluginNextoolBaseModule {
          return false;
       }
 
-      // Invalida o cache per-request de getConfig() - a próxima leitura
-      // reflete imediatamente o que foi salvo neste mesmo request.
-      unset(self::$configCache[$this->getModuleKey()]);
+      // Invalida os DOIS caches per-request que guardam a config deste módulo:
+      // o memo local de getConfig() e a linha pré-carregada no ModuleManager.
+      // Precisam cair juntos - a partir do momento em que getConfig() passou a
+      // poder ler do moduleRowCache, invalidar só um devolveria config velha na
+      // próxima leitura DO MESMO request (padrão read-after-write que o
+      // pendingsurvey exercita em ensureViewVersion()).
+      self::invalidateConfigCache($this->getModuleKey());
+      if (class_exists('PluginNextoolModuleManager')) {
+         PluginNextoolModuleManager::getInstance()->invalidateModuleRow($this->getModuleKey());
+      }
 
       $iterator = $DB->request([
          'FROM'  => 'glpi_plugin_nextool_main_modules',

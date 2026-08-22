@@ -610,7 +610,7 @@ class PluginNextoolModuleManager {
          unset($this->loadedModules[$moduleKey]);
       }
       $this->modules = [];
-      $this->moduleRowCache = [];
+      $this->resetRowCache();
       if (class_exists('PluginNextoolMainConfig')) {
          PluginNextoolMainConfig::clearModuleConfigTabsCache();
       }
@@ -1426,6 +1426,94 @@ class PluginNextoolModuleManager {
       $row = count($iterator) ? $iterator->current() : null;
       $this->moduleRowCache[$moduleKey] = $row;
       return $row;
+   }
+
+   /**
+    * Invalida o cache de linhas de módulo.
+    *
+    * moduleRowCache e rowMapPreloaded são UM par indivisível: o fast-path de
+    * getModuleRow() lê "preloaded=true + chave ausente" como "o módulo não
+    * existe no banco". Zerar o cache sem baixar a flag faz getModuleRow()
+    * responder null para TUDO, e isEnabled/isInstalled/getBillingTier passam a
+    * mentir pelo resto do request.
+    *
+    * Era exatamente o que acontecia em setEnabledState(): ele limpava só o array.
+    * O sintoma era brutal e silencioso -- depois de DESATIVAR um módulo, tentar
+    * REATIVAR na mesma requisição falhava com "Módulo precisa ser instalado
+    * primeiro", porque isInstalled() já respondia false para um módulo instalado
+    * (reproduzido em 2026-08-22).
+    *
+    * Este método existe para que não haja um segundo lugar onde alguém possa
+    * esquecer metade do par.
+    */
+   private function resetRowCache(): void {
+      $this->moduleRowCache  = [];
+      $this->rowMapPreloaded = false;
+      // O memo de getConfig() no BaseModule guarda a MESMA coluna `config`
+      // destas linhas - deixá-lo para trás devolveria config obsoleta.
+      if (class_exists('PluginNextoolBaseModule')) {
+         PluginNextoolBaseModule::invalidateConfigCache();
+      }
+   }
+
+   /**
+    * Devolve a coluna `config` já decodificada da linha PRÉ-CARREGADA, sem query.
+    *
+    * Existe para BaseModule::getConfig() evitar um SELECT que o
+    * preloadModuleRowCache() já resolveu: loadActiveModules() pré-carrega TODAS
+    * as linhas (SELECT *) na L253 e só então entra no loop de onInit() na L255 -
+    * logo, todo getConfig() chamado de um onInit() estava repetindo em unitário
+    * uma leitura já feita em bulk.
+    *
+    * Semântica de TRÊS estados, deliberada:
+    *   null  => cache NÃO pré-carregado -> o caller DEVE ir ao banco (fallback)
+    *   false => pré-carregado e o módulo não existe na tabela -> usar defaults
+    *   array => config decodificado da linha em memória
+    *
+    * Não expandir getModulesStateMap() para isso: aquele método é consumido em
+    * loops de menu/perfil e carregar o JSON de ~40 módulos ali seria regressão de
+    * memória para nada.
+    *
+    * @return array|false|null
+    */
+   public function getPreloadedRawConfig(string $moduleKey) {
+      if (!$this->rowMapPreloaded) {
+         return null;
+      }
+      if (!array_key_exists($moduleKey, $this->moduleRowCache)) {
+         return false;
+      }
+      $row = $this->moduleRowCache[$moduleKey];
+      if ($row === null) {
+         return false;
+      }
+      $decoded = json_decode($row['config'] ?? '{}', true);
+      return is_array($decoded) ? $decoded : [];
+   }
+
+   /**
+    * Invalida a linha cacheada de UM módulo (e o memo de config correspondente).
+    *
+    * Chamado por BaseModule::saveConfig() para que a próxima leitura no mesmo
+    * request enxergue o que acabou de ser gravado.
+    *
+    * Baixa rowMapPreloaded de propósito: o fast-path de getModuleRow() responde
+    * "não existe" para chave ausente com preload ligado, então remover uma chave
+    * sem baixar a flag transformaria o módulo em inexistente. O custo é no
+    * máximo uma query extra por save - operação rara, sempre num POST de config.
+    *
+    * @param string|null $moduleKey null limpa tudo.
+    */
+   public function invalidateModuleRow(?string $moduleKey = null): void {
+      if ($moduleKey === null) {
+         $this->resetRowCache();
+         return;
+      }
+      unset($this->moduleRowCache[$moduleKey]);
+      $this->rowMapPreloaded = false;
+      if (class_exists('PluginNextoolBaseModule')) {
+         PluginNextoolBaseModule::invalidateConfigCache($moduleKey);
+      }
    }
 
    /**
@@ -2380,8 +2468,7 @@ class PluginNextoolModuleManager {
    public function clearCache() {
       $cacheFilePath = $this->cachePath . '/' . $this->cacheFile;
 
-      $this->moduleRowCache = [];
-      $this->rowMapPreloaded = false;
+      $this->resetRowCache();
       if (class_exists('PluginNextoolMainConfig')) {
          PluginNextoolMainConfig::clearModuleConfigTabsCache();
       }
