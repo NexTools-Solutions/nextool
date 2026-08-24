@@ -1923,10 +1923,13 @@ class PluginNextoolLicenseValidator {
     * a MESMA identidade (provisionSecret($identifier)); nenhum secret trafega
     * fora do canal normal de bootstrap.
     *
+    * Público desde #241: também acionado pelo fluxo de vínculo de conta
+    * (ajax/account_action.php) sob o MESMO guard estrito (só environment_not_provisioned).
+    *
     * @return array{identifier: string, secret: string}|null null = cura falhou
     *         (fica o 401 desta rodada; próxima sincronização tenta de novo)
     */
-   private static function healStaleSecret(string $distributionBaseUrl, string $clientIdentifier): ?array {
+   public static function healStaleSecret(string $distributionBaseUrl, string $clientIdentifier): ?array {
       try {
          require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
          require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';

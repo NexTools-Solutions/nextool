@@ -72,7 +72,94 @@ class PluginNextoolCronCatalogSync {
       $valid  = is_array($result) ? (bool) ($result['valid'] ?? false) : false;
       $task->log(sprintf('catalog_sync: source=%s valid=%s', $source !== '' ? $source : 'n/d', $valid ? '1' : '0'));
 
+      // Notificação de updates (#162): só com dado FRESCO do servidor (source=remote);
+      // cache/backoff/falha não devem emitir nem expirar alerta com informação velha.
+      if ($source === 'remote') {
+         self::notifyPendingUpdates($task);
+      }
+
       // "Fez algo" = houve comunicação remota (o catálogo foi reavaliado/sincronizado).
       return $source === 'remote' ? 1 : 0;
+   }
+
+   /**
+    * (#162) Detecta update disponível (core + módulos) e avisa o admin via alerta
+    * LOCAL (popup/aba Alertas + sino), com dedup por versão/conjunto -- a mesma
+    * situação nunca re-alerta a cada tick de 6h. Nada é baixado/instalado aqui.
+    */
+   private static function notifyPendingUpdates(CronTask $task): void {
+      foreach (['coreupdater', 'alertmanager', 'modulecatalog'] as $inc) {
+         $f = NEXTOOL_PHP_DIR . '/inc/' . $inc . '.class.php';
+         if (is_file($f)) {
+            require_once $f;
+         }
+      }
+      if (!class_exists('PluginNextoolAlertManager')) {
+         return;
+      }
+
+      // (a) Core: check ativo (antes só o botão Sincronizar manual detectava --
+      // ambiente ocioso nunca ficava sabendo de versão nova da base).
+      try {
+         if (class_exists('PluginNextoolCoreUpdater')) {
+            $coreCheck = (new PluginNextoolCoreUpdater())->check('stable', 'cron_sync');
+            if (!empty($coreCheck['success'])) {
+               $target  = trim((string) ($coreCheck['data']['target_version'] ?? ''));
+               $current = trim((string) ($coreCheck['data']['current_version'] ?? ''));
+               if (!empty($coreCheck['data']['update_available']) && $target !== '') {
+                  PluginNextoolAlertManager::raiseLocal(
+                     'core_update:' . $target,
+                     sprintf(__('Atualização do NexTool disponível: versão %s', 'nextool'), $target),
+                     sprintf(
+                        __('Uma nova versão do plugin NexTool está disponível (%1$s → %2$s). Acesse Configurar > NexTool e use o botão "Atualização Disponível" para aplicar quando desejar.', 'nextool'),
+                        $current !== '' ? $current : '?',
+                        $target
+                     ),
+                     'warning'
+                  );
+               } else {
+                  // Core em dia: expira alerta de versão que deixou de valer.
+                  PluginNextoolAlertManager::expireLocalFamily('core_update:');
+               }
+            }
+         }
+      } catch (Throwable $e) {
+         $task->log('catalog_sync: core check falhou: ' . $e->getMessage());
+      }
+
+      // (b) Módulos: alerta AGREGADO, chave = hash do conjunto módulo=versão --
+      // conjunto idêntico = no-op; qualquer mudança expira o anterior e re-emite.
+      try {
+         if (!class_exists('PluginNextoolModuleCatalog')
+             || !method_exists('PluginNextoolModuleCatalog', 'getPendingUpdates')) {
+            return;
+         }
+         $pending = PluginNextoolModuleCatalog::getPendingUpdates();
+         $task->log(sprintf('catalog_sync: modules_pending=%d', count($pending)));
+         if ($pending === []) {
+            PluginNextoolAlertManager::expireLocalFamily('module_updates:');
+            return;
+         }
+         $pairs = [];
+         $lines = [];
+         foreach ($pending as $key => $info) {
+            $pairs[] = $key . '=' . $info['available'];
+            $lines[] = sprintf('<li>%s (%s → %s)</li>',
+               htmlspecialchars($info['name']), htmlspecialchars($info['installed']), htmlspecialchars($info['available']));
+         }
+         sort($pairs);
+         PluginNextoolAlertManager::raiseLocal(
+            'module_updates:' . substr(md5(implode('|', $pairs)), 0, 12),
+            sprintf(
+               _n('%d módulo com atualização disponível', '%d módulos com atualização disponível', count($pending), 'nextool'),
+               count($pending)
+            ),
+            '<p>' . __('Os módulos abaixo têm nova versão no catálogo oficial. Atualize pela tela de Módulos quando desejar.', 'nextool') . '</p>'
+               . '<ul>' . implode('', $lines) . '</ul>',
+            'info'
+         );
+      } catch (Throwable $e) {
+         $task->log('catalog_sync: alerta de módulos falhou: ' . $e->getMessage());
+      }
    }
 }

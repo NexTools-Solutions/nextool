@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.11.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.12.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -581,14 +581,19 @@ function _plugin_nextool_register_crons() {
       ]);
       // register() faz early-return se a task já existe -> não atualiza a frequência de quem
       // instalou com o antigo DAY_TIMESTAMP (24h). Migra 24h -> 6h SÓ para quem está no default
-      // antigo, preservando qualquer ajuste manual de frequência feito pelo admin.
+      // antigo, e SÓ UMA VEZ (#162): sem a flag, o UPDATE re-rodava a cada install/upgrade e
+      // revertia um admin que tivesse escolhido deliberadamente 24h em Ações automáticas.
       global $DB;
-      if (isset($DB) && $DB->tableExists('glpi_crontasks')) {
-         $DB->update('glpi_crontasks', ['frequency' => 6 * HOUR_TIMESTAMP], [
-            'itemtype'  => 'PluginNextoolCronCatalogSync',
-            'name'      => 'catalogSync',
-            'frequency' => DAY_TIMESTAMP,
-         ]);
+      if (isset($DB) && $DB->tableExists('glpi_crontasks') && class_exists('Config')) {
+         $flags = Config::getConfigurationValues('plugin:nextool_distribution', ['catalogsync_freq_migrated']);
+         if (empty($flags['catalogsync_freq_migrated'])) {
+            $DB->update('glpi_crontasks', ['frequency' => 6 * HOUR_TIMESTAMP], [
+               'itemtype'  => 'PluginNextoolCronCatalogSync',
+               'name'      => 'catalogSync',
+               'frequency' => DAY_TIMESTAMP,
+            ]);
+            Config::setConfigurationValues('plugin:nextool_distribution', ['catalogsync_freq_migrated' => '1']);
+         }
       }
    }
 }

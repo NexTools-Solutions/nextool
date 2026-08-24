@@ -33,6 +33,42 @@ class PluginNextoolModuleCatalog {
    ];
 
    /**
+    * Módulos INSTALADOS com atualização disponível (#162): available_version > version.
+    * Mesma semântica do render do catálogo (config.form.php), incluindo o guard de
+    * pasta ausente (sem os arquivos no disco = download pendente, não "update").
+    * Nota: all() NÃO serve para este diff -- ele colapsa version/available_version.
+    *
+    * @return array<string, array{name: string, installed: string, available: string}>
+    */
+   public static function getPendingUpdates(): array {
+      global $DB;
+
+      $table = 'glpi_plugin_nextool_main_modules';
+      if (!$DB->tableExists($table)) {
+         return [];
+      }
+      require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
+
+      $pending = [];
+      foreach ($DB->request(['FROM' => $table, 'WHERE' => ['is_installed' => 1], 'ORDER' => 'name']) as $row) {
+         $moduleKey = (string)($row['module_key'] ?? '');
+         $installed = trim((string)($row['version'] ?? ''));
+         $available = trim((string)($row['available_version'] ?? ''));
+         if ($moduleKey === '' || $installed === '' || $available === ''
+             || !version_compare($available, $installed, '>')
+             || !is_dir(NEXTOOL_MODULES_BASE . '/' . $moduleKey)) {
+            continue;
+         }
+         $pending[$moduleKey] = [
+            'name'      => (string)($row['name'] ?? $moduleKey),
+            'installed' => $installed,
+            'available' => $available,
+         ];
+      }
+      return $pending;
+   }
+
+   /**
     * Retorna todos os módulos do banco (fonte única da verdade).
     * Tabela vazia ou inexistente → [] (catálogo vem do ContainerAPI no aceite dos termos / sincronizar).
     *

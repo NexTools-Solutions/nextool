@@ -427,12 +427,30 @@ if ($action === 'accept_policies') {
          INFO
       );
    } else {
-      $message = $result['message'] ?? __('Não foi possível sincronizar o catálogo de módulos. Tente novamente em instantes.', 'nextool');
-      Session::addMessageAfterRedirect(
-         $message,
-         false,
-         WARNING
-      );
+      // Branches por 'code' machine-readable (#241): o validateLicense acima já embute a
+      // auto-cura da 6.7.0; se ainda assim sobrou environment_not_provisioned, orientar o
+      // usuário como o fluxo do Sincronizar faz, em vez do WARNING genérico.
+      $acceptErrorCode = $result['error_code'] ?? null;
+      if ($acceptErrorCode === 'environment_not_provisioned') {
+         Session::addMessageAfterRedirect(
+            __('Ainda estamos preparando este ambiente na plataforma NexTool. Aguarde alguns instantes e clique novamente em "Sincronizar" para concluir. Enquanto isso, o ambiente permanece no plano gratuito.', 'nextool'),
+            false,
+            INFO
+         );
+      } elseif ($acceptErrorCode === 'signature_mismatch') {
+         Session::addMessageAfterRedirect(
+            __('As credenciais deste ambiente divergem do servidor; solicite ao suporte o Reset de provisionamento – na 6.7.0+ o ambiente se recupera sozinho no Sincronizar seguinte ao reset.', 'nextool'),
+            false,
+            WARNING
+         );
+      } else {
+         $message = $result['message'] ?? __('Não foi possível sincronizar o catálogo de módulos. Tente novamente em instantes.', 'nextool');
+         Session::addMessageAfterRedirect(
+            $message,
+            false,
+            WARNING
+         );
+      }
    }
 
    PluginNextoolConfigAudit::log([

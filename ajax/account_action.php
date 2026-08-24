@@ -100,10 +100,36 @@ if ($action === 'refresh_status' && ($supp = PluginNextoolCommBackoff::shouldSup
 
 $client = new PluginNextoolDistributionClient($baseUrl, $identifier, $secret);
 
+// Auto-cura no vínculo (#241): num 401 code=environment_not_provisioned (secret local stale,
+// ex.: pós-reset de provisionamento) o servidor NÃO tem secret para este identifier -- a
+// requisição assinada nunca vai passar. Dispara a MESMA auto-cura da 6.7.0 (re-bootstrap,
+// possivelmente com identidade nova por re-enroll) e repete a chamada UMA vez com o par
+// curado. Guard estrito: só esse code (nunca signature_mismatch, que exige suporte).
+$callSigned = function (callable $call) use ($baseUrl, &$client, &$identifier, &$secret) {
+   try {
+      return $call($client);
+   } catch (PluginNextoolDistributionException $e) {
+      if ($e->getErrorCode() !== 'environment_not_provisioned') {
+         throw $e;
+      }
+      require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
+      $healed = PluginNextoolLicenseValidator::healStaleSecret($baseUrl, $identifier);
+      if ($healed === null) {
+         throw $e;
+      }
+      // Identifier/secret são imutáveis no construtor: reinstancia com o par curado.
+      // $identifier atualizado também corrige o environment_id devolvido ao JS abaixo.
+      $identifier = $healed['identifier'];
+      $secret     = $healed['secret'];
+      $client     = new PluginNextoolDistributionClient($baseUrl, $identifier, $secret);
+      return $call($client);
+   }
+};
+
 try {
    switch ($action) {
       case 'generate_link_code':
-         $data = $client->requestLinkCode();
+         $data = $callSigned(static fn(PluginNextoolDistributionClient $c) => $c->requestLinkCode());
          echo json_encode([
             'success'         => true,
             'link_code'       => $data['link_code'] ?? '',
@@ -114,7 +140,7 @@ try {
          break;
 
       case 'refresh_status':
-         $data = $client->getLinkStatus();
+         $data = $callSigned(static fn(PluginNextoolDistributionClient $c) => $c->getLinkStatus());
          $isLinked = (bool) ($data['linked'] ?? false);
          // Atualiza o estado persistido (cards FREE + rótulo do hero) já no refresh, sem esperar o
          // próximo /validate. Vinculado => link_required=0 (download FREE liberado de imediato).
@@ -133,7 +159,7 @@ try {
          break;
 
       case 'unlink':
-         $client->unlinkAccount();
+         $callSigned(static fn(PluginNextoolDistributionClient $c) => $c->unlinkAccount());
          Config::setConfigurationValues('plugin:nextool_account_link', array_merge(
             Config::getConfigurationValues('plugin:nextool_account_link'),
             ['linked' => '0', 'email' => '']

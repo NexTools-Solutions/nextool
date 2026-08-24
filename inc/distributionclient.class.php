@@ -22,6 +22,7 @@ if (!defined('GLPI_ROOT')) {
 require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/hmacsignaturetrait.class.php';
+require_once NEXTOOL_PHP_DIR . '/inc/distributionexception.class.php';
 
 class PluginNextoolDistributionClient {
 
@@ -620,7 +621,13 @@ class PluginNextoolDistributionClient {
       }
       if ($response['http_code'] >= 300) {
          $message = $data['message'] ?? $data['error'] ?? __('Erro desconhecido', 'nextool');
-         throw new RuntimeException($errorPrefix . ' ' . $message);
+         // Exception dedicada (#241): preserva o `code` estruturado do servidor para o
+         // chamador decidir por código (ex.: auto-cura em environment_not_provisioned).
+         throw new PluginNextoolDistributionException(
+            $errorPrefix . ' ' . $message,
+            isset($data['code']) ? (string) $data['code'] : '',
+            (int) $response['http_code']
+         );
       }
       return $data;
    }
