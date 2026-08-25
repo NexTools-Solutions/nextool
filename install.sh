@@ -21,6 +21,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/NexTools-Solutions/nextool/main/install.sh | sudo bash
 #   sudo bash install.sh --glpi-root=/var/www/glpi
 #   sudo bash install.sh --force
+#   docker exec -u root <container> bash -c 'curl -fsSL <url> | bash'   # GLPI em Docker
 #
 # Repositorio (codigo aberto pra conferencia): https://github.com/NexTools-Solutions/nextool
 #
@@ -28,6 +29,7 @@ set -euo pipefail
 
 PUBLIC_REPO="NexTools-Solutions/nextool"
 GITHUB_RELEASES="https://github.com/${PUBLIC_REPO}/releases"
+INSTALL_URL="https://raw.githubusercontent.com/${PUBLIC_REPO}/main/install.sh"
 
 GLPI_ROOT_OVERRIDE=""
 FORCE=0
@@ -64,6 +66,12 @@ instala a versao mais recente (releases/latest) -- nao ha opcao de fixar versao.
 
 Precisa ser executado como root (sudo) para ajustar dono/permissoes dos
 arquivos extraidos e recarregar o PHP-FPM.
+
+GLPI em Docker: rode o instalador DENTRO do container, porque no host o GLPI
+nao existe no disco. Nao ha sudo dentro do container -- use "-u root":
+  docker exec -u root <container> bash -c 'curl -fsSL <url-do-install.sh> | bash'
+Se o script for executado no host, ele detecta os containers com GLPI e mostra
+o comando pronto para cada um.
 EOF
 }
 
@@ -156,6 +164,48 @@ discover_glpi_roots() {
   done
 }
 
+# ---------------------------------------------------------------------------
+# Docker: quando o GLPI roda em container, ele simplesmente nao existe no
+# filesystem do host -- nenhuma varredura em /var/www, /srv, /opt ou /usr/share
+# vai encontrar. Em vez de so dizer "nao encontrei nada", olhamos os containers
+# em execucao e mostramos o comando exato pra rodar o instalador la dentro.
+#
+# De proposito NAO instalamos sozinhos dentro do container: um mesmo host pode
+# hospedar varios clientes, e escolher o container errado seria grave. E a
+# mesma postura de quando ha mais de uma instalacao no disco -- o script para e
+# deixa a escolha com o operador.
+#
+# Cada container e inspecionado com UM unico "docker exec" (o loop dos caminhos
+# roda la dentro), pra nao multiplicar chamadas num host com muitos containers.
+# ---------------------------------------------------------------------------
+docker_glpi_candidates() {
+  command -v docker >/dev/null 2>&1 || return 0
+  docker info >/dev/null 2>&1 || return 0
+
+  local names name root timeout_cmd=""
+  command -v timeout >/dev/null 2>&1 && timeout_cmd="timeout 5"
+
+  names="$(docker ps --format '{{.Names}}' 2>/dev/null)" || return 0
+  [[ -n "$names" ]] || return 0
+
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    root="$($timeout_cmd docker exec "$name" sh -c '
+      for r in /usr/share/glpi /var/www/glpi /var/www/html/glpi /var/www/html /srv/glpi /opt/glpi; do
+        if [ -f "$r/inc/includes.php" ]; then printf "%s" "$r"; exit 0; fi
+      done' 2>/dev/null)" || true
+    # So aceita o que realmente parece um caminho absoluto. Container sem shell
+    # (imagem distroless, como portainer) faz o docker devolver texto de erro
+    # -- "OCI runtime exec failed: ... \"sh\": executable file not found" --
+    # em vez de saida vazia, e sem esta guarda esse texto seria exibido como se
+    # fosse a raiz do GLPI daquele container.
+    case "$root" in
+      /*) [[ "$root" == *[[:space:]]* ]] || printf '%s	%s
+' "$name" "$root" ;;
+    esac
+  done <<< "$names"
+}
+
 # Decide qual pasta usar como raiz do GLPI, na seguinte ordem de confianca:
 #   1. --glpi-root explicito (o operador sabe o caminho, usa exatamente esse).
 #   2. A pasta atual, se for uma raiz GLPI valida (rodar de dentro da pasta
@@ -192,6 +242,27 @@ resolve_glpi_root() {
 
   case "${#found[@]}" in
     0)
+      local docker_hints cname croot
+      docker_hints="$(docker_glpi_candidates)"
+      if [[ -n "$docker_hints" ]]; then
+        warn "nao ha GLPI no filesystem deste host, mas encontrei GLPI dentro de container(es) Docker."
+        printf '
+' >&2
+        printf 'O GLPI esta dentro do container, entao o instalador precisa rodar la dentro
+' >&2
+        printf '(nao existe sudo dentro do container -- use "docker exec -u root"):
+
+' >&2
+        while IFS=$'	' read -r cname croot; do
+          [[ -n "$cname" ]] || continue
+          printf '  # container %s (GLPI em %s)
+' "$cname" "$croot" >&2
+          printf "  docker exec -u root %s bash -c 'curl -fsSL %s | bash'
+
+" "$cname" "$INSTALL_URL" >&2
+        done <<< "$docker_hints"
+        die "escolha o container do ambiente que voce quer instalar e rode o comando correspondente."
+      fi
       die "nao encontrei nenhuma instalacao GLPI no sistema. Rode 'cd /caminho/do/glpi' antes, ou informe --glpi-root=/caminho/do/glpi"
       ;;
     1)
