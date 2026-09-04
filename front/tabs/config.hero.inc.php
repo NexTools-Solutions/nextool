@@ -29,26 +29,6 @@ $nextoolHeroHideSync = !empty($nextoolHeroHideSync);
 $nextoolHeroForcetab = isset($nextoolHeroForcetab) ? trim((string) $nextoolHeroForcetab) : '';
 $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
 ?>
-<?php
-// Aviso de desempenho (nextool-dev#249): com pcre.jit desligado, cada preg_* do
-// GLPI (e o preg_grep de Plugin::registerClass, chamado dezenas de vezes por
-// request) custa ~75x mais. A imagem oficial de alguns containers fixa
-// pcre.jit=0; o padrao do PHP e ligado. So informa; nao altera nada.
-$nextoolPcreJitOff = false;
-try {
-   $nextoolPcreJit = ini_get('pcre.jit');
-   $nextoolPcreJitOff = ($nextoolPcreJit !== false)
-      && !in_array(strtolower(trim((string) $nextoolPcreJit)), ['1', 'on', 'true', 'yes'], true);
-} catch (\Throwable $e) {
-   $nextoolPcreJitOff = false;
-}
-if ($nextoolPcreJitOff): ?>
-<div class="alert alert-warning<?php echo $nextoolHeroWithMarginTop ? ' mt-3' : ''; ?> mb-2" id="nextool-pcre-jit-warning">
-   <i class="ti ti-gauge me-2"></i>
-   <strong><?php echo __('Desempenho: o PHP está com pcre.jit desligado.', 'nextool'); ?></strong>
-   <?php echo __('Cada página do GLPI paga dezenas de milissegundos a mais em expressões regulares. Habilite pcre.jit=1 no php.ini (ou num arquivo em php.d) e recarregue o PHP-FPM.', 'nextool'); ?>
-</div>
-<?php endif; ?>
 <div class="card shadow-sm border-0<?php echo $nextoolHeroWithMarginTop ? ' mt-3' : ''; ?>" style="background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 40%, #14b8a6 100%);">
    <div class="card-body text-white">
       <div class="row g-3 align-items-start">
