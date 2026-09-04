@@ -130,6 +130,19 @@ if (!$isCss && !$isJs) {
    die('Apenas arquivos .css.php ou .js.php são permitidos');
 }
 
+// Fast-path de assets (setup.php, #249): o boot NAO rodou o onInit dos modulos;
+// registra o dominio de traducao do modulo servido (wrappers usam __('...', 'nextool_<mk>')).
+if (defined('NEXTOOL_BOOT_FAST_PATH_ACTIVE') && class_exists('PluginNextoolModuleManager')) {
+   try {
+      $nxMod = PluginNextoolModuleManager::getInstance()->getModule($moduleKey);
+      if ($nxMod && method_exists($nxMod, 'loadModuleLang')) {
+         $nxMod->loadModuleLang();
+      }
+   } catch (\Throwable $e) {
+      // sem traducao do modulo, o wrapper cai no msgid -- nunca derruba o asset
+   }
+}
+
 // Carrega o arquivo diretamente (ele já define seus próprios headers)
 // IMPORTANTE: Não inclui inc/includes.php para evitar headers HTML do GLPI
 // Usa output buffering para garantir que nenhum output anterior interfira

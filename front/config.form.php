@@ -93,6 +93,10 @@ require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/modulecardhelper.class.php';
 
 $manager = PluginNextoolModuleManager::getInstance();
+// Catálogo = fonte da verdade do admin: descoberta sempre A FRIO (como as páginas de
+// config dos módulos), para que uma pasta restaurada/copiada manualmente apareça na hora,
+// sem esperar a janela de confiança do manifesto de boot (#249, lote B). ~11 ms.
+$manager->discoverModules(true);
 $loadedModules = $manager->getAllModules();
 // Módulos bloqueados por manifesto (#237): module_key => motivo. Sem isto o card
 // aparecia normal e o bloqueio era invisível na UI (motivo só no log).

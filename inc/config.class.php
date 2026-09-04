@@ -150,13 +150,11 @@ class PluginNextoolConfig extends CommonDBTM {
       if (count($iterator)) {
          $data = $iterator->current();
          $config['is_active'] = (int)$data['is_active'];
-         // Lê apenas se os campos existirem
-         if ($DB->fieldExists('glpi_plugin_nextool_main_configs', 'client_identifier')) {
-            $config['client_identifier'] = $data['client_identifier'] ?? null;
-         }
-         if ($DB->fieldExists('glpi_plugin_nextool_main_configs', 'endpoint_url')) {
-            $config['endpoint_url'] = $data['endpoint_url'] ?? null;
-         }
+         // O SELECT * ja diz se a coluna existe: chave ausente = coluna ausente.
+         // Ate 6.12.1 havia 2 fieldExists() aqui (= 1 SHOW COLUMNS por request,
+         // em TODO boot). Ver nextool-dev#249.
+         $config['client_identifier'] = $data['client_identifier'] ?? null;
+         $config['endpoint_url']      = $data['endpoint_url'] ?? null;
       } else {
          // cria registro base se não existir
          $configObj = new self();

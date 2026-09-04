@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.12.1');
+define('PLUGIN_NEXTOOL_VERSION', '6.13.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -60,6 +60,91 @@ function plugin_version_nextool() {
          ],
       ],
    ];
+}
+
+/**
+ * Profiler nativo do GLPI por etapa do boot (nextool-dev#249). So coleta em modo
+ * DEBUG (Session::DEBUG_MODE) e quando a classe existe (GLPI 10.0.x recentes e
+ * 11.x); fora disso custa 1 comparacao. As secoes aninham sob "nextool:init" (o
+ * core abre essa secao em Plugin::load) e aparecem no debug bar e em
+ * ajax/debug.php?ajax_id=<X-Glpi-Ajax-ID>. Nunca lanca: qualquer falha do
+ * profiler nao pode derrubar o boot.
+ */
+function plugin_nextool_prof_enabled(): bool {
+   static $on = null;
+   if ($on === null) {
+      try {
+         $on = isset($_SESSION['glpi_use_mode'])
+            && class_exists('Session')
+            && (int) $_SESSION['glpi_use_mode'] === Session::DEBUG_MODE
+            && class_exists('\Glpi\Debug\Profiler');
+      } catch (\Throwable $e) {
+         $on = false;
+      }
+   }
+   return $on;
+}
+function plugin_nextool_prof_start(string $name): void {
+   if (!plugin_nextool_prof_enabled()) {
+      return;
+   }
+   try {
+      $category = defined('\Glpi\Debug\Profiler::CATEGORY_PLUGINS') ? \Glpi\Debug\Profiler::CATEGORY_PLUGINS : 'plugins';
+      \Glpi\Debug\Profiler::getInstance()->start('nextool:' . $name, $category);
+   } catch (\Throwable $e) {
+      // profiler nunca derruba o boot
+   }
+}
+function plugin_nextool_prof_stop(string $name): void {
+   if (!plugin_nextool_prof_enabled()) {
+      return;
+   }
+   try {
+      \Glpi\Debug\Profiler::getInstance()->stop('nextool:' . $name);
+   } catch (\Throwable $e) {
+      // idem
+   }
+}
+
+/**
+ * Fast-path de assets (nextool-dev#249): requests de front/module_bundle.php,
+ * front/module_assets.php e dos wrappers front/*.js.php|*.css.php da base so
+ * precisam de sessao + classes da base + descoberta de modulos (para
+ * getModule()->loadModuleLang() e getConfig()). Eles NAO precisam dos 33
+ * onInit(), do bundler, do hook.php, dos providers, do sync de rights, do
+ * scan de classes nem dos menus -- que e o grosso do nextool:init. Cada pagina
+ * dispara 2 a 3 desses requests, e no GLPI 11 eles seguram o lock da sessao
+ * durante o boot inteiro. Decisao por PATH (nunca por query string): casar so
+ * reduz trabalho, nunca concede nada (o guard 401 dos endpoints continua).
+ *
+ * Kill switch (sem schema): define('NEXTOOL_BOOT_FAST_PATH', false) em
+ * config/local_define.php, ou arquivo GLPI_CACHE_DIR/nextool_boot_fast_path.off.
+ */
+function plugin_nextool_is_asset_request(): bool {
+   static $is = null;
+   if ($is !== null) {
+      return $is;
+   }
+   $is = false;
+   if (PHP_SAPI === 'cli') {
+      return false;
+   }
+   $path = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+   if ($path === '' || substr($path, -10) === '/index.php') {
+      $path = (string) ($_SERVER['SCRIPT_NAME'] ?? '');
+   }
+   $is = (bool) preg_match('#/nextool/front/module_(?:bundle|assets)\.php(?:/|$)#', $path)
+      || (bool) preg_match('#/nextool/front/[\w.-]+\.(?:js|css)\.php$#', $path);
+   return $is;
+}
+function plugin_nextool_boot_fast_path_enabled(): bool {
+   if (defined('NEXTOOL_BOOT_FAST_PATH')) {
+      return (bool) NEXTOOL_BOOT_FAST_PATH;
+   }
+   if (defined('GLPI_CACHE_DIR') && is_file(GLPI_CACHE_DIR . '/nextool_boot_fast_path.off')) {
+      return false;
+   }
+   return true;
 }
 
 /**
@@ -229,7 +314,19 @@ function plugin_init_nextool() {
    $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-tabs.js.php';
 
    try {
+   // Base do scan de classes declaradas DURANTE o init (ver abaixo): so as
+   // classes desta fatia interessam ao mapa tabela->itemtype.
+   $nxDeclaredBefore = count(get_declared_classes());
+   // Fast-path de assets: ver plugin_nextool_is_asset_request(). Definido como
+   // constante para os endpoints (module_bundle/module_assets) saberem que o
+   // onInit dos modulos NAO rodou e chamarem loadModuleLang() por conta propria.
+   $nxAssetFastPath = plugin_nextool_is_asset_request() && plugin_nextool_boot_fast_path_enabled();
+   if ($nxAssetFastPath && !defined('NEXTOOL_BOOT_FAST_PATH_ACTIVE')) {
+      define('NEXTOOL_BOOT_FAST_PATH_ACTIVE', true);
+   }
+   plugin_nextool_prof_start('lang');
    Plugin::loadLang('nextool');
+   plugin_nextool_prof_stop('lang');
 
    $permissionfile = NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
    if (file_exists($permissionfile)) {
@@ -257,7 +354,11 @@ function plugin_init_nextool() {
       require_once $configfile;
       if (class_exists('PluginNextoolConfig')) {
          try {
-            PluginNextoolConfig::getConfig();
+            if (!$nxAssetFastPath) {
+               plugin_nextool_prof_start('getConfig');
+               PluginNextoolConfig::getConfig();
+               plugin_nextool_prof_stop('getConfig');
+            }
          } catch (Exception $e) {
             Toolbox::logInFile('plugin_nextool', "Erro ao inicializar client_identifier: " . $e->getMessage());
          }
@@ -274,22 +375,26 @@ function plugin_init_nextool() {
    $mainconfigfile = NEXTOOL_PHP_DIR . '/inc/nextoolmainconfig.class.php';
    if (file_exists($mainconfigfile)) {
       require_once $mainconfigfile;
-      Plugin::registerClass('PluginNextoolMainConfig');
+      // (registerClass sem atributos removido na 6.13.0: e no-op no core e custa
+      //  um preg_grep sobre todas as chaves de $CFG_GLPI por chamada -- #249)
    }
 
    $validationAttemptFile = NEXTOOL_PHP_DIR . '/inc/validationattempt.class.php';
    if (file_exists($validationAttemptFile)) {
       require_once $validationAttemptFile;
-      Plugin::registerClass('PluginNextoolValidationAttempt');
       $CFG_GLPI['glpiitemtypetables']['glpi_plugin_nextool_main_validation_attempts'] = 'PluginNextoolValidationAttempt';
       $CFG_GLPI['glpitablesitemtype']['PluginNextoolValidationAttempt'] = 'glpi_plugin_nextool_main_validation_attempts';
-      PluginNextoolValidationAttempt::ensureDisplayPreferences();
+      // ensureDisplayPreferences() saiu daqui (1 SELECT em TODO request para um
+      // estado que so muda no install): roda junto com o sync de rights, sob o
+      // file-flag versionado nextool_rights_synced_v* (A5, #249).
    }
 
    $profilefile = NEXTOOL_PHP_DIR . '/inc/profile.class.php';
    if (file_exists($profilefile)) {
       require_once $profilefile;
-      Plugin::registerClass('PluginNextoolProfile', ['addtabon' => ['Profile']]);
+      // Equivalente exato de Plugin::registerClass(..., ['addtabon' => ['Profile']])
+      // sem o preg_grep das chaves de $CFG_GLPI (#249).
+      CommonGLPI::registerStandardTab('Profile', 'PluginNextoolProfile');
    }
 
    // Carrega ModuleManager e inicializa módulos ativos
@@ -312,8 +417,9 @@ function plugin_init_nextool() {
          if (class_exists('PluginNextoolHookDispatcher')
              && method_exists('PluginNextoolHookDispatcher', 'registerNotificationSource')) {
             PluginNextoolHookDispatcher::registerNotificationSource('nextool.server_alert', [
-               'label'       => __('Avisos da NexTool', 'nextool'),
-               'description' => __('Comunicados oficiais recebidos do servidor NexTool (os mesmos da aba Alertas).', 'nextool'),
+               // rotulos lazy: traduzidos so no consumidor, nao em todo boot (#249)
+               'label'       => ['Avisos da NexTool', 'nextool'],
+               'description' => ['Comunicados oficiais recebidos do servidor NexTool (os mesmos da aba Alertas).', 'nextool'],
                'icon'        => 'ti ti-bell-ringing',
                'color'       => 'purple',
                'severity'    => 'info',
@@ -329,7 +435,18 @@ function plugin_init_nextool() {
 
             $manager = PluginNextoolModuleManager::getInstance();
 
+            if ($nxAssetFastPath) {
+               // Request de asset: nada abaixo e necessario (ver
+               // plugin_nextool_is_asset_request). A descoberta fica lazy: os
+               // endpoints chamam getModule() so para o(s) modulo(s) servido(s).
+               plugin_nextool_prof_start('asset_fast_path');
+               plugin_nextool_prof_stop('asset_fast_path');
+               return;
+            }
+
+            plugin_nextool_prof_start('loadActiveModules');
             $manager->loadActiveModules();
+            plugin_nextool_prof_stop('loadActiveModules');
 
             // Bundle de assets: colapsa os N registros de module_assets.php
             // feitos pelos onInit acima em 1 URL por tipo (css/js) - reduz
@@ -339,7 +456,9 @@ function plugin_init_nextool() {
             $bundlerFile = NEXTOOL_PHP_DIR . '/inc/assetbundler.class.php';
             if (file_exists($bundlerFile)) {
                require_once $bundlerFile;
+               plugin_nextool_prof_start('bundler');
                PluginNextoolAssetBundler::collapseHooks();
+               plugin_nextool_prof_stop('bundler');
             }
 
             // Pina o mapeamento reverso tabela->itemtype dos tipos CORE que
@@ -356,7 +475,9 @@ function plugin_init_nextool() {
 
             $hookfile = NEXTOOL_PHP_DIR . '/hook.php';
             if (file_exists($hookfile)) {
+               plugin_nextool_prof_start('hook_include');
                require_once $hookfile;
+               plugin_nextool_prof_stop('hook_include');
             }
 
             // Registra classes necessárias para Search/MassiveActions via providers dos módulos ativos
@@ -364,7 +485,9 @@ function plugin_init_nextool() {
             if (file_exists($dispatcherFile)) {
                require_once $dispatcherFile;
                if (class_exists('PluginNextoolHookProvidersDispatcher')) {
+                  plugin_nextool_prof_start('providers');
                   PluginNextoolHookProvidersDispatcher::registerClasses();
+                  plugin_nextool_prof_stop('providers');
                }
             }
             // HI-07: sync de rights apenas quando a versão muda (file-flag versionada).
@@ -372,10 +495,16 @@ function plugin_init_nextool() {
             // Agora: zero queries quando flag da versão atual existe.
             // Eventos que mudam permissões (install, upgrade, mudança de catálogo,
             // criação de perfil) continuam chamando syncModuleRights diretamente.
+            plugin_nextool_prof_start('rights');
             $rightsSyncFlag = (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR))
                ? GLPI_CACHE_DIR . '/nextool_rights_synced_v' . PLUGIN_NEXTOOL_VERSION
                : null;
             if ($rightsSyncFlag === null || !is_file($rightsSyncFlag)) {
+               // Preferencias de exibicao da grade de tentativas de validacao: so
+               // mudam no install; sincronizadas 1x por versao junto com os rights.
+               if (class_exists('PluginNextoolValidationAttempt')) {
+                  PluginNextoolValidationAttempt::ensureDisplayPreferences();
+               }
                PluginNextoolPermissionManager::syncModuleRights();
                if ($rightsSyncFlag !== null) {
                   // Remove flags de versões anteriores antes de marcar a atual
@@ -400,38 +529,23 @@ function plugin_init_nextool() {
                PluginNextoolPermissionManager::reloadActiveProfileRights();
                $_SESSION['nextool_session_rights_v'] = PLUGIN_NEXTOOL_VERSION;
             }
+            plugin_nextool_prof_stop('rights');
 
-            // Registra classes Config de módulos standalone instalados (inclusive desativados)
-            // para que as páginas de configuração funcionem via AJAX (common.tabs.php)
-            foreach ($manager->getAllModules() as $mk => $mod) {
-               if ($mod->isInstalled() && method_exists($mod, 'usesStandaloneConfig') && $mod->usesStandaloneConfig()) {
-                  $configClassName = 'PluginNextool' . ucfirst($mk) . 'Config';
-                  $configFile = NEXTOOL_MODULES_BASE . '/' . $mk . '/inc/' . $mk . 'config.class.php';
-                  if (is_file($configFile) && !class_exists($configClassName)) {
-                     require_once $configFile;
-                     if (class_exists($configClassName)) {
-                        Plugin::registerClass($configClassName);
-                     }
-                  }
-                  // Variante PageConfig (para módulos com conflito de nome)
-                  $pageConfigClassName = 'PluginNextool' . ucfirst($mk) . 'PageConfig';
-                  if (!class_exists($pageConfigClassName) && is_file($configFile)) {
-                     // O arquivo já foi incluído; verificar se a classe PageConfig existe
-                     if (class_exists($pageConfigClassName)) {
-                        Plugin::registerClass($pageConfigClassName);
-                     }
-                  } elseif (class_exists($pageConfigClassName)) {
-                     Plugin::registerClass($pageConfigClassName);
-                  }
-               }
-            }
+            // O loop que registrava as classes Config/PageConfig de todos os modulos
+            // instalados (inclusive desativados) foi removido na 6.13.0 (#249): o
+            // class_exists() dele AUTOCARREGAVA ~50 classes de config por request, o
+            // probe de PageConfig falhava 42x pela cadeia de autoloaders, e o
+            // Plugin::registerClass() sem atributos e no-op. common.tabs.php resolve
+            // PluginNextool<Mk>Config / PageConfig pelo autoloader central
+            // (inc/modulespath.inc.php) sob demanda.
 
             // Mapeamento reverso tabela->itemtype para classes searchable de módulo já
             // carregadas (pelos onInit via require_once, que "furam" o autoloader do NexTool).
             // getItemTypeForTable() não resolve tabelas custom (ex: ..._log) -> retorna null e o
             // Search estoura getItemForItemtype(null) ao renderizar a grade. O autoloader mapeia
             // as classes que ELE carrega; este scan cobre as pré-carregadas pelos onInit.
-            foreach (get_declared_classes() as $ntClass) {
+            plugin_nextool_prof_start('classScan');
+            foreach (array_slice(get_declared_classes(), $nxDeclaredBefore) as $ntClass) {
                if (strncmp($ntClass, 'PluginNextool', 13) === 0 && is_subclass_of($ntClass, 'CommonDBTM')) {
                   $ntTable = $ntClass::getTable();
                   if (is_string($ntTable) && $ntTable !== '' && !isset($CFG_GLPI['glpiitemtypetables'][$ntTable])) {
@@ -439,7 +553,9 @@ function plugin_init_nextool() {
                   }
                }
             }
+            plugin_nextool_prof_stop('classScan');
 
+            plugin_nextool_prof_start('dispatch_menus');
             // Menu "Nextools" (nativo) + menus de módulos via redefine_menus
             $PLUGIN_HOOKS['redefine_menus']['nextool'] = 'plugin_nextool_redefine_menus';
 
@@ -493,7 +609,7 @@ function plugin_init_nextool() {
                         $classFile = NEXTOOL_MODULES_BASE . '/' . $moduleKey . '/' . $reg['class_file'];
                         if (file_exists($classFile)) {
                            require_once $classFile;
-                           Plugin::registerClass($reg['class']);
+                           // registerClass sem atributos removido (no-op, #249)
                         }
                      }
                      // Registra no hook menu_toadd (exceto módulos que usam redefine_menus).
@@ -516,6 +632,7 @@ function plugin_init_nextool() {
                   }
                }
             }
+            plugin_nextool_prof_stop('dispatch_menus');
          } catch (Exception $e) {
             Toolbox::logInFile('plugin_nextool', "Erro ao carregar módulos: " . $e->getMessage());
          }

@@ -12,10 +12,13 @@ declare(strict_types=1);
  * - Ativar/desativar módulos
  * - Verificar dependências
  * 
- * Sistema de Cache:
- * - Cache armazena lista de módulos descobertos
- * - Cache é invalidado automaticamente quando arquivos mudam (filemtime)
- * - Cache expira após 1 hora (3600 segundos)
+ * Manifesto de boot (nextool-dev#249, lote B; substitui o cache de 6.12.1):
+ * - GLPI_CACHE_DIR/nextool_boot_manifest.cache guarda os metadados de descoberta
+ *   (classe, arquivo, status, versão, stateless) + class-map dos módulos
+ * - Caminho quente NÃO instancia módulo inativo: instâncias nascem sob demanda
+ *   (getModule); getAllModules() materializa todos (só páginas admin)
+ * - Invalidado quando arquivos mudam (chave de filemtime, recomputada no máximo
+ *   1x por MANIFEST_TRUST_TTL) e expira 1 h após a construção
  * - Cache é limpo automaticamente ao instalar/desinstalar módulos
  * - Use clearCache() para limpar cache manualmente
  * - Use refreshModules() para forçar atualização do cache
@@ -31,8 +34,10 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once NEXTOOL_PHP_DIR . '/inc/moduleaudit.class.php';
-require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
+// moduleaudit e distributionclient (43 KB + dependencias) sao carregados sob
+// demanda onde sao usados (logModuleAction / downloadModuleFromDistribution):
+// eram linkados em TODO request pelo boot (#249). modulecatalog fica eager:
+// e pequeno e tem chamadores externos.
 require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
 
 class PluginNextoolModuleManager {
@@ -40,8 +45,35 @@ class PluginNextoolModuleManager {
    /** @var PluginNextoolModuleManager Instância singleton */
    private static $instance = null;
 
-   /** @var array Módulos descobertos */
+   /**
+    * Secao do profiler nativo (so em modo debug; ver plugin_nextool_prof_start em
+    * setup.php). Guardado por function_exists: os testes CLI carregam esta classe
+    * sem o setup.php.
+    */
+   private function nxProf(string $op, string $name): void {
+      $fn = 'plugin_nextool_prof_' . $op;
+      if (function_exists($fn)) {
+         $fn($name);
+      }
+   }
+
+   /** @var array Instâncias de módulo já criadas neste request (sob demanda) */
    private $modules = [];
+
+   /**
+    * Metadados de descoberta (manifesto de boot, nextool-dev#249 lote B):
+    * module_key => [class, file, status, version, stateless]. As instâncias em
+    * $modules são criadas SOB DEMANDA a partir daqui (getModule()) -- no caminho
+    * quente os módulos inativos nunca são instanciados.
+    * @var array<string, array>
+    */
+   private array $discovered = [];
+
+   /** @var bool Descoberta concluída neste request (quente ou fria). */
+   private bool $discoveryLoaded = false;
+
+   /** @var bool A última descoberta rodou o caminho FRIO (diagnóstico/testes). */
+   private bool $lastDiscoveryCold = false;
 
    /** @var array Módulos carregados e ativos */
    private $loadedModules = [];
@@ -52,8 +84,22 @@ class PluginNextoolModuleManager {
    /** @var string Caminho para diretório de cache */
    private $cachePath;
 
-   /** @var string Nome do arquivo de cache */
-   private $cacheFile = 'nextool_modules.cache';
+   /** @var string Manifesto de boot (metadados + class-map), serializado */
+   private $cacheFile = 'nextool_boot_manifest.cache';
+
+   /** Formato anterior (até 6.12.1): apagado por higiene ao gravar/limpar. */
+   private const LEGACY_CACHE_FILE = 'nextool_modules.cache';
+
+   /** Versão do formato do manifesto (cabeçalho 'format'). */
+   private const MANIFEST_FORMAT = 2;
+
+   /**
+    * Janela (s) em que o manifesto é aceito pelo mtime do próprio arquivo, sem
+    * recomputar a chave de mtimes dos módulos (glob + ~90 stat). Sobrescrevível
+    * por define('NEXTOOL_BOOT_MANIFEST_TTL', n) em config/local_define.php; 0 = sempre
+    * recomputar (comportamento até 6.12.1).
+    */
+   private const MANIFEST_TRUST_TTL = 60;
 
    /** @var int Tempo de expiração do cache em segundos (1 hora) */
    private $cacheExpiration = 3600;
@@ -112,8 +158,11 @@ class PluginNextoolModuleManager {
       // Nova estrutura: modules em GLPI_PLUGIN_DOC_DIR/nextool/modules (files/_plugins/nextool/modules)
       $this->modulesPath = NEXTOOL_MODULES_BASE;
       
-      // Usa diretório de cache do GLPI se disponível, senão usa /tmp
-      if (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR)) {
+      // Mesma resolução do manifesto de boot (inc/modulespath.inc.php): o autoloader
+      // lê o arquivo antes de o manager existir, então os dois têm de concordar.
+      if (function_exists('plugin_nextool_boot_manifest_path')) {
+         $this->cachePath = dirname(plugin_nextool_boot_manifest_path());
+      } elseif (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR)) {
          $this->cachePath = GLPI_CACHE_DIR;
       } elseif (is_dir(GLPI_ROOT . '/files/_cache')) {
          $this->cachePath = GLPI_ROOT . '/files/_cache';
@@ -148,30 +197,51 @@ class PluginNextoolModuleManager {
     * @return array Lista de módulos descobertos
     */
    public function discoverModules($forceRefresh = false) {
-      // Se já está em memória e não forçado a recarregar, retorna
-      if (!empty($this->modules) && !$forceRefresh) {
+      // Já descoberto neste request (quente ou frio) e não forçado: devolve as
+      // instâncias já criadas (no caminho quente podem ser zero -- ver getModule()).
+      if ($this->discoveryLoaded && !$forceRefresh) {
          return $this->modules;
       }
 
-      // Tenta carregar do cache se não forçar atualização
-      if (!$forceRefresh && $this->isCacheValid()) {
-         $cachedModules = $this->loadCache();
-         if ($cachedModules !== false) {
-            $this->modules = $cachedModules;
-            // Mantém o mapa stateless sempre em dia, mesmo quando o cache de
-            // módulos é usado. Isso evita ficar “preso” com um nextool_stateless.json
-            // antigo (ou com ownership/permissão incorreta) e quebrar webhooks.
-            $this->refreshStatelessCache();
-            return $this->modules;
+      // Caminho QUENTE: manifesto de boot válido -> só metadados, zero instância.
+      if (!$forceRefresh) {
+         $this->nxProf('start', 'mm:cacheValid');
+         $cacheValid = $this->isCacheValid();
+         $this->nxProf('stop', 'mm:cacheValid');
+         if ($cacheValid) {
+            $this->nxProf('start', 'mm:loadCache');
+            $cached = $this->loadCache();
+            $this->nxProf('stop', 'mm:loadCache');
+            if ($cached !== false) {
+               $this->modules           = [];
+               $this->discovered        = $cached['modules'];
+               $this->blockedModules    = $cached['blocked'];
+               $this->legacyModules     = $cached['legacy'];
+               $this->discoveryLoaded   = true;
+               $this->lastDiscoveryCold = false;
+               // Mantém o mapa stateless sempre em dia (auto-cura de arquivo com
+               // ownership/permissão errada), a partir dos metadados -- sem instanciar.
+               $this->nxProf('start', 'mm:stateless');
+               $this->refreshStatelessCache();
+               $this->nxProf('stop', 'mm:stateless');
+               return $this->modules;
+            }
          }
       }
 
-      // Descobre módulos do zero
-      $this->modules = [];
+      // Caminho FRIO: descobre do zero -- instancia todos, sincroniza versões com o
+      // disco e grava o manifesto para os próximos requests.
+      $this->modules           = [];
+      $this->discovered        = [];
+      $this->blockedModules    = [];
+      $this->legacyModules     = [];
+      $this->discoveryLoaded   = true;
+      $this->lastDiscoveryCold = true;
 
       if (!is_dir($this->modulesPath)) {
          return $this->modules;
       }
+      $this->nxProf('start', 'mm:discoverCold');
 
       // PluginNextoolModuleCatalog::all() agora lê do banco (fonte única da verdade)
       // Fallback para bootstrap modules apenas na primeira instalação
@@ -215,7 +285,8 @@ class PluginNextoolModuleManager {
 
           $module = new $className();
           if ($module instanceof PluginNextoolBaseModule) {
-             $this->modules[$moduleKey] = $module;
+             $this->modules[$moduleKey]    = $module;
+             $this->discovered[$moduleKey] = $this->describeModule($moduleKey, $className, $module, $manifestCheck['status']);
           }
       }
 
@@ -224,13 +295,49 @@ class PluginNextoolModuleManager {
       // versão alvo mas o banco ficou desatualizado (redeploy, FTP, install manual).
       $this->syncInstalledVersionsFromDisk();
 
-      // Salva no cache
+      // Grava o manifesto de boot (metadados + class-map)
       $this->saveCache();
 
       // Atualiza cache de módulos stateless (usado no boot antes do GLPI carregar)
       $this->refreshStatelessCache();
+      $this->nxProf('stop', 'mm:discoverCold');
 
       return $this->modules;
+   }
+
+   /**
+    * Metadados de um módulo para o manifesto de boot: o suficiente para o caminho
+    * quente instanciar sob demanda e regravar o stateless sem executar código do módulo.
+    * Nada de texto traduzível aqui (nome/descrição dependem do idioma da sessão).
+    */
+   private function describeModule(string $moduleKey, string $className, PluginNextoolBaseModule $module, string $status): array {
+      $stateless = [];
+      try {
+         foreach ((array) $module->getStatelessFiles() as $file) {
+            if (is_string($file) && $file !== '') {
+               $stateless[] = $file;
+            }
+         }
+      } catch (\Throwable $e) {
+         $stateless = [];
+      }
+      return [
+         'key'       => $moduleKey,
+         'dir'       => $moduleKey,
+         'class'     => $className,
+         // relativo a modulesPath: uma mudança de GLPI_VAR_DIR invalida pelo cabeçalho
+         'file'      => $moduleKey . '/inc/' . $moduleKey . '.class.php',
+         'status'    => $status === 'legacy' ? 'legacy' : 'ok',
+         'version'   => (string) $module->getVersion(),
+         'stateless' => $stateless,
+      ];
+   }
+
+   /** Zera a descoberta EM MEMÓRIA (o manifesto em disco continua válido). */
+   private function resetDiscovery(): void {
+      $this->modules         = [];
+      $this->discovered      = [];
+      $this->discoveryLoaded = false;
    }
 
    /**
@@ -242,15 +349,17 @@ class PluginNextoolModuleManager {
    public function loadActiveModules() {
       $this->loadedModules = [];
 
-      // Descobrir módulos disponíveis
-      if (empty($this->modules)) {
+      // Descobrir módulos disponíveis (quente: só metadados)
+      if (!$this->discoveryLoaded) {
          $this->discoverModules();
       }
 
       // Pré-carrega cache em bulk -- mesma query que seria necessária para listar
       // módulos ativos, mas serve também para isInstalled/isEnabled em cascata
       // (hook redefine_menus, profile, etc.) sem novas queries no mesmo request.
+      $this->nxProf('start', 'mm:preloadRows');
       $this->preloadModuleRowCache();
+      $this->nxProf('stop', 'mm:preloadRows');
 
       foreach ($this->moduleRowCache as $moduleKey => $row) {
          if ($row === null) {
@@ -259,23 +368,28 @@ class PluginNextoolModuleManager {
          if (((int)($row['is_enabled'] ?? 0)) !== 1) {
             continue;
          }
-         if (!isset($this->modules[$moduleKey])) {
+         // Instancia sob demanda (manifesto de boot): módulos inativos nunca são
+         // instanciados no caminho quente.
+         $module = $this->getModule($moduleKey);
+         if ($module === null) {
             continue;
          }
-
-         $module = $this->modules[$moduleKey];
          if ($this->checkDependencies($module)) {
+            $this->nxProf('start', 'mm:lang:' . $moduleKey);
             $module->loadModuleLang();
+            $this->nxProf('stop', 'mm:lang:' . $moduleKey);
             // onInit() pode disparar migração de schema idempotente (ex.: ensureSchema quando a
             // versão do módulo muda). A Migration do GLPI ecoa a tela de progresso ("Tarefa
             // concluída. (0 segundo)") direto no HTML (Migration::outputMessageToHtml). Como isto
             // roda no BOOT dos módulos (não é ação do usuário), capturamos e descartamos esse
             // output para não vazar uma mensagem fixa no topo da página (bug no GLPI 10).
+            $this->nxProf('start', 'mm:onInit:' . $moduleKey);
             ob_start(static function () { return ''; }); // handler descarta (imune ao ob_flush da Migration)
             try {
                $module->onInit();
             } finally {
                ob_end_clean();
+               $this->nxProf('stop', 'mm:onInit:' . $moduleKey);
             }
             $this->loadedModules[$moduleKey] = $module;
          }
@@ -285,20 +399,29 @@ class PluginNextoolModuleManager {
    }
 
    /**
-    * Obtém todos os módulos disponíveis (descobertos)
-    * 
+    * Obtém todos os módulos disponíveis (descobertos), instanciando os que ainda
+    * não foram -- na ordem do catálogo (a mesma do manifesto). Só páginas admin
+    * (catálogo, aba de perfil) precisam de TODOS; o boot usa getModule() por chave.
+    *
     * @return array Lista de módulos
     */
    public function getAllModules() {
-      if (empty($this->modules)) {
+      if (!$this->discoveryLoaded) {
          $this->discoverModules();
       }
-      return $this->modules;
+      $all = [];
+      foreach (array_keys($this->discovered) as $moduleKey) {
+         $module = $this->getModule($moduleKey);
+         if ($module !== null) {
+            $all[$moduleKey] = $module;
+         }
+      }
+      return $all;
    }
 
    /**
     * Obtém módulos ativos
-    * 
+    *
     * @return array Lista de módulos ativos
     */
    public function getActiveModules() {
@@ -306,16 +429,72 @@ class PluginNextoolModuleManager {
    }
 
    /**
-    * Obtém módulo específico pelo module_key
-    * 
+    * Obtém módulo específico pelo module_key, instanciando sob demanda a partir do
+    * manifesto de boot. Manifesto inconsistente com o disco (classe movida/renomeada,
+    * arquivo removido dentro da janela de confiança) dispara UMA redescoberta a frio.
+    *
     * @param string $moduleKey Chave do módulo
     * @return PluginNextoolBaseModule|null
     */
    public function getModule($moduleKey) {
-      if (empty($this->modules)) {
+      if (!$this->discoveryLoaded) {
          $this->discoverModules();
       }
-      return $this->modules[$moduleKey] ?? null;
+      $moduleKey = (string) $moduleKey;
+      if (isset($this->modules[$moduleKey])) {
+         return $this->modules[$moduleKey];
+      }
+      $meta = $this->discovered[$moduleKey] ?? null;
+      if ($meta === null) {
+         return null;
+      }
+      $module = $this->instantiateFromMeta($moduleKey, $meta);
+      if ($module === null) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[ModuleManager] manifesto de boot inconsistente para %s -- redescoberta a frio\n",
+            $moduleKey
+         ));
+         $this->clearCache();
+         $this->discoverModules(true);
+         return $this->modules[$moduleKey] ?? null;
+      }
+      return $this->modules[$moduleKey] = $module;
+   }
+
+   /**
+    * getModule() para AÇÕES DE ADMIN (instalar, ativar/desativar): se o módulo não está
+    * no manifesto, redescobre a frio UMA vez antes de desistir. Cobre arquivos de módulo
+    * restaurados/copiados manualmente dentro da janela de confiança do manifesto (o
+    * manifesto foi construído sem a pasta e ainda é aceito pelo mtime) -- caso real do
+    * E2E do template (purge -> restaura a pasta -> instala) e de suporte por rsync.
+    * Não usar em hot-path: chave inexistente custaria um caminho frio por request.
+    */
+   private function getModuleOrRediscover(string $moduleKey): ?PluginNextoolBaseModule {
+      $module = $this->getModule($moduleKey);
+      if ($module === null && !$this->lastDiscoveryCold) {
+         $this->clearCache();
+         $this->discoverModules(true);
+         $module = $this->getModule($moduleKey);
+      }
+      return $module;
+   }
+
+   /** Instancia um módulo a partir dos metadados do manifesto; null se o disco divergir. */
+   private function instantiateFromMeta(string $moduleKey, array $meta): ?PluginNextoolBaseModule {
+      $file  = $this->modulesPath . '/' . (string) ($meta['file'] ?? '');
+      $class = (string) ($meta['class'] ?? '');
+      if ($class === '' || !is_file($file)) {
+         return null;
+      }
+      require_once $file;
+      if (!class_exists($class)) {
+         return null;
+      }
+      $module = new $class();
+      if (!$module instanceof PluginNextoolBaseModule || $module->getModuleKey() !== $moduleKey) {
+         return null;
+      }
+      return $module;
    }
 
    /**
@@ -327,7 +506,7 @@ class PluginNextoolModuleManager {
    public function installModule($moduleKey) {
       global $DB;
 
-      $module = $this->getModule($moduleKey);
+      $module = $this->getModuleOrRediscover((string) $moduleKey);
       $action = 'install';
       $baseContext = [
          'origin'            => 'module_install',
@@ -546,7 +725,7 @@ class PluginNextoolModuleManager {
       global $DB;
 
       $enabled = $action === 'enable';
-      $module = $this->getModule($moduleKey);
+      $module = $this->getModuleOrRediscover($moduleKey);
       $baseContext = [
          'origin'            => $enabled ? 'module_enable' : 'module_disable',
          'requested_modules' => [$moduleKey],
@@ -609,7 +788,7 @@ class PluginNextoolModuleManager {
       if (!$enabled) {
          unset($this->loadedModules[$moduleKey]);
       }
-      $this->modules = [];
+      $this->resetDiscovery();
       $this->resetRowCache();
       if (class_exists('PluginNextoolMainConfig')) {
          PluginNextoolMainConfig::clearModuleConfigTabsCache();
@@ -863,6 +1042,10 @@ class PluginNextoolModuleManager {
     * @return void
     */
    private function logModuleAction($moduleKey, $action, array $options = []) {
+      $auditFile = NEXTOOL_PHP_DIR . '/inc/moduleaudit.class.php';
+      if (!class_exists('PluginNextoolModuleAudit', false) && is_file($auditFile)) {
+         require_once $auditFile;
+      }
       if (!class_exists('PluginNextoolModuleAudit')) {
          return;
       }
@@ -985,6 +1168,7 @@ class PluginNextoolModuleManager {
       }
 
       try {
+         require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
          $client = new PluginNextoolDistributionClient($baseUrl, $clientIdentifier, $clientSecret);
          $result = $client->downloadModule($moduleKey);
       } catch (Throwable $e) {
@@ -997,6 +1181,11 @@ class PluginNextoolModuleManager {
 
       $details = sprintf(__('Módulo %s v%s baixado do ContainerAPI.', 'nextool'), $moduleKey, $result['version'] ?? 'unknown');
       Toolbox::logInFile('plugin_nextool', $details);
+      // Os arquivos no disco sao os NOVOS a partir daqui. Invalidar o OPcache AGORA
+      // evita o cabo de guerra entre workers com bytecode novo e velho ate a proxima
+      // reciclagem (ver invalidateModuleOpcache). Nao afeta esta requisicao -- a classe
+      // ja carregada continua a antiga, e e por isso que existe $staleClassModules.
+      $this->invalidateModuleOpcache($moduleKey);
       // A partir daqui os arquivos em disco são os NOVOS, mas a classe em memória
       // continua a ANTIGA por todo o resto do request. Marcar ANTES do discoverModules()
       // é essencial: é ele quem chama syncInstalledVersionsFromDisk(), que sem esta marca
@@ -1577,9 +1766,10 @@ class PluginNextoolModuleManager {
          return strtoupper(trim((string)$row['billing_tier']));
       }
 
-      // Prioridade 2: instancia em memoria (fallback de bootstrap para modulos nao sincronizados)
-      if (isset($this->modules[$moduleKey]) && $this->modules[$moduleKey] instanceof PluginNextoolBaseModule) {
-         return strtoupper(trim($this->modules[$moduleKey]->getBillingTier()));
+      // Prioridade 2: instancia (sob demanda) -- fallback de bootstrap para modulos nao sincronizados
+      $instance = $this->getModule($moduleKey);
+      if ($instance instanceof PluginNextoolBaseModule) {
+         return strtoupper(trim((string) $instance->getBillingTier()));
       }
 
       return 'FREE';
@@ -1630,7 +1820,7 @@ class PluginNextoolModuleManager {
     *
     * A PRESENÇA do marker significa que as migrações idempotentes do módulo
     * (upgrade()/runMigrations) já foram confirmadas com sucesso para AQUELA
-    * versão de disco. Fica FORA do nextool_modules.cache: o clearCache() só
+    * versão de disco. Fica FORA do manifesto de boot (nextool_boot_manifest.cache): o clearCache() só
     * apaga o cache de módulos, então toggles (install/enable/update) NÃO forçam
     * re-migração desnecessária. Um purge manual do diretório de cache apenas
     * dispara uma reverificação idempotente no próximo boot (feature, não bug).
@@ -2038,6 +2228,73 @@ class PluginNextoolModuleManager {
       return $tables;
    }
 
+   /**
+    * Invalida o OPcache dos arquivos PHP de um modulo cujos arquivos acabaram de
+    * ser trocados no disco.
+    *
+    * POR QUE: em producao o `opcache.validate_timestamps` fica Off. Sem isto, apos a
+    * troca de arquivos convivem workers PHP-FPM com bytecode NOVO e VELHO ate que
+    * reciclem sozinhos. Se o upgrade REMOVE algo que a versao anterior recria (CronTask,
+    * hook, registro), os dois lados se desfazem mutuamente: a migracao nunca converge,
+    * cada request tenta de novo e disputa o advisory lock do ModuleManager -- o ambiente
+    * fica lento ate os workers reciclarem. Aconteceu no Portfolio e na central JMBA em
+    * 2026-09-02 (aiassist 1.14.0).
+    *
+    * Cirurgico de proposito: `opcache_invalidate()` por arquivo do modulo, NUNCA
+    * `opcache_reset()` -- resetar o cache inteiro derrubaria o bytecode do GLPI todo
+    * para punir a troca de um modulo. Fail-silent por contrato: OPcache indisponivel,
+    * restrito por `opcache.restrict_api` ou arquivo ilegivel nao pode derrubar um
+    * update que ja aconteceu no disco.
+    *
+    * @return int quantidade de arquivos invalidados
+    */
+   private function invalidateModuleOpcache(string $moduleKey): int {
+      if (!function_exists('opcache_invalidate') || !function_exists('opcache_get_status')) {
+         return 0;
+      }
+      try {
+         $status = @opcache_get_status(false);
+         if (!is_array($status) || empty($status['opcache_enabled'])) {
+            return 0;
+         }
+      } catch (\Throwable $e) {
+         return 0;
+      }
+
+      $dir = $this->modulesPath . '/' . $moduleKey;
+      if (!is_dir($dir)) {
+         return 0;
+      }
+
+      $count = 0;
+      try {
+         $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+         );
+         foreach ($it as $file) {
+            if (!$file->isFile() || strtolower($file->getExtension()) !== 'php') {
+               continue;
+            }
+            // force=true: com validate_timestamps=Off o timestamp nao serve de criterio.
+            if (@opcache_invalidate($file->getPathname(), true)) {
+               $count++;
+            }
+         }
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            '[OPcache] Falha ao invalidar arquivos do modulo %s: %s', $moduleKey, $e->getMessage()
+         ));
+         return $count;
+      }
+
+      if ($count > 0) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            '[OPcache] %d arquivo(s) do modulo %s invalidados apos troca no disco.', $count, $moduleKey
+         ));
+      }
+      return $count;
+   }
+
    private function moduleDirectoryExists(string $moduleKey): bool {
       $path = $this->modulesPath . '/' . $moduleKey;
       return is_dir($path);
@@ -2282,230 +2539,318 @@ class PluginNextoolModuleManager {
    }
 
    /**
-    * Verifica se cache é válido
-    * 
-    * @return bool True se cache é válido
+    * Manifesto de boot válido? (caminho quente)
+    *
+    * Três gates, do mais barato ao mais caro:
+    *  1. arquivo existe e o cabeçalho bate com este ambiente (formato, versão da
+    *     base, major do GLPI, pasta de módulos) -- 1 leitura, memoizada por request;
+    *  2. idade desde a CONSTRUÇÃO <= 1 h: garante a passagem periódica pelo caminho
+    *     frio, onde vive o syncInstalledVersionsFromDisk() (rede de segurança #158);
+    *  3. chave de mtimes dos módulos: recomputada (glob + ~90 stat) no máximo 1x por
+    *     MANIFEST_TRUST_TTL segundos -- dentro da janela o manifesto é aceito pelo
+    *     mtime do próprio arquivo, que o @touch abaixo renova.
+    *
+    * Troca de arquivos feita pelo PRÓPRIO plugin (download/update/uninstall) chama
+    * clearCache(), que apaga o manifesto: a janela só adia a detecção de edição
+    * manual/rsync em até 60 s.
+    *
+    * @return bool
     */
    private function isCacheValid() {
-      $cacheFilePath = $this->cachePath . '/' . $this->cacheFile;
-      
-      // Se arquivo de cache não existe, cache não é válido
-      if (!file_exists($cacheFilePath)) {
+      $path = $this->cachePath . '/' . $this->cacheFile;
+      if (!is_file($path)) {
          return false;
       }
-
-      // Verifica se cache expirou
-      $cacheAge = time() - filemtime($cacheFilePath);
-      if ($cacheAge > $this->cacheExpiration) {
+      $data = $this->readManifest();
+      if ($data === null) {
          return false;
       }
-
-      // Verifica se chave de cache mudou (arquivos foram modificados)
-      $cachedKey = $this->getCacheKeyFromFile($cacheFilePath);
-      $currentKey = $this->getCacheKey();
-      
-      if ($cachedKey !== $currentKey) {
+      if ((time() - (int) ($data['time'] ?? 0)) > $this->cacheExpiration) {
          return false;
       }
-
+      $ttl   = defined('NEXTOOL_BOOT_MANIFEST_TTL') ? (int) NEXTOOL_BOOT_MANIFEST_TTL : self::MANIFEST_TRUST_TTL;
+      $mtime = (int) @filemtime($path);
+      if ($ttl > 0 && $mtime > 0 && (time() - $mtime) <= $ttl) {
+         return true;
+      }
+      if (($data['key'] ?? '') !== $this->getCacheKey()) {
+         return false;
+      }
+      if (!@touch($path)) {
+         // Arquivo de outro dono (CLI rodado como root): regrava via tmp+rename para
+         // readquirir a posse -- senão a chave seria recomputada em todo request.
+         $this->writeManifestFile($data);
+      }
       return true;
    }
 
    /**
-    * Obtém chave de cache do arquivo
-    * 
-    * @param string $cacheFilePath Caminho do arquivo de cache
-    * @return string Chave de cache
+    * Manifesto decodificado (memo por request em plugin_nextool_boot_manifest()),
+    * validado contra este ambiente. null = ausente, corrompido ou de outro ambiente.
     */
-   private function getCacheKeyFromFile($cacheFilePath) {
-      $cacheData = @file_get_contents($cacheFilePath);
-      if ($cacheData === false) {
-         return '';
+   private function readManifest(): ?array {
+      $data = function_exists('plugin_nextool_boot_manifest') ? plugin_nextool_boot_manifest() : null;
+      if ($data === null) {
+         return null;
       }
-
-      $data = @unserialize($cacheData, ['allowed_classes' => false]);
-      if ($data === false || !isset($data['key'])) {
-         return '';
+      $baseVersion = defined('PLUGIN_NEXTOOL_VERSION') ? PLUGIN_NEXTOOL_VERSION : '';
+      $glpiMajor   = defined('GLPI_VERSION') ? (int) explode('.', GLPI_VERSION)[0] : 0;
+      if (($data['base_version'] ?? null) !== $baseVersion
+          || (int) ($data['glpi_major'] ?? -1) !== $glpiMajor
+          || ($data['modules_base'] ?? null) !== $this->modulesPath) {
+         return null;
       }
-
-      return $data['key'];
+      return $data;
    }
 
    /**
-    * Carrega módulos do cache
-    * 
-    * @return array|false Módulos em cache ou false se falhar
+    * Caminho quente: metadados do manifesto, sem instanciar nada.
+    *
+    * @return array{modules: array, blocked: array, legacy: array}|false
     */
    private function loadCache() {
-      $cacheFilePath = $this->cachePath . '/' . $this->cacheFile;
-      
-      if (!file_exists($cacheFilePath)) {
+      $data = $this->readManifest();
+      if ($data === null || !is_array($data['modules'] ?? null)) {
          return false;
       }
-
-      $cacheData = @file_get_contents($cacheFilePath);
-      if ($cacheData === false) {
-         return false;
+      $modules = [];
+      foreach ($data['modules'] as $moduleKey => $meta) {
+         if (!is_string($moduleKey) || !is_array($meta) || empty($meta['class']) || empty($meta['file'])) {
+            return false; // formato inesperado: reconstrói
+         }
+         $modules[$moduleKey] = $meta;
       }
-
-      $data = @unserialize($cacheData, ['allowed_classes' => false]);
-      if ($data === false || !isset($data['modules'])) {
-         return false;
-      }
-
-      // Verifica se módulos são válidos
-      if (!is_array($data['modules'])) {
-         return false;
-      }
-
-      // Carrega classes necessárias usando lista do cache
-      // Cache armazena módulos como: ['module_key' => 'nome_diretorio']
-      $reloadedModules = [];
-      
-      foreach ($data['modules'] as $moduleKey => $moduleInfo) {
-         // Obtém nome do diretório (se armazenado) ou tenta descobrir pelo module_key
-         $moduleDirName = $moduleInfo['dir'] ?? $moduleKey;
-         
-         // Nova estrutura: modules/[nome]/inc/[nome].class.php
-         $classFile = $this->modulesPath . '/' . $moduleDirName . '/inc/' . $moduleDirName . '.class.php';
-         
-         // Verifica se arquivo existe (validação rápida)
-         if (!file_exists($classFile)) {
-            // Cache inválido - arquivo não existe mais
-            return false;
-         }
-
-         // Guard de compatibilidade: valida module.json antes de carregar PHP
-         $moduleManifestDir = $this->modulesPath . '/' . $moduleDirName;
-         $manifestCheck = $this->validateModuleManifest($moduleKey, $moduleManifestDir);
-         if ($manifestCheck['status'] === 'blocked') {
-            $this->blockedModules[$moduleKey] = $manifestCheck['message'];
-            return false; // Cache stale, rebuild via discoverModules
-         }
-         if ($manifestCheck['status'] === 'legacy') {
-            $this->legacyModules[] = $moduleKey;
-         }
-
-         // Carrega classe
-         require_once $classFile;
-         
-         $className = 'PluginNextool' . ucfirst($moduleDirName);
-         if (!class_exists($className)) {
-            // Cache inválido - classe não existe
-            return false;
-         }
-         
-         // Instancia módulo
-         $module = new $className();
-         
-         if (!($module instanceof PluginNextoolBaseModule)) {
-            // Cache inválido - módulo não é instância de BaseModule
-            return false;
-         }
-         
-         // Verifica se module_key corresponde
-         if ($module->getModuleKey() !== $moduleKey) {
-            // Cache inválido - module_key não corresponde
-            return false;
-         }
-         
-         $reloadedModules[$moduleKey] = $module;
-      }
-
-      return $reloadedModules;
+      return [
+         'modules' => $modules,
+         'blocked' => is_array($data['blocked'] ?? null) ? $data['blocked'] : [],
+         'legacy'  => is_array($data['legacy'] ?? null) ? array_values($data['legacy']) : [],
+      ];
    }
 
    /**
-    * Salva módulos no cache
-    * 
-    * @return bool True se salvou com sucesso
+    * Grava o manifesto de boot (caminho frio). Mantém o nome saveCache(): o teste de
+    * update em duas fases o invoca por reflexão e espera `false` sob staleClassModules.
+    *
+    * @return bool
     */
    private function saveCache() {
-      // Requisição que substituiu arquivos de módulo NÃO persiste cache. A chave do cache
-      // é derivada do filemtime dos arquivos (getCacheKey()), então um cache salvo aqui
-      // nasceria "válido" apontando para os arquivos NOVOS -- e no request seguinte o
-      // discoverModules() sairia pelo loadCache(), que NÃO chama
-      // syncInstalledVersionsFromDisk(). Isso mataria a rede de segurança que converge o
-      // módulo quando a fase 2 não é disparada (issue #158).
+      $path = $this->cachePath . '/' . $this->cacheFile;
+
+      // Requisição que substituiu arquivos de módulo NÃO persiste: a chave (mtimes)
+      // nasceria "válida" apontando para os arquivos NOVOS e o próximo request sairia
+      // pelo caminho quente, que NÃO roda syncInstalledVersionsFromDisk() -- mataria a
+      // convergência da fase 2 (issue #158). E APAGA o manifesto anterior: dentro da
+      // janela de confiança ele seria aceito sem recomputar a chave.
       if (!empty($this->staleClassModules)) {
+         @unlink($path);
+         if (function_exists('plugin_nextool_boot_manifest')) {
+            plugin_nextool_boot_manifest(true);
+         }
          return false;
       }
 
-      $cacheFilePath = $this->cachePath . '/' . $this->cacheFile;
-
-      // Prepara dados para cache (armazena apenas metadados, não instâncias)
-      $cacheData = [
-         'key'     => $this->getCacheKey(),
-         'time'    => time(),
-         'modules' => []
+      $classMap = $this->buildClassMap($this->readManifest());
+      $data = [
+         'format'       => self::MANIFEST_FORMAT,
+         'key'          => $this->getCacheKey(),
+         'time'         => time(),
+         'base_version' => defined('PLUGIN_NEXTOOL_VERSION') ? PLUGIN_NEXTOOL_VERSION : '',
+         'glpi_major'   => defined('GLPI_VERSION') ? (int) explode('.', GLPI_VERSION)[0] : 0,
+         'php_version'  => PHP_VERSION,
+         'modules_base' => $this->modulesPath,
+         'modules'      => $this->discovered,
+         'blocked'      => $this->blockedModules,
+         'legacy'       => array_values(array_unique($this->legacyModules)),
+         'classmap'     => $classMap['map'],
+         'classmap_sig' => $classMap['sig'],
       ];
-
-      foreach ($this->modules as $moduleKey => $module) {
-         // Armazena module_key e nome do diretório para recarregamento rápido
-         // Obtém nome do diretório a partir do caminho da classe
-         $reflection = new ReflectionClass($module);
-         $classFile = $reflection->getFileName();
-         $moduleDirName = basename(dirname($classFile));
-         
-         $cacheData['modules'][$moduleKey] = [
-            'key' => $moduleKey,
-            'dir' => $moduleDirName
-         ];
-      }
-
-      // Salva no arquivo
-      $result = @file_put_contents($cacheFilePath, serialize($cacheData), LOCK_EX);
-      
-      return $result !== false;
+      $ok = $this->writeManifestFile($data);
+      @unlink($this->cachePath . '/' . self::LEGACY_CACHE_FILE); // formato até 6.12.1
+      return $ok;
    }
 
    /**
-    * Limpa cache de módulos
-    * Útil quando módulos são adicionados/removidos manualmente
-    * 
+    * Escrita atômica (tmp + rename + 0644): substitui até um arquivo de outro dono
+    * (o rename depende da pasta, não do arquivo). Fallback: escrita direta.
+    */
+   private function writeManifestFile(array $data): bool {
+      $path = $this->cachePath . '/' . $this->cacheFile;
+      $dir  = dirname($path);
+      if (!is_dir($dir)) {
+         @mkdir($dir, 0755, true);
+      }
+      $payload = serialize($data);
+      $ok  = false;
+      $tmp = @tempnam($dir, 'nextool_boot_');
+      if ($tmp !== false) {
+         if (@file_put_contents($tmp, $payload, LOCK_EX) !== false) {
+            @chmod($tmp, 0644);
+            $ok = @rename($tmp, $path);
+         }
+         if (!$ok) {
+            @unlink($tmp);
+         }
+      }
+      if (!$ok) {
+         $ok = @file_put_contents($path, $payload, LOCK_EX) !== false;
+      }
+      if (function_exists('plugin_nextool_boot_manifest')) {
+         plugin_nextool_boot_manifest(true); // memo do request: a próxima leitura vê o arquivo novo
+      }
+      return $ok;
+   }
+
+   /**
+    * Class-map dos módulos (lote B, #249): classe => arquivo relativo a modulesPath,
+    * varrendo modules/<mk>/inc/** (até 3 níveis). Por módulo, uma assinatura barata
+    * (mtime da pasta inc e subpastas) permite REAPROVEITAR as entradas do manifesto
+    * anterior: só módulos cuja árvore mudou são varridos de novo. A varredura completa
+    * custa ~40 ms e o caminho frio roda 1x/h e a cada discoverModules(true) das páginas
+    * de config dos módulos -- sem o reaproveitamento essas páginas pagariam a conta.
+    * Entrada obsoleta (classe movida) é inofensiva: o autoloader revalida e cai na
+    * heurística.
+    *
+    * @return array{map: array<string,string>, sig: array<string,string>}
+    */
+   private function buildClassMap(?array $previous): array {
+      $map     = [];
+      $sig     = [];
+      $prevMap = is_array($previous['classmap'] ?? null) ? $previous['classmap'] : [];
+      $prevSig = is_array($previous['classmap_sig'] ?? null) ? $previous['classmap_sig'] : [];
+
+      foreach (array_keys($this->discovered) as $moduleKey) {
+         $incDir = $this->modulesPath . '/' . $moduleKey . '/inc';
+         if (!is_dir($incDir)) {
+            continue;
+         }
+         $signature       = $this->classMapSignature($incDir);
+         $sig[$moduleKey] = $signature;
+
+         $entries = null;
+         if (isset($prevSig[$moduleKey]) && $prevSig[$moduleKey] === $signature) {
+            $prefix  = $moduleKey . '/inc/';
+            $entries = [];
+            foreach ($prevMap as $class => $rel) {
+               if (is_string($rel) && strncmp($rel, $prefix, strlen($prefix)) === 0) {
+                  $entries[$class] = $rel;
+               }
+            }
+         }
+         if ($entries === null) {
+            $entries = $this->scanClassMap($incDir);
+         }
+         foreach ($entries as $class => $rel) {
+            if (!isset($map[$class])) {
+               $map[$class] = $rel;
+            }
+         }
+      }
+      return ['map' => $map, 'sig' => $sig];
+   }
+
+   /** Assinatura da árvore inc/ de um módulo: mtime das pastas (muda ao criar/remover/renomear arquivo). */
+   private function classMapSignature(string $incDir): string {
+      $parts = [(string) @filemtime($incDir)];
+      foreach (glob($incDir . '/*', GLOB_ONLYDIR) ?: [] as $sub) {
+         $parts[] = basename($sub) . ':' . (string) @filemtime($sub);
+         foreach (glob($sub . '/*', GLOB_ONLYDIR) ?: [] as $sub2) {
+            $parts[] = basename($sub) . '/' . basename($sub2) . ':' . (string) @filemtime($sub2);
+         }
+      }
+      return implode('|', $parts);
+   }
+
+   /** Varre modules/<mk>/inc/** e mapeia cada classe/interface/trait PluginNextool* ao seu arquivo. */
+   private function scanClassMap(string $incDir): array {
+      $entries = [];
+      $base    = $this->modulesPath . '/';
+      try {
+         $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($incDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY
+         );
+         $iterator->setMaxDepth(3);
+         foreach ($iterator as $file) {
+            $pathname = $file->getPathname();
+            if (substr($pathname, -4) !== '.php' || !$file->isFile()) {
+               continue;
+            }
+            $src = @file_get_contents($pathname);
+            if ($src === false
+                || !preg_match_all('/^\s*(?:(?:abstract|final|readonly)\s+)*(?:class|interface|trait)\s+(PluginNextool\w+)/m', $src, $m)) {
+               continue;
+            }
+            $rel = strncmp($pathname, $base, strlen($base)) === 0 ? substr($pathname, strlen($base)) : $pathname;
+            foreach ($m[1] as $class) {
+               if (!isset($entries[$class])) {
+                  $entries[$class] = $rel;
+               } elseif ($entries[$class] !== $rel) {
+                  Toolbox::logInFile('plugin_nextool', sprintf(
+                     "[ModuleManager] class-map: %s declarada em %s e em %s -- mantida a primeira\n",
+                     $class, $entries[$class], $rel
+                  ));
+               }
+            }
+         }
+      } catch (\Throwable $e) {
+         // a varredura nunca derruba o boot: o módulo fica sem class-map (a heurística cobre)
+      }
+      return $entries;
+   }
+
+   /**
+    * Limpa o manifesto de boot (disco + memória).
+    * Útil quando módulos são adicionados/removidos manualmente.
+    *
     * @return bool True se limpou com sucesso
     */
    public function clearCache() {
-      $cacheFilePath = $this->cachePath . '/' . $this->cacheFile;
+      $path = $this->cachePath . '/' . $this->cacheFile;
 
       $this->resetRowCache();
       if (class_exists('PluginNextoolMainConfig')) {
          PluginNextoolMainConfig::clearModuleConfigTabsCache();
       }
 
-      if (file_exists($cacheFilePath)) {
-         return @unlink($cacheFilePath);
+      // Limpa a memória SEMPRE (antes do return abaixo: até 6.12.1 a limpeza ficava
+      // depois do return e era código inalcançável quando o arquivo existia).
+      $this->resetDiscovery();
+      $this->blockedModules = [];
+      $this->legacyModules  = [];
+      @unlink($this->cachePath . '/' . self::LEGACY_CACHE_FILE);
+
+      $ok = true;
+      if (file_exists($path)) {
+         $ok = @unlink($path);
       }
-
-      // Limpa cache da memória também
-      $this->modules = [];
-
-      return true;
+      if (function_exists('plugin_nextool_boot_manifest')) {
+         plugin_nextool_boot_manifest(true);
+      }
+      return $ok;
    }
 
-   /**
-    * Força atualização do cache
-    * Limpa cache e redescobre módulos
-    * 
-    * @return array Módulos descobertos
-    */
    /**
     * Regenera o cache JSON de módulos stateless (getStatelessFiles()).
     *
     * Chamado automaticamente por discoverModules() e refreshModules().
     * O cache é lido pelo boot (setup.php) e pelo roteador AJAX (module_ajax.php)
     * antes que o GLPI esteja completamente carregado.
+    *
+    * Fonte: os metadados da descoberta (manifesto) -- no caminho quente NÃO há
+    * instâncias; no frio o describeModule() já leu getStatelessFiles() de cada uma.
     */
    public function refreshStatelessCache(): void {
       require_once NEXTOOL_PHP_DIR . '/inc/statelessmodules.inc.php';
 
+      if (!$this->discoveryLoaded) {
+         return; // nunca gravar a partir de um estado não descoberto (apagaria o mapa)
+      }
+
       $statelessMap = [];
-      foreach ($this->modules as $moduleKey => $module) {
-         if (method_exists($module, 'getStatelessFiles')) {
-            $files = $module->getStatelessFiles();
-            if (!empty($files)) {
-               $statelessMap[$moduleKey] = $files;
-            }
+      foreach ($this->discovered as $moduleKey => $meta) {
+         $files = $meta['stateless'] ?? [];
+         if (is_array($files) && !empty($files)) {
+            $statelessMap[$moduleKey] = array_values($files);
          }
       }
 
@@ -2555,6 +2900,11 @@ class PluginNextoolModuleManager {
       }
    }
 
+   /**
+    * Força atualização do manifesto: limpa e redescobre a frio.
+    *
+    * @return array Módulos descobertos (instâncias)
+    */
    public function refreshModules() {
       $this->clearCache();
       return $this->discoverModules(true);

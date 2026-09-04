@@ -486,11 +486,17 @@ function _plugin_nextool_build_menus($menu) {
    }
 
    // Módulos standalone instalados: submenu aponta para getConfigPage()
-   // Aparece no menu quando instalado E ativo.
+   // Aparece no menu quando instalado E ativo. Itera o mapa de estado (1 query já
+   // feita) e só instancia os ativos: getAllModules() materializaria os 43 módulos
+   // em TODA página (manifesto de boot, #249).
    if ($modManager !== null) {
       try {
-         foreach ($modManager->getAllModules() as $mk => $mod) {
-            if (!$mod->isInstalled() || !$mod->isEnabled()) {
+         foreach ($modManager->getModulesStateMap() as $mk => $state) {
+            if (empty($state['installed']) || empty($state['enabled'])) {
+               continue;
+            }
+            $mod = $modManager->getModule($mk);
+            if ($mod === null) {
                continue;
             }
             if (method_exists($mod, 'usesStandaloneConfig') && $mod->usesStandaloneConfig() && $mod->hasConfig()) {

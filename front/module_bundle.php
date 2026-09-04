@@ -99,6 +99,27 @@ if (empty($resolved)) {
    die('Nenhum asset válido no bundle.');
 }
 
+// Fast-path de assets (setup.php, #249): o boot NAO rodou o onInit dos modulos,
+// logo o dominio de traducao de cada modulo servido ainda nao foi registrado.
+// 13 wrappers usam __('...', 'nextool_<mk>'): carregar o .mo aqui, 1x por modulo.
+if (defined('NEXTOOL_BOOT_FAST_PATH_ACTIVE') && class_exists('PluginNextoolModuleManager')) {
+   $nxLangLoaded = [];
+   foreach ($resolved as $asset) {
+      if (isset($nxLangLoaded[$asset['mod']])) {
+         continue;
+      }
+      $nxLangLoaded[$asset['mod']] = true;
+      try {
+         $nxMod = PluginNextoolModuleManager::getInstance()->getModule($asset['mod']);
+         if ($nxMod && method_exists($nxMod, 'loadModuleLang')) {
+            $nxMod->loadModuleLang();
+         }
+      } catch (\Throwable $e) {
+         // sem traducao do modulo, o wrapper cai no msgid -- nunca derruba o bundle
+      }
+   }
+}
+
 // Concatena. ob_start garante que header() no FINAL ainda funcione mesmo que
 // os wrappers emitam headers próprios (os do bundle sobrescrevem por último).
 // Wrappers usam `return;` para early-exit (um `exit;` mataria o bundle - por

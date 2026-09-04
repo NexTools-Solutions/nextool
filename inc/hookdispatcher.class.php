@@ -581,6 +581,26 @@ class PluginNextoolHookDispatcher {
     * @param array  $meta      label, description, icon, color, severity,
     *                          default_enabled, dedup_window (segundos)
     */
+   /**
+    * Suporte a rotulos LAZY em registerNotificationSource(): 'label'/'description'
+    * podem vir como ['msgid', 'dominio'] e so sao traduzidos em
+    * getNotificationSources() (consumidor), nunca no onInit() do emissor --
+    * __() a cada boot e custo por request (nextool-dev#249). Modulos detectam
+    * com defined('PluginNextoolHookDispatcher::LAZY_LABELS') e continuam
+    * compativeis com bases antigas passando string.
+    */
+   public const LAZY_LABELS = 1;
+
+   private static function resolveSourceText($value, string $fallback): string {
+      if (is_array($value)) {
+         $msgid  = (string)($value[0] ?? '');
+         $domain = (string)($value[1] ?? 'nextool');
+         return $msgid === '' ? $fallback : __($msgid, $domain);
+      }
+      $str = (string)$value;
+      return $str === '' ? $fallback : $str;
+   }
+
    public static function registerNotificationSource(string $sourceKey, array $meta): void {
       if (!preg_match('/^[a-z0-9_]+\.[a-z0-9_]+$/', $sourceKey)) {
          Toolbox::logInFile('plugin_nextool', sprintf(
@@ -605,8 +625,9 @@ class PluginNextoolHookDispatcher {
       self::$notificationSources[$sourceKey] = [
          'key'             => $sourceKey,
          'module'          => $module,
-         'label'           => (string)($meta['label'] ?? $sourceKey),
-         'description'     => (string)($meta['description'] ?? ''),
+         // string (traduzida pelo emissor) OU ['msgid','dominio'] (lazy; resolvido no getter)
+         'label'           => $meta['label'] ?? $sourceKey,
+         'description'     => $meta['description'] ?? '',
          'icon'            => (string)($meta['icon'] ?? 'ti ti-bell'),
          'color'           => (string)($meta['color'] ?? 'secondary'),
          'severity'        => (string)($meta['severity'] ?? 'info'),
@@ -622,7 +643,13 @@ class PluginNextoolHookDispatcher {
     * montar configuração e preferências.
     */
    public static function getNotificationSources(): array {
-      return self::$notificationSources;
+      $out = [];
+      foreach (self::$notificationSources as $key => $meta) {
+         $meta['label']       = self::resolveSourceText($meta['label'] ?? null, $key);
+         $meta['description'] = self::resolveSourceText($meta['description'] ?? null, '');
+         $out[$key] = $meta;
+      }
+      return $out;
    }
 
    /**

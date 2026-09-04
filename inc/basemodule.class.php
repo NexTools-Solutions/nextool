@@ -729,6 +729,12 @@ abstract class PluginNextoolBaseModule {
     * @return string Caminho físico completo do diretório do módulo
     */
    protected function getModulePath() {
+      // Memoizado por instancia: e chamado por getVersion(), getAssetFv() (2x por
+      // asset), getJsPath/getCssPath, getAjaxPath, getSqlPath e loadModuleLang() --
+      // cada chamada criava um ReflectionClass novo (nextool-dev#249).
+      if ($this->nxModulePathCache !== null) {
+         return $this->nxModulePathCache;
+      }
       $reflection = new ReflectionClass($this);
       $classFile = $reflection->getFileName();
       $classDir = dirname($classFile);
@@ -736,13 +742,16 @@ abstract class PluginNextoolBaseModule {
       // Se arquivo está em [modulo]/inc/[modulo].class.php (nova estrutura)
       // Volta 2 níveis: inc/ -> [modulo]/
       if (basename($classDir) === 'inc') {
-         return dirname($classDir);
+         return $this->nxModulePathCache = dirname($classDir);
       }
       
       // Se arquivo está em inc/modules/[modulo]/[modulo].class.php (estrutura antiga)
       // O diretório atual já é o módulo
-      return $classDir;
+      return $this->nxModulePathCache = $classDir;
    }
+
+   /** @var string|null Cache do caminho fisico do modulo (getModulePath) */
+   private $nxModulePathCache = null;
 
    /**
     * Retorna caminho web para arquivo front-end do módulo

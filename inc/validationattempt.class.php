@@ -54,6 +54,24 @@ class PluginNextoolValidationAttempt extends PluginNextoolBaseAuditLog implement
       return 'ti ti-report-analytics';
    }
 
+   /**
+    * Gate do itemtype -- OBRIGATORIO, e nao cosmetico.
+    *
+    * O export nativo do core (`front/report.dynamic.php`) e o `/ajax/search.php`
+    * aplicam o `canView()` do ITEMTYPE e mais nada. Sem este override a classe
+    * herdava o gate de `CommonDBTM` (baseado no `$rightname`, aqui indefinido):
+    * qualquer perfil com acesso central baixava o historico INTEIRO de validacoes
+    * de licenca por `?item_type=PluginNextoolValidationAttempt&display_type=-4`,
+    * sem nenhum direito NexTool. Vazamento real, medido em 2026-09-03.
+    *
+    * O gate e o MESMO da aba que renderiza a grade
+    * (`front/tabs/config.logs.tab.inc.php` -> `canAccessAdminTabs()`), para que a
+    * UI e o export nunca divirjam.
+    */
+   public static function canView(): bool {
+      return PluginNextoolPermissionManager::canAccessAdminTabs();
+   }
+
    public static function getSearchURL($full = true) {
       if (!empty($GLOBALS['nextool_validation_attempts_forcetab_url'])) {
          return $GLOBALS['nextool_validation_attempts_forcetab_url'];
