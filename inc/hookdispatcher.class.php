@@ -38,6 +38,9 @@ class PluginNextoolHookDispatcher {
    /** @var array[] itemPurge[itemType] = [ [class, method], ... ] */
    private static $itemPurge = [];
 
+   /** @var array[] itemDelete[itemType] = [ [class, method], ... ] */
+   private static $itemDelete = [];
+
    /** @var array[] postShowItem[itemType] = [ [class, method], ... ] */
    private static $postShowItem = [];
 
@@ -107,6 +110,22 @@ class PluginNextoolHookDispatcher {
          self::$itemPurge[$itemType] = [];
       }
       self::$itemPurge[$itemType][] = $callback;
+   }
+
+   /**
+    * Registra callback para item_delete (APÓS o item ir para a lixeira, quando o
+    * itemtype suporta is_deleted). Itemtypes sem lixeira (ex.: KnowbaseItem) nunca
+    * disparam este hook: o core cai direto no item_purge. Registrar os dois cobre
+    * ambos os caminhos sem depender de saber qual o itemtype usa.
+    *
+    * @param string $itemType Ex.: 'KnowbaseItem'
+    * @param array  $callback [className, methodName]
+    */
+   public static function registerItemDelete($itemType, array $callback) {
+      if (!isset(self::$itemDelete[$itemType])) {
+         self::$itemDelete[$itemType] = [];
+      }
+      self::$itemDelete[$itemType][] = $callback;
    }
 
    /**
@@ -247,9 +266,36 @@ class PluginNextoolHookDispatcher {
       return $item;
    }
 
+   /**
+    * Dispatcher genérico para item_delete[itemType] (pós-lixeira). Mesma
+    * semântica fail-open do item_purge: só loga.
+    */
+   public static function dispatchItemDelete(string $itemType, CommonDBTM $item): CommonDBTM {
+      foreach (self::$itemDelete[$itemType] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $item);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] item_delete %s: %s - %s',
+               $itemType,
+               $e->getMessage(),
+               $e->getTraceAsString()
+            ));
+         }
+      }
+      return $item;
+   }
+
    // ========================================
    // Wrappers nomeados (compat com callers $PLUGIN_HOOKS em setup.php)
    // ========================================
+
+   // KnowbaseItem: módulos que mantêm dados atrelados a artigos da base de
+   // conhecimento (ex.: aiassist -> palavras-chave por artigo) limpam aqui.
+   // Slot instalado via installHook (append-aware): um módulo que ainda atribua
+   // direto no $PLUGIN_HOOKS (nexbot <= 0.2.x) é ENCADEADO, nunca clobberado.
+   public static function dispatchItemPurgeKnowbaseItem(CommonDBTM $item)  { return self::dispatchItemPurge('KnowbaseItem', $item); }
+   public static function dispatchItemDeleteKnowbaseItem(CommonDBTM $item) { return self::dispatchItemDelete('KnowbaseItem', $item); }
 
    public static function dispatchItemAddTicket(CommonDBTM $item) {
       return self::dispatchItemAdd('Ticket', $item);

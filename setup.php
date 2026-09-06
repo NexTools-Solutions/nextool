@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.13.1');
+define('PLUGIN_NEXTOOL_VERSION', '6.14.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -589,6 +589,11 @@ function plugin_init_nextool() {
                $nxInstall($PLUGIN_HOOKS, 'item_purge',      'TicketTask',       'dispatchItemPurgeTicketTask');
                $nxInstall($PLUGIN_HOOKS, 'item_add',        'ITILFollowup',     'dispatchItemAddITILFollowup');
                $nxInstall($PLUGIN_HOOKS, 'item_add',        'ITILSolution',     'dispatchItemAddITILSolution');
+               // KnowbaseItem (6.14.0): módulos com dados atrelados a artigos da KB
+               // (aiassist: palavras-chave) limpam no purge. Sem lixeira no itemtype,
+               // o core dispara só o item_purge; item_delete fica por completude.
+               $nxInstall($PLUGIN_HOOKS, 'item_purge',      'KnowbaseItem',     'dispatchItemPurgeKnowbaseItem');
+               $nxInstall($PLUGIN_HOOKS, 'item_delete',     'KnowbaseItem',     'dispatchItemDeleteKnowbaseItem');
 
                // post_show_item: timeline separator e outros hooks visuais.
                // Nota: nao pode usar HookManager para este hook (limitacao do core GLPI 11).
