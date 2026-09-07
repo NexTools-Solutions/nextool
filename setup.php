@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.15.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.16.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -545,9 +545,21 @@ function plugin_init_nextool() {
             // Search estoura getItemForItemtype(null) ao renderizar a grade. O autoloader mapeia
             // as classes que ELE carrega; este scan cobre as pré-carregadas pelos onInit.
             plugin_nextool_prof_start('classScan');
+            // Cada classe isolada: um getTable() que lanca (classe abstrata/base sem
+            // tabela, modulo com bug) NAO pode derrubar o resto do init -- este loop
+            // fica DENTRO do try do boot, e a excecao pulava a instalacao de todos os
+            // hooks do dispatcher em silencio (2026-09-07: aprovacao do workflow parou
+            // no CLI/cron enquanto a web seguia normal pelo OPcache).
             foreach (array_slice(get_declared_classes(), $nxDeclaredBefore) as $ntClass) {
                if (strncmp($ntClass, 'PluginNextool', 13) === 0 && is_subclass_of($ntClass, 'CommonDBTM')) {
-                  $ntTable = $ntClass::getTable();
+                  try {
+                     if ((new ReflectionClass($ntClass))->isAbstract()) {
+                        continue;
+                     }
+                     $ntTable = $ntClass::getTable();
+                  } catch (\Throwable $ntErr) {
+                     continue;
+                  }
                   if (is_string($ntTable) && $ntTable !== '' && !isset($CFG_GLPI['glpiitemtypetables'][$ntTable])) {
                      $CFG_GLPI['glpiitemtypetables'][$ntTable] = $ntClass;
                   }

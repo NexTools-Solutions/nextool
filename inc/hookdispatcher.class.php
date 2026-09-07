@@ -740,6 +740,37 @@ class PluginNextoolHookDispatcher {
    }
 
    /**
+    * Publica EM NOME DE UM MÓDULO -- o que cada `Notifier::publish()` de módulo
+    * copiava linha a linha (digitalsignature, glpisync, whatsappbot; audit-deep
+    * 2026-09-06, nextool-dev#256): audiência default = quem administra o módulo
+    * emissor (derivado do `source_key`, `<modulo>.<evento>`), e try/catch que
+    * registra no log DO MÓDULO e nunca propaga -- publicar não pode derrubar a
+    * operação de quem publicou. O default de audiência é regra do CANAL; por
+    * isso mora aqui e não em cada emissor.
+    *
+    * @since 6.16.0
+    * @return int sinks que receberam (0 também quando o payload foi descartado ou estourou)
+    */
+   public static function publishNotification(array $payload): int {
+      $sourceKey = trim((string)($payload['source_key'] ?? ''));
+      $module    = strpos($sourceKey, '.') !== false
+         ? substr($sourceKey, 0, (int)strpos($sourceKey, '.'))
+         : $sourceKey;
+      try {
+         if (empty($payload['audience']) || !is_array($payload['audience'])) {
+            $payload['audience'] = ['type' => 'module_admins', 'module' => $module];
+         }
+         return self::dispatchNotification($payload);
+      } catch (Throwable $e) {
+         Toolbox::logInFile(
+            $module !== '' ? 'plugin_nextool_' . $module : 'plugin_nextool',
+            sprintf("[NOTIFIER] Falha ao publicar \"%s\": %s\n", $sourceKey !== '' ? $sourceKey : '?', $e->getMessage())
+         );
+         return 0;
+      }
+   }
+
+   /**
     * Entrega a todos os sinks. Sink que estoura é registrado e ignorado: falha
     * do consumidor não pode derrubar a operação de quem publicou.
     */
