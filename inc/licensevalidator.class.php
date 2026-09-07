@@ -110,8 +110,10 @@ class PluginNextoolLicenseValidator {
       $context = PluginNextoolConfig::MANAGED_SERVICES_CONTEXT;
       $stored = Config::getConfigurationValues($context);
 
-      // Mapa bloco-do-servidor -> chave local do serviço.
-      $map = ['whatsapp_instance' => 'whatsapp'];
+      // Mapa bloco-do-servidor -> chave local do serviço. `nexsuite_license` (#250): licença
+      // NexBot gerenciada pelo portal -- api_url = backend, instance_name = license key,
+      // instance_token = license secret (cifrado pelo SecretVault como o token da Evolution).
+      $map = ['whatsapp_instance' => 'whatsapp', 'nexsuite_license' => 'nexsuite'];
 
       foreach ($map as $serverKey => $localKey) {
          if (!isset($services[$serverKey]) || !is_array($services[$serverKey])) {
@@ -785,9 +787,12 @@ class PluginNextoolLicenseValidator {
             self::clearManagedServices();
          }
 
-         // Persistir alertas recebidos
-         if (!empty($responseData['alerts']) && is_array($responseData['alerts'])) {
-            self::persistAlerts($responseData['alerts']);
+         // Persistir alertas recebidos + apagar os REVOGADOS na origem (#239). A lista de
+         // revogados é aditiva (servidor antigo não manda; plugin antigo ignora).
+         $alertsIn  = (!empty($responseData['alerts']) && is_array($responseData['alerts'])) ? $responseData['alerts'] : [];
+         $revokedIn = (!empty($responseData['alerts_revoked']) && is_array($responseData['alerts_revoked'])) ? $responseData['alerts_revoked'] : [];
+         if ($alertsIn !== [] || $revokedIn !== []) {
+            self::persistAlerts($alertsIn, $revokedIn);
          }
 
          // Persistir e aplicar modules_entitlement (anti-pirataria)
@@ -1919,9 +1924,12 @@ class PluginNextoolLicenseValidator {
       ], 'core_update hint');
    }
 
-   private static function persistAlerts(array $alerts): void {
+   private static function persistAlerts(array $alerts, array $revokedIds = []): void {
       global $DB;
       $table = 'glpi_plugin_nextool_main_alerts';
+      if ($alerts === [] && $revokedIds !== [] && !$DB->tableExists($table)) {
+         return; // nada entregue ainda: não há o que revogar (e nada a criar)
+      }
       // Shim de DDL: doQuery() só existe a partir do GLPI 10.0.7 (mesmo padrão de
       // BaseModule::execDdl -- o artefato único suporta 10.0.0+).
       $ddlMethod = method_exists($DB, 'doQuery') ? 'doQuery' : 'query';
@@ -1977,6 +1985,46 @@ class PluginNextoolLicenseValidator {
             }
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir alerta #' . $remoteId . ' - ' . $e->getMessage());
+         }
+      }
+
+      // Revogação (#239): alerta desativado na origem some do console de quem já o recebeu.
+      // Só linhas REMOTAS (local_key IS NULL) -- os alertas locais usam remote_alert_id
+      // sintético e nunca são revogados pelo servidor. Roda DEPOIS do upsert para o revogado
+      // vencer caso o mesmo id venha nas duas listas. A notificação do sino é recolhida pelo
+      // dispatcher (`resolves` do canal), sem release do consumidor.
+      $revoked = [];
+      foreach ($revokedIds as $rid) {
+         $rid = (int) $rid;
+         if ($rid > 0) {
+            $revoked[$rid] = $rid;
+         }
+      }
+      if ($revoked !== []) {
+         try {
+            $rows = $DB->request([
+               'SELECT' => ['remote_alert_id'],
+               'FROM'   => $table,
+               'WHERE'  => ['remote_alert_id' => array_values($revoked), 'local_key' => null],
+            ]);
+            $present = [];
+            foreach ($rows as $row) {
+               $present[] = (int) $row['remote_alert_id'];
+            }
+            if ($present !== []) {
+               $DB->delete($table, ['remote_alert_id' => $present, 'local_key' => null]);
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  "LicenseValidator: %d alerta(s) revogado(s) na origem removido(s) do console: %s\n",
+                  count($present), implode(',', $present)
+               ));
+               if (class_exists('PluginNextoolHookDispatcher')
+                   && method_exists('PluginNextoolHookDispatcher', 'retractNotification')) {
+                  $keys = array_map(static fn(int $id): string => 'nextool.server_alert:' . $id, $present);
+                  PluginNextoolHookDispatcher::retractNotification($keys);
+               }
+            }
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao revogar alertas - ' . $e->getMessage());
          }
       }
    }

@@ -771,6 +771,54 @@ class PluginNextoolHookDispatcher {
    }
 
    /**
+    * Recolhe avisos já entregues ao sino (nextool-dev#239): expira, no consumidor, os
+    * eventos das `dedup_keys` informadas -- sem publicar nada visível.
+    *
+    * Mecânica: o contrato do canal já tem `resolves` (smartnotify 3.2.0, 2026-08-10) e o
+    * consumidor o aplica ANTES do gate por fonte. Então um evento portador na fonte reservada
+    * `nextool.retract`, declarada com `default_enabled=false`, expira os alvos e é descartado
+    * no gate -- nada entra no feed. A fonte é declarada aqui, sob demanda, para não aparecer
+    * na tela de preferências (registro é por request). Consumidor sem `resolves` ignora
+    * (no-op); sem sink registrado, nada a recolher.
+    *
+    * @param string[] $dedupKeys chaves dos avisos a recolher (ex.: 'nextool.server_alert:12')
+    * @return int sinks que receberam o portador
+    */
+   public static function retractNotification(array $dedupKeys): int {
+      $keys = [];
+      foreach ($dedupKeys as $key) {
+         if (is_string($key) && trim($key) !== '') {
+            $keys[] = substr(trim($key), 0, 191);
+         }
+      }
+      if ($keys === [] || empty(self::$notificationSinks)) {
+         return 0;
+      }
+      if (!isset(self::$notificationSources['nextool.retract'])) {
+         self::registerNotificationSource('nextool.retract', [
+            'label'           => 'Recolhimento de avisos (interno)',
+            'description'     => 'Portador técnico que expira avisos já entregues; nunca aparece no sino.',
+            'icon'            => 'ti ti-eraser',
+            'severity'        => 'info',
+            'default_enabled' => false,
+            'dedup_window'    => 0,
+         ]);
+      }
+      $delivered = 0;
+      foreach (array_chunk(array_values(array_unique($keys)), 10) as $chunk) {
+         $delivered = self::dispatchNotification([
+            'source_key' => 'nextool.retract',
+            'title'      => 'retract',
+            'message'    => '',
+            'resolves'   => $chunk,
+            'audience'   => ['type' => 'base_admins'],
+            'dedup_key'  => 'nextool.retract:' . md5(implode('|', $chunk)),
+         ]);
+      }
+      return $delivered;
+   }
+
+   /**
     * Entrega a todos os sinks. Sink que estoura é registrado e ignorado: falha
     * do consumidor não pode derrubar a operação de quem publicou.
     */
