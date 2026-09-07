@@ -1788,6 +1788,38 @@ class PluginNextoolModuleManager {
       return $row !== null && ((int)($row['is_enabled'] ?? 0) === 1);
    }
 
+   /**
+    * Gate dos endpoints STATELESS de modulo (webhooks): responde e encerra se o
+    * modulo nao esta habilitado.
+    *
+    * O mapa stateless (`refreshStatelessCache`) roteia TODO modulo descoberto,
+    * habilitado ou nao -- o roteador `module_ajax.php` roda ANTES do boot do
+    * GLPI e nao tem banco para decidir. Ate a 6.15.0 cada webhook tinha de
+    * lembrar de checar `isEnabled()` sozinho, e o do digitalsignature nao
+    * checava: modulo "desligado" seguia gravando documento, chamando o provedor
+    * e injetando followup no chamado (audit-deep 2026-09-06, nextool-dev#253).
+    *
+    * Chamar DEPOIS de validar o segredo do webhook (antes, viraria um oraculo de
+    * "o modulo existe?") e ANTES de qualquer efeito. Responde 200 de proposito:
+    * 4xx/5xx faz o provedor reentregar o evento para sempre.
+    */
+   public static function statelessModuleGate(string $moduleKey): void {
+      $module = self::getInstance()->getModule($moduleKey);
+      if ($module && $module->isEnabled()) {
+         return;
+      }
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         "[stateless] evento ignorado: modulo %s desabilitado ou ausente\n",
+         $moduleKey
+      ));
+      if (!headers_sent()) {
+         http_response_code(200);
+         header('Content-Type: application/json; charset=UTF-8');
+      }
+      echo json_encode(['status' => 'module_disabled', 'module' => $moduleKey]);
+      exit;
+   }
+
    public function isInstalled(string $moduleKey): bool {
       $row = $this->getModuleRow($moduleKey);
       return $row !== null && ((int)($row['is_installed'] ?? 0) === 1);
