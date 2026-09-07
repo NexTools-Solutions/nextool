@@ -750,7 +750,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
       'client_identifier' => $distributionClientIdentifier,
       'result'            => $result['valid'] ?? false,
       'http_code'         => $result['http_code'] ?? null,
-      'error'             => $resultError,
+      'error'             => $resultErrorCode,
       'message'           => $result['message'] ?? null,
       'plan'              => $result['plan'] ?? null,
       'license_status'    => $result['license_status'] ?? null,

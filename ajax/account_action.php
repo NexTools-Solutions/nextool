@@ -93,7 +93,9 @@ if ($action === 'refresh_status' && ($supp = PluginNextoolCommBackoff::shouldSup
       'success'    => false,
       'suppressed' => true,
       'retry_in'   => (int) $supp['retry_in'],
-      'message'    => __('Comunicação com o servidor pausada após falhas de autenticação. Aguardando janela de nova tentativa.', 'nextool'),
+      'message'    => ($supp['kind'] ?? 'auth') === 'network'
+         ? __('Comunicação com o servidor pausada após falhas de conexão. Aguardando janela de nova tentativa.', 'nextool')
+         : __('Comunicação com o servidor pausada após falhas de autenticação. Aguardando janela de nova tentativa.', 'nextool'),
    ]);
    exit;
 }

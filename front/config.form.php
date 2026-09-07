@@ -15,8 +15,26 @@ declare(strict_types=1);
  * -------------------------------------------------------------------------
  */
 
-// Não precisa incluir includes.php pois já está carregado
-// O arquivo é chamado via include no contexto do GLPI
+// Dois modos de execução:
+//  - INCLUÍDO por uma aba (setup.class.php / nextoolmainconfig.class.php): quem inclui
+//    já roda no contexto do GLPI e já checou o direito; o flag abaixo sinaliza isso.
+//  - ACESSO DIRETO pela URL (issue #252): no GLPI 10 (roteamento PHP puro) o arquivo é
+//    servido cru, sem GLPI carregado nem plugin inicializado -- NEXTOOL_PHP_DIR não
+//    existia e a página respondia 500. No GLPI 11 o kernel já inicializou o plugin e
+//    exige login, mas o direito do NexTool não era conferido. Aqui: bootstrap (no-op
+//    no G11), login e a mesma permissão da página standalone (nextoolconfig.form.php).
+//    Em CLI (quick-test, console) não existe acesso por URL: o bloco não se aplica.
+$nextoolConfigFormDirect = PHP_SAPI !== 'cli' && empty($GLOBALS['nextool_config_form_included']);
+if ($nextoolConfigFormDirect) {
+   if (!defined('GLPI_ROOT')) {
+      include(__DIR__ . '/../../../inc/includes.php');
+   }
+   Session::checkLoginUser();
+   require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+   if (!PluginNextoolPermissionManager::canViewAnyModule() && !PluginNextoolPermissionManager::canAccessAdminTabs()) {
+      Html::displayRightError();
+   }
+}
 
 global $DB;
 

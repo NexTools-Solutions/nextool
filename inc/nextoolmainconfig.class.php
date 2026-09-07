@@ -244,8 +244,9 @@ class PluginNextoolMainConfig extends CommonDBTM {
       if (isset($tabMap[$tabnum])) {
          $tabKey = $tabMap[$tabnum];
          $GLOBALS['nextool_show_only_tab'] = $tabKey;
+         $GLOBALS['nextool_config_form_included'] = true; // ver cabeçalho de config.form.php (#252)
          include NEXTOOL_PHP_DIR . '/front/config.form.php';
-         unset($GLOBALS['nextool_show_only_tab']);
+         unset($GLOBALS['nextool_show_only_tab'], $GLOBALS['nextool_config_form_included']);
          return true;
       }
 

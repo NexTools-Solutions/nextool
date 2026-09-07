@@ -277,6 +277,7 @@ function plugin_nextool_uninstall() {
    // Remove configurações do self-updater e da distribuição em glpi_configs.
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_core_update']);
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_distribution']);
+   $DB->delete('glpi_configs', ['context' => 'plugin:nextool_upgrade_state']); // backoff de upgrade (#248)
    // Credenciais de serviços gerenciados (token da instância Evolution): APAGAR no uninstall
    // (LGPD -- credencial não fica em banco de plugin desinstalado). São re-entregues pelo
    // servidor no primeiro Sincronizar após reinstalar.

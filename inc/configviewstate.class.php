@@ -146,7 +146,7 @@ class PluginNextoolConfigViewState {
 
       // 2b) Falha de auth genérica (401 sem code — servidor antigo): backoff ativo.
       if ($authStreak > 0 && $lastAuthFail > $lastCommOk) {
-         $eta = $suppression !== null
+         $eta = ($suppression !== null && ($suppression['kind'] ?? 'auth') === 'auth')
             ? sprintf(__('em %s', 'nextool'), self::humanizeInterval((int) $suppression['retry_in']))
             : __('no próximo Sincronizar', 'nextool');
          return [
@@ -159,8 +159,11 @@ class PluginNextoolConfigViewState {
 
       // 3) Rede/5xx mais recente que o último OK: servidor inacessível.
       if ($lastNetFail > 0 && $lastNetFail > $lastCommOk) {
+         // ETA: a janela do backoff de rede (#245) quando aberta; senão o cache negativo.
          $negativeCacheRemaining = 0;
-         if (!empty($licenseConfig['last_failure_date'])) {
+         if ($suppression !== null && ($suppression['kind'] ?? '') === 'network') {
+            $negativeCacheRemaining = (int) $suppression['retry_in'];
+         } elseif (!empty($licenseConfig['last_failure_date'])) {
             $negativeCacheRemaining = (int) strtotime((string) $licenseConfig['last_failure_date']) + 600 - time();
          }
          $eta = $negativeCacheRemaining > 0

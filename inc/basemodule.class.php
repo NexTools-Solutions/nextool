@@ -46,6 +46,16 @@ abstract class PluginNextoolBaseModule {
    abstract public function getName();
 
    /**
+    * Último erro de SQL de install/upgrade (#248). O ModuleManager usa como assinatura
+    * do backoff de upgrade: mesma assinatura em tentativas seguidas = falha determinística.
+    */
+   protected ?string $lastSqlError = null;
+
+   public function getLastSqlError(): ?string {
+      return $this->lastSqlError;
+   }
+
+   /**
     * Descrição do módulo (exibida na interface)
     * Breve descrição do que o módulo faz
     * 
@@ -152,13 +162,42 @@ abstract class PluginNextoolBaseModule {
     * @return bool
     */
    public function upgrade(?string $currentVersion, ?string $targetVersion) {
+      $this->lastSqlError = null;
       $upgradeSql = $this->getSqlPath('upgrade.sql');
       if ($upgradeSql !== null && file_exists($upgradeSql)) {
          if (!$this->executeSqlFile('upgrade.sql')) {
+            // Fallback (#248): o upgrade.sql falhou -- tipicamente schema drift (coluna/tabela
+            // que o SQL assume e que não existe nesta instalação). Antes de desistir, roda a
+            // reconciliação idempotente do módulo, que é justamente quem cura o drift; sem
+            // isto o módulo ficava preso na versão antiga sem chance de convergir. O retorno
+            // continua false: a versão só é registrada quando o upgrade inteiro passa.
+            $this->runMigrationsFallback('upgrade.sql');
             return false;
          }
       }
       return $this->install();
+   }
+
+   /**
+    * Executa runMigrations() (quando o módulo o define) como rede de segurança após falha
+    * de SQL. Não-fatal: o erro original já foi registrado; aqui só se anota o resultado.
+    */
+   protected function runMigrationsFallback(string $failedFile): void {
+      if (!is_callable([$this, 'runMigrations'])) {
+         return;
+      }
+      try {
+         $this->runMigrations();
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[SQL] %s de %s falhou; runMigrations() idempotente aplicado como fallback\n",
+            $failedFile, $this->getModuleKey()
+         ));
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[SQL] %s de %s falhou e o fallback runMigrations() também: %s\n",
+            $failedFile, $this->getModuleKey(), $e->getMessage()
+         ));
+      }
    }
 
    /**
@@ -951,8 +990,18 @@ abstract class PluginNextoolBaseModule {
       // sem este try/catch, qualquer statement inválido vira HTTP 500 bruto no
       // endpoint AJAX em vez de "Falha ao executar instalação" na UI.
       try {
-         return $DB->runFile($sqlPath);
+         $ok = $DB->runFile($sqlPath);
+         if (!$ok) {
+            // GLPI 10: runFile() não lança -- registra o erro e devolve false. Captura o
+            // texto do driver para a assinatura do backoff (#248) e o aviso ao admin.
+            $driverError = method_exists($DB, 'error') ? trim((string) $DB->error()) : '';
+            $this->lastSqlError = $driverError !== ''
+               ? $driverError
+               : sprintf('runFile(%s) retornou false', $filename);
+         }
+         return $ok;
       } catch (\Throwable $e) {
+         $this->lastSqlError = $e->getMessage();
          Toolbox::logInFile(
             'plugin_nextool',
             sprintf(

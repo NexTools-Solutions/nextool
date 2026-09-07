@@ -499,9 +499,10 @@ class PluginNextoolLicenseValidator {
       $httpCode        = null;
       $responseTimeMs  = null;
 
-      // Backoff de auth (issue #243): ambiente em 401 determinístico NÃO martela o
-      // servidor -- devolve o estado em cache até a janela abrir. Sem rede e SEM
-      // linha em validation_attempts (não é um evento de comunicação).
+      // Backoff de auth (issue #243) e de rede/5xx (#245): ambiente em 401
+      // determinístico ou com o servidor caído NÃO martela -- devolve o estado em
+      // cache até a janela abrir. Sem rede e SEM linha em validation_attempts (não
+      // é um evento de comunicação).
       if ($useDistributionValidation && !$bypassCommBackoff
           && ($commSuppression = PluginNextoolCommBackoff::shouldSuppress()) !== null) {
          $cachedModules = [];
@@ -517,11 +518,13 @@ class PluginNextoolLicenseValidator {
          return [
             'valid'               => $lastResultCached,
             'message'             => sprintf(
-               __('Comunicação com o servidor NexTool pausada após falhas de autenticação. Nova tentativa automática em %d s.', 'nextool'),
+               ($commSuppression['kind'] ?? 'auth') === 'network'
+                  ? __('Comunicação com o servidor NexTool pausada após falhas de conexão. Nova tentativa automática em %d s.', 'nextool')
+                  : __('Comunicação com o servidor NexTool pausada após falhas de autenticação. Nova tentativa automática em %d s.', 'nextool'),
                (int) $commSuppression['retry_in']
             ),
             'allowed_modules'     => $lastResultCached ? $cachedModules : [],
-            'source'              => 'auth_backoff',
+            'source'              => ($commSuppression['kind'] ?? 'auth') === 'network' ? 'network_backoff' : 'auth_backoff',
             'http_code'           => null,
             'response_time_ms'    => null,
             'consecutive_failures'=> (int) ($licenseConfig['consecutive_failures'] ?? 0),
@@ -793,7 +796,7 @@ class PluginNextoolLicenseValidator {
             // Aplicar entitlement APENAS se comunicação 100% OK e origin != config_status
             $syncOrigin = isset($context['origin']) ? (string)$context['origin'] : '';
             if ($valid && $syncOrigin !== 'config_status') {
-               self::applyModulesEntitlement($responseData['modules_entitlement']);
+               self::applyModulesEntitlement($responseData['modules_entitlement'], $syncOrigin);
             }
          }
       }
@@ -1774,12 +1777,20 @@ class PluginNextoolLicenseValidator {
     *
     * @param array $entitlement Mapa module_key => {status, ever_licensed}
     */
-   protected static function applyModulesEntitlement(array $entitlement): void {
+   protected static function applyModulesEntitlement(array $entitlement, string $origin = ''): void {
       try {
          $manager = PluginNextoolModuleManager::getInstance();
       } catch (Throwable $e) {
          return;
       }
+
+      // (#246) Contexto SUPERVISIONADO = há um humano na tela (Sincronizar, instalar/atualizar
+      // módulo, aceitar políticas...). A cron catalogSync (6/6h) roda sem ninguém olhando:
+      // nela o passo destrutivo (desinstalar + apagar arquivos) NÃO acontece -- só desativa
+      // e avisa na aba Alertas. Um falso negativo de entitlement no servidor deixa de
+      // apagar módulo pago à noite; a remoção fica para a próxima validação supervisionada,
+      // que reconfirma a ausência de licença antes de agir.
+      $supervised = $origin !== 'cron_sync';
 
       foreach ($entitlement as $moduleKey => $info) {
          $status = $info['status'] ?? '';
@@ -1802,6 +1813,18 @@ class PluginNextoolLicenseValidator {
             continue; // Não está baixado, nada a fazer
          }
 
+         if (!$supervised) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[ENTITLEMENT] Módulo PAID "%s" sem histórico de licença (ever_licensed=false) em origin=%s (não supervisionado): apenas desativado; remoção aguarda validação supervisionada.',
+               $moduleKey, $origin
+            ));
+            if ($manager->isEnabled($moduleKey)) {
+               $manager->disableModule($moduleKey);
+            }
+            self::raiseUnsupervisedEntitlementAlert($manager, $moduleKey);
+            continue;
+         }
+
          Toolbox::logInFile('plugin_nextool', sprintf(
             '[ENTITLEMENT] Módulo PAID "%s" sem histórico de licença (ever_licensed=false). Desativando e removendo arquivos.',
             $moduleKey
@@ -1812,6 +1835,9 @@ class PluginNextoolLicenseValidator {
             $manager->disableModule($moduleKey);
          }
 
+         // O aviso da cron (se houve) deixa de valer: a remoção supervisionada está acontecendo.
+         self::expireUnsupervisedEntitlementAlert($moduleKey);
+
          // Desinstalar se instalado
          if ($manager->isInstalled($moduleKey)) {
             $manager->uninstallModule($moduleKey);
@@ -1819,6 +1845,46 @@ class PluginNextoolLicenseValidator {
 
          // Remover arquivos
          self::removeModuleFiles($modulePath);
+      }
+   }
+
+   /**
+    * (#246) Avisa o admin, na aba Alertas + sino, que a cron desativou um módulo pago sem
+    * licença e que a remoção espera um Sincronizar manual. Dedup: 1 aviso por módulo/dia
+    * (chave com a data; o AlertManager expira a família anterior ao emitir a nova).
+    */
+   private static function raiseUnsupervisedEntitlementAlert(PluginNextoolModuleManager $manager, string $moduleKey): void {
+      $f = NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
+      if (is_file($f)) {
+         require_once $f;
+      }
+      if (!class_exists('PluginNextoolAlertManager')) {
+         return;
+      }
+      $name = $moduleKey;
+      try {
+         $module = $manager->getModule($moduleKey);
+         if ($module !== null && trim((string) $module->getName()) !== '') {
+            $name = (string) $module->getName();
+         }
+      } catch (Throwable $e) {
+         // nome é cosmético
+      }
+      PluginNextoolAlertManager::raiseLocal(
+         'entitlement_pending:' . $moduleKey . ':' . date('Ymd'),
+         sprintf(__('Módulo "%s" desativado: nenhuma licença registrada para este ambiente', 'nextool'), $name),
+         __('A sincronização automática detectou que este módulo pago não tem licença vinculada a este ambiente e o desativou. Nada foi removido. Abra a configuração do NexTool e clique em "Sincronizar" para confirmar a situação: se a ausência de licença se confirmar, o módulo será desinstalado e seus arquivos removidos; se houver licença, ele pode ser reativado.', 'nextool'),
+         'warning'
+      );
+   }
+
+   private static function expireUnsupervisedEntitlementAlert(string $moduleKey): void {
+      $f = NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
+      if (is_file($f)) {
+         require_once $f;
+      }
+      if (class_exists('PluginNextoolAlertManager')) {
+         PluginNextoolAlertManager::expireLocalFamily('entitlement_pending:' . $moduleKey . ':');
       }
    }
 

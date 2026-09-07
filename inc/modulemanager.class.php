@@ -151,6 +151,20 @@ class PluginNextoolModuleManager {
    private array $staleClassModules = [];
 
    /**
+    * (#248) Backoff de upgrade com falha DETERMINÍSTICA. Um upgrade.sql que erra por schema
+    * drift falha igual em todo request; sem isto a base retentava (e logava) a cada boot --
+    * 106 mil linhas em 20 dias no Portfolio. Estado em glpi_configs (sem migração SQL):
+    * <módulo>.sig (assinatura do erro), .count, .next (epoch da próxima tentativa), .to, .error.
+    */
+   public const UPGRADE_STATE_CONTEXT = 'plugin:nextool_upgrade_state';
+   /** Escada de retentativa (s): 1min, 5min, 15min, 1h, 6h. Continua tentando; nunca desiste. */
+   private const UPGRADE_RETRY_LADDER = [60, 300, 900, 3600, 21600];
+   /** Falhas iguais consecutivas antes de avisar o admin na aba Alertas. */
+   private const UPGRADE_ALERT_THRESHOLD = 3;
+   /** Memo por request do context de estado de upgrade (null = ainda não lido). */
+   private ?array $upgradeStateCache = null;
+
+   /**
     * Construtor privado (padrão Singleton)
     */
    private function __construct() {
@@ -1922,6 +1936,12 @@ class PluginNextoolModuleManager {
       try {
          $ok = $module->upgrade($from, $to) !== false;
          ob_end_clean();
+         if ($ok) {
+            $this->clearUpgradeFailure($moduleKey);
+         } else {
+            $this->registerUpgradeFailure($moduleKey, $from, $to,
+               $module->getLastSqlError() ?? 'upgrade() retornou false');
+         }
          return $ok;
       } catch (\Throwable $e) {
          ob_end_clean();
@@ -1929,6 +1949,7 @@ class PluginNextoolModuleManager {
             "[ModuleManager] upgrade idempotente de %s (%s -> %s) FALHOU: %s\n",
             $moduleKey, $from ?? 'null', $to ?? 'null', $e->getMessage()
          ));
+         $this->registerUpgradeFailure($moduleKey, $from, $to, $e->getMessage());
          return false;
       } finally {
          try {
@@ -1936,6 +1957,133 @@ class PluginNextoolModuleManager {
          } catch (\Throwable $e) {
             // lock expira sozinho com a conexão; nada a fazer
          }
+      }
+   }
+
+   // ------------------------------------------------------------------
+   // (#248) Backoff de upgrade com falha determinística
+   // ------------------------------------------------------------------
+
+   /** Estado do backoff de um módulo (chaves sem o prefixo "<módulo>."). */
+   private function readUpgradeState(string $moduleKey): array {
+      if ($this->upgradeStateCache === null) {
+         try {
+            $all = Config::getConfigurationValues(self::UPGRADE_STATE_CONTEXT);
+            $this->upgradeStateCache = is_array($all) ? $all : [];
+         } catch (\Throwable $e) {
+            $this->upgradeStateCache = [];
+         }
+      }
+      $prefix = $moduleKey . '.';
+      $out = [];
+      foreach ($this->upgradeStateCache as $name => $value) {
+         if (strpos((string) $name, $prefix) === 0) {
+            $out[substr((string) $name, strlen($prefix))] = $value;
+         }
+      }
+      return $out;
+   }
+
+   /**
+    * Janela de backoff aberta para o módulo? O sync do boot (CAMINHO B) respeita; ação do
+    * usuário (Atualizar/finalizar pela UI) não consulta e fura a janela.
+    */
+   public function isUpgradeBackoffActive(string $moduleKey): bool {
+      $state = $this->readUpgradeState($moduleKey);
+      return (int) ($state['next'] ?? 0) > time();
+   }
+
+   /**
+    * Registra a falha: mesma assinatura (from|to|erro) => conta como repetição e sobe a
+    * escada; erro diferente => recomeça. A partir de UPGRADE_ALERT_THRESHOLD repetições,
+    * avisa o admin na aba Alertas (dedup por módulo+versão-alvo). Nunca desiste.
+    */
+   private function registerUpgradeFailure(string $moduleKey, ?string $from, ?string $to, string $error): void {
+      $state = $this->readUpgradeState($moduleKey);
+      $signature = md5(($from ?? '') . '|' . ($to ?? '') . '|' . $error);
+      $count = (($state['sig'] ?? '') === $signature) ? (int) ($state['count'] ?? 0) + 1 : 1;
+      $delay = self::UPGRADE_RETRY_LADDER[min($count, count(self::UPGRADE_RETRY_LADDER)) - 1];
+      $next  = time() + $delay;
+      $values = [
+         $moduleKey . '.sig'   => $signature,
+         $moduleKey . '.count' => (string) $count,
+         $moduleKey . '.next'  => (string) $next,
+         $moduleKey . '.to'    => (string) ($to ?? ''),
+         $moduleKey . '.error' => mb_substr($error, 0, 255),
+      ];
+      try {
+         Config::setConfigurationValues(self::UPGRADE_STATE_CONTEXT, $values);
+         if ($this->upgradeStateCache !== null) {
+            $this->upgradeStateCache = array_merge($this->upgradeStateCache, $values);
+         }
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[ModuleManager] falha ao persistir backoff de upgrade de %s: %s\n", $moduleKey, $e->getMessage()
+         ));
+      }
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         "[ModuleManager] upgrade de %s (%s -> %s) falhou %dx com o mesmo erro; próxima tentativa automática em %s (%s)\n",
+         $moduleKey, $from ?? 'null', $to ?? 'null', $count, date('Y-m-d H:i:s', $next), mb_substr($error, 0, 200)
+      ));
+
+      if ($count < self::UPGRADE_ALERT_THRESHOLD) {
+         return;
+      }
+      $f = NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
+      if (is_file($f)) {
+         require_once $f;
+      }
+      if (!class_exists('PluginNextoolAlertManager')) {
+         return;
+      }
+      $name = $moduleKey;
+      try {
+         $module = $this->getModule($moduleKey);
+         if ($module !== null && trim((string) $module->getName()) !== '') {
+            $name = (string) $module->getName();
+         }
+      } catch (\Throwable $e) {
+         // nome é cosmético
+      }
+      // Chave: módulo + versão-alvo + assinatura curta do erro. Erro novo para a mesma
+      // versão = alerta novo (o AlertManager expira a família anterior); mesmo erro = dedup.
+      PluginNextoolAlertManager::raiseLocal(
+         'module_upgrade_failed:' . $moduleKey . ':' . (string) ($to ?? '') . ':' . substr($signature, 0, 8),
+         sprintf(__('Módulo "%s": a atualização para a versão %s não está concluindo', 'nextool'), $name, (string) ($to ?? '?')),
+         sprintf(
+            __('As rotinas de migração do módulo falharam %d vezes seguidas com o mesmo erro. O sistema continuará tentando, em intervalos maiores, e o módulo permanece na versão anterior até convergir. Se persistir, envie este erro ao suporte NexTool: %s', 'nextool'),
+            $count, mb_substr($error, 0, 255)
+         ),
+         'warning'
+      );
+   }
+
+   /** Upgrade convergiu: apaga o estado e recolhe o aviso da aba Alertas, se houve. */
+   private function clearUpgradeFailure(string $moduleKey): void {
+      $state = $this->readUpgradeState($moduleKey);
+      if ($state === []) {
+         return;
+      }
+      $names = [];
+      foreach (array_keys($state) as $suffix) {
+         $names[] = $moduleKey . '.' . $suffix;
+      }
+      try {
+         Config::deleteConfigurationValues(self::UPGRADE_STATE_CONTEXT, $names);
+         if ($this->upgradeStateCache !== null) {
+            $this->upgradeStateCache = array_diff_key($this->upgradeStateCache, array_flip($names));
+         }
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[ModuleManager] falha ao limpar backoff de upgrade de %s: %s\n", $moduleKey, $e->getMessage()
+         ));
+      }
+      $f = NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
+      if (is_file($f)) {
+         require_once $f;
+      }
+      if (class_exists('PluginNextoolAlertManager')) {
+         PluginNextoolAlertManager::expireLocalFamily('module_upgrade_failed:' . $moduleKey . ':');
       }
    }
 
@@ -2096,6 +2244,12 @@ class PluginNextoolModuleManager {
          $isUpgrade = ($dbVersion !== null && $dbVersion !== '')
             ? version_compare($diskVersion, $dbVersion, '>')
             : true; // banco sem versão registrada: tratar como sincronização inicial
+         // (#248) Falha determinística recente: respeita a janela de backoff em vez de
+         // repetir a mesma tentativa (e o mesmo log) a cada request. A divergência fica
+         // de pé; a UI (Atualizar/finalizar) não passa por aqui e fura a janela.
+         if ($isUpgrade && $this->isUpgradeBackoffActive($moduleKey)) {
+            continue;
+         }
          if ($isUpgrade && !$this->runModuleUpgradeSafely($module, $dbVersion, $diskVersion, $moduleKey)) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                "[ModuleManager] syncInstalledVersionsFromDisk: upgrade(%s: %s -> %s) FALHOU, versão NÃO sincronizada\n",
@@ -2697,7 +2851,10 @@ class PluginNextoolModuleManager {
          'classmap_sig' => $classMap['sig'],
       ];
       $ok = $this->writeManifestFile($data);
-      @unlink($this->cachePath . '/' . self::LEGACY_CACHE_FILE); // formato até 6.12.1
+      $legacy = $this->cachePath . '/' . self::LEGACY_CACHE_FILE; // formato até 6.12.1
+      if (is_file($legacy)) {
+         @unlink($legacy); // is_file antes: handlers de erro E_ALL (quick-test) pegam até o @unlink
+      }
       return $ok;
    }
 
