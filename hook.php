@@ -375,6 +375,50 @@ function plugin_nextool_giveItem($itemtype, $ID, $data, $num) {
  * @param array $menu Menu atual do GLPI
  * @return array Menu modificado
  */
+/**
+ * Caminho de menu RELATIVO A RAIZ do GLPI (sem `root_doc`).
+ *
+ * O core renderiza cada entrada de menu com `path(page)` -> `Html::getPrefixedUrl()`,
+ * que SEMPRE concatena `$CFG_GLPI['root_doc']` na frente (GLPI 10 e 11). Por isso as
+ * entradas nativas passam `getFormURL(false)`. `Plugin::getWebDir('nextool')` e
+ * `getConfigPage()` ja vem com o `root_doc`: em instalacao servida sob subcaminho
+ * (`/public`, `/glpi`) o menu saia `/public/public/plugins/nextool/...` (relato de
+ * cliente, 2026-09-07). No homolog `root_doc` e vazio e o defeito era invisivel.
+ */
+function plugin_nextool_menu_page(string $url): string {
+   global $CFG_GLPI;
+   if ($url === '' || preg_match('#^[a-z][a-z0-9+.-]*://#i', $url) === 1) {
+      return $url; // absoluta (http...): nao e nossa para normalizar
+   }
+   $rootDoc = rtrim((string)($CFG_GLPI['root_doc'] ?? ''), '/');
+   if ($rootDoc !== '' && ($url === $rootDoc || str_starts_with($url, $rootDoc . '/'))) {
+      $url = (string)substr($url, strlen($rootDoc));
+   }
+   return $url === '' ? '/' : (str_starts_with($url, '/') ? $url : '/' . $url);
+}
+
+/**
+ * Aplica plugin_nextool_menu_page() a todos os alvos de um item de menu
+ * (`default`, `default_dashboard`, `content[*].page`, `content[*].options[*].page`).
+ */
+function plugin_nextool_menu_normalize(array $item): array {
+   foreach (['default', 'default_dashboard', 'page'] as $k) {
+      if (isset($item[$k]) && is_string($item[$k])) {
+         $item[$k] = plugin_nextool_menu_page($item[$k]);
+      }
+   }
+   foreach (['content', 'options'] as $k) {
+      if (isset($item[$k]) && is_array($item[$k])) {
+         foreach ($item[$k] as $sub => $subItem) {
+            if (is_array($subItem)) {
+               $item[$k][$sub] = plugin_nextool_menu_normalize($subItem);
+            }
+         }
+      }
+   }
+   return $item;
+}
+
 function plugin_nextool_redefine_menus($menu) {
    if (empty($menu)) {
       return $menu;
@@ -394,7 +438,7 @@ function plugin_nextool_redefine_menus($menu) {
             }
             foreach ($hdModule->getHelpdeskMenuItems() as $hdKey => $hdItem) {
                if (!empty($hdItem['default']) && !isset($menu[$hdKey])) {
-                  $menu[$hdKey] = $hdItem;
+                  $menu[$hdKey] = plugin_nextool_menu_normalize($hdItem);
                }
             }
          }
@@ -429,10 +473,8 @@ function _plugin_nextool_build_menus($menu) {
       return $menu;
    }
 
-   global $CFG_GLPI;
-   $rootDoc = $CFG_GLPI['root_doc'] ?? '';
-
    // ---- Menu nativo "Nextools" (independente de módulos) ----
+   // Caminhos SEM root_doc: o core prefixa ao renderizar (plugin_nextool_menu_page).
    $nextoolsItem = [
       'title'   => __('Nextools', 'nextool'),
       'icon'    => 'ti ti-tool',
@@ -440,7 +482,7 @@ function _plugin_nextool_build_menus($menu) {
       'content' => [],
    ];
 
-   $configBase = $rootDoc . '/plugins/nextool/front/nextoolconfig.form.php?id=1';
+   $configBase = plugin_nextool_menu_page(Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1');
 
    // Subitem "Módulos": requer permissão global de módulos OU acesso a algum módulo
    if ($canViewModulesGlobal || $canViewAnyMod || $hasGlobalAdmin) {
@@ -507,7 +549,7 @@ function _plugin_nextool_build_menus($menu) {
                $key = 'module_' . $mk;
                $nextoolsItem['content'][$key] = [
                   'title' => $mod->getName(),
-                  'page'  => $mod->getConfigPage(),
+                  'page'  => plugin_nextool_menu_page((string)$mod->getConfigPage()),
                   'icon'  => $mod->getIcon(),
                ];
             }
@@ -572,6 +614,7 @@ function _plugin_nextool_build_menus($menu) {
          $menuData = $rdModule->getRedefineMenuItems();
          if (is_array($menuData) && !empty($menuData['menu_key']) && !empty($menuData['menu'])) {
             $mKey = $menuData['menu_key'];
+            $menuData['menu'] = plugin_nextool_menu_normalize((array)$menuData['menu']);
             if (empty($menu[$mKey])) {
                $menu[$mKey] = $menuData['menu'];
             } else {
