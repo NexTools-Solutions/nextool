@@ -122,6 +122,14 @@ if ($extension !== 'php') {
    exit;
 }
 
+// Módulo DESABILITADO não serve tela nenhuma (exceto a de configuração declarada em
+// getConfigPage(), que o card do catálogo linka por design). O front do módulo só
+// checa o bit de perfil (assertCanUse), nunca is_enabled -- este é o único gate.
+// Depois do include do core: no GLPI 10 este arquivo é entry point puro e o banco
+// só existe a partir daqui.
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+PluginNextoolModuleManager::sessionModuleGate($moduleKey, $filename, 'html');
+
 // Carrega o arquivo do módulo
 // O arquivo do módulo será executado no contexto atual (variáveis globais já estão disponíveis)
 // Cada arquivo do módulo é responsável por suas próprias verificações de permissão e validações

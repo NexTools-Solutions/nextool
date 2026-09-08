@@ -1134,6 +1134,11 @@ class PluginNextoolLicenseValidator {
                   ['is_available' => 0, 'is_enabled' => 0, 'date_mod' => date('Y-m-d H:i:s')],
                   ['module_key' => $mk]
                );
+               // Desliga sem passar por setEnabledState(): o menu da sessao precisa
+               // ser invalidado aqui tambem (senao o item fantasma fica ate relogar).
+               if (class_exists('PluginNextoolModuleManager')) {
+                  PluginNextoolModuleManager::invalidateSessionMenu();
+               }
             }
          }
       }

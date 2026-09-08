@@ -221,16 +221,81 @@ class PluginNextoolAlertManager {
          return;
       }
       $now = date('Y-m-d H:i:s');
+      $activeWhere = [
+         'local_key' => ['LIKE', $familyPrefix . '%'],
+         'OR'        => [
+            ['date_end' => null],
+            ['date_end' => ['>', $now]],
+         ],
+      ];
       try {
-         $DB->update(self::TABLE, ['date_end' => $now], [
-            'local_key' => ['LIKE', $familyPrefix . '%'],
-            'OR'        => [
-               ['date_end' => null],
-               ['date_end' => ['>', $now]],
-            ],
-         ]);
+         $activeKeys = [];
+         foreach ($DB->request(['SELECT' => ['local_key'], 'FROM' => self::TABLE, 'WHERE' => $activeWhere]) as $row) {
+            $activeKeys[] = (string)$row['local_key'];
+         }
+         if ($activeKeys === []) {
+            return;
+         }
+         $DB->update(self::TABLE, ['date_end' => $now], $activeWhere);
+         // O aviso já entregue ao sino não sabe que a condição sumiu: recolhe pelo
+         // mesmo canal de revogação dos alertas remotos (6.17.0, nextool-dev#239).
+         self::retractLocalNotifications($activeKeys);
       } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', 'AlertManager: falha ao expirar família ' . $familyPrefix . ' - ' . $e->getMessage());
+      }
+   }
+
+   /**
+    * Chave do alerta LOCAL ainda ativo (sem date_end ou date_end futuro) de uma
+    * família, ou null. Necessário porque raiseLocal() é no-op para chave já
+    * existente MESMO expirada: quem re-emite precisa saber se a variante ativa é
+    * a mesma (no-op) ou outra (chave nova, que expira o irmão).
+    */
+   public static function findActiveLocalKey(string $familyPrefix): ?string {
+      global $DB;
+      if ($familyPrefix === '' || !$DB->tableExists(self::TABLE)
+          || !$DB->fieldExists(self::TABLE, 'local_key', false)) {
+         return null;
+      }
+      $now = date('Y-m-d H:i:s');
+      try {
+         $iterator = $DB->request([
+            'SELECT' => ['local_key'],
+            'FROM'   => self::TABLE,
+            'WHERE'  => [
+               'local_key' => ['LIKE', $familyPrefix . '%'],
+               'OR'        => [
+                  ['date_end' => null],
+                  ['date_end' => ['>', $now]],
+               ],
+            ],
+            'ORDER'  => 'id DESC',
+            'LIMIT'  => 1,
+         ]);
+         foreach ($iterator as $row) {
+            $key = trim((string)($row['local_key'] ?? ''));
+            return $key !== '' ? $key : null;
+         }
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'AlertManager: falha ao consultar família ' . $familyPrefix . ' - ' . $e->getMessage());
+      }
+      return null;
+   }
+
+   /** Recolhe do sino os avisos das chaves locais informadas (fail-silent, como o publish). */
+   private static function retractLocalNotifications(array $localKeys): void {
+      try {
+         if (!class_exists('PluginNextoolHookDispatcher')
+             || !method_exists('PluginNextoolHookDispatcher', 'retractNotification')) {
+            return;
+         }
+         $dedupKeys = [];
+         foreach ($localKeys as $key) {
+            $dedupKeys[] = 'nextool.local_alert:' . $key;
+         }
+         PluginNextoolHookDispatcher::retractNotification($dedupKeys);
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'AlertManager: falha ao recolher avisos locais do canal - ' . $e->getMessage());
       }
    }
 

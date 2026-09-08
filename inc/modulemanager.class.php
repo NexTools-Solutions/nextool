@@ -697,7 +697,8 @@ class PluginNextoolModuleManager {
          // Limpa cache para refletir mudanças
          $this->clearCache();
          $this->refreshModules();
-         
+         self::invalidateSessionMenu();
+
          return $this->buildModuleActionResult($moduleKey, $action, true, __('Módulo desinstalado com sucesso', 'nextool'), $baseContext);
       }
 
@@ -804,6 +805,7 @@ class PluginNextoolModuleManager {
       }
       $this->resetDiscovery();
       $this->resetRowCache();
+      self::invalidateSessionMenu();
       if (class_exists('PluginNextoolMainConfig')) {
          PluginNextoolMainConfig::clearModuleConfigTabsCache();
       }
@@ -1181,12 +1183,21 @@ class PluginNextoolModuleManager {
          ];
       }
 
+      $client = null;
       try {
          require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
          $client = new PluginNextoolDistributionClient($baseUrl, $clientIdentifier, $clientSecret);
          $result = $client->downloadModule($moduleKey);
       } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', sprintf('Falha ao baixar módulo %s: %s', $moduleKey, $e->getMessage()));
+         // 426 = servidor exige base mais nova: além da mensagem (inalterada), fica um
+         // alerta local para o humano que precisa atualizar o plugin (nextool-dev#260).
+         if ((int)$e->getCode() === 426) {
+            self::notifyBaseOutdated(
+               $client !== null ? $client->getLastUpgradeRequiredVersion() : null,
+               'download:' . $moduleKey
+            );
+         }
          return [
             'success' => false,
             'message' => sprintf(__('Falha ao baixar módulo remoto: %s', 'nextool'), $e->getMessage()),
@@ -1802,6 +1813,21 @@ class PluginNextoolModuleManager {
       return $row !== null && ((int)($row['is_enabled'] ?? 0) === 1);
    }
 
+   /** Emite o alerta "atualize o NexTool" via PrereqCheck (fail-silent). */
+   private static function notifyBaseOutdated(?string $minVersion, string $origin): void {
+      try {
+         $f = NEXTOOL_PHP_DIR . '/inc/prereqcheck.class.php';
+         if (is_file($f)) {
+            require_once $f;
+         }
+         if (class_exists('PluginNextoolPrereqCheck')) {
+            PluginNextoolPrereqCheck::raiseBaseOutdated($minVersion, $origin);
+         }
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'PrereqCheck: falha ao emitir alerta de base desatualizada - ' . $e->getMessage());
+      }
+   }
+
    /**
     * Gate dos endpoints STATELESS de modulo (webhooks): responde e encerra se o
     * modulo nao esta habilitado.
@@ -1832,6 +1858,92 @@ class PluginNextoolModuleManager {
       }
       echo json_encode(['status' => 'module_disabled', 'module' => $moduleKey]);
       exit;
+   }
+
+   /**
+    * Gate dos roteadores COM SESSAO (`front/modules.php` e o ramo autenticado de
+    * `ajax/module_ajax.php`): encerra a requisicao se o modulo nao esta habilitado.
+    *
+    * Ate a 6.17.0 os roteadores validavam parametros, arquivo e login, mas nunca
+    * `is_enabled` -- e o proprio front so chama `assertCanUse()` (bit de perfil).
+    * Modulo "desligado" seguia servindo listagem, formulario e acoes a quem tinha
+    * o bit (reproduzido com o autentique em 2026-09-07).
+    *
+    * Excecao deliberada: a pagina declarada em `getConfigPage()` continua acessivel
+    * -- o card do catalogo linka "Configuracoes" com o modulo desligado por design
+    * (e a aba tem o toggle de reativar); ela ja exige o bit de admin do modulo.
+    * Assets `*.css.php`/`*.js.php` nem chegam aqui (ramo proprio do roteador).
+    *
+    * @param string $mode 'html' (redirect ao central com flash) | 'json' (403)
+    */
+   public static function sessionModuleGate(string $moduleKey, string $filename, string $mode = 'html'): void {
+      global $CFG_GLPI;
+
+      $manager = self::getInstance();
+      if ($manager->isEnabled($moduleKey)) {
+         return;
+      }
+
+      $module = $manager->getModule($moduleKey);
+      if ($module !== null && self::configPageBasename($module) === $filename) {
+         return;
+      }
+
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         "[session-gate] acesso recusado: modulo %s desabilitado ou ausente (%s)\n",
+         $moduleKey,
+         $filename
+      ));
+
+      $message = __('Este módulo está desativado.', 'nextool');
+      if ($mode === 'json') {
+         if (!headers_sent()) {
+            http_response_code(403);
+            header('Content-Type: application/json; charset=UTF-8');
+         }
+         echo json_encode([
+            'error'   => true,
+            'title'   => __('Módulo desativado', 'nextool'),
+            'message' => $message,
+         ]);
+         exit;
+      }
+
+      // Nunca Html::back(): o referer e a propria URL do modulo -> loop de redirect.
+      Session::addMessageAfterRedirect($message, false, ERROR);
+      Html::redirect(($CFG_GLPI['root_doc'] ?? '') . '/front/central.php');
+      exit;
+   }
+
+   /**
+    * Basename do `file=` da URL declarada em `getConfigPage()` (mesma extracao da
+    * aba de config, `PluginNextoolMainConfig::displayTabContentForItem`).
+    */
+   private static function configPageBasename(PluginNextoolBaseModule $module): ?string {
+      $configUrl = (string)($module->getConfigPage() ?? '');
+      if ($configUrl === '') {
+         return null;
+      }
+      $query = parse_url($configUrl, PHP_URL_QUERY);
+      if (!is_string($query) || $query === '') {
+         return null;
+      }
+      $params = [];
+      parse_str($query, $params);
+      $file = $params['file'] ?? null;
+      return is_string($file) && $file !== '' ? basename($file) : null;
+   }
+
+   /**
+    * O core cacheia o menu em `$_SESSION['glpimenu']` e so o regenera em sessao
+    * nova; ele proprio faz este unset ao ativar/desativar PLUGIN (src/Plugin.php),
+    * mas nao sabe de modulo. Sem isto, o item do modulo desligado ficava no menu
+    * ate o usuario deslogar. Chamar em todo ponto que muda `is_enabled`.
+    */
+   public static function invalidateSessionMenu(): void {
+      if (isset($_SESSION['glpimenu'])) {
+         unset($_SESSION['glpimenu']);
+      }
    }
 
    public function isInstalled(string $moduleKey): bool {
@@ -2371,6 +2483,7 @@ class PluginNextoolModuleManager {
          }
          $this->clearCache();
          $this->refreshModules();
+         self::invalidateSessionMenu();
       }
 
       $result = $this->buildModuleActionResult($moduleKey, $action, $success, $message, ['origin' => 'module_data_management']);

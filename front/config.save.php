@@ -465,6 +465,18 @@ if ($action === 'accept_policies') {
       ],
    ]);
 
+   // Pré-requisitos (nextool-dev#260): reavalia com fatos frescos -- primeiro catálogo
+   // acabou de chegar (módulos com min_version_nextools).
+   $prereqFile = NEXTOOL_PHP_DIR . '/inc/prereqcheck.class.php';
+   if (is_file($prereqFile)) {
+      require_once $prereqFile;
+      try {
+         PluginNextoolPrereqCheck::run('policies_acceptance', true);
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'PrereqCheck (policies_acceptance): ' . $e->getMessage());
+      }
+   }
+
    plugin_nextool_redirect_after_action();
    exit;
 }
@@ -793,6 +805,18 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
          'Falha ao atualizar estado de core update após sincronização: %s',
          $e->getMessage()
       ));
+   }
+
+   // Pré-requisitos (nextool-dev#260): reavalia com fatos frescos -- o core check
+   // acima acabou de gravar se há update do core pendente.
+   $prereqFile = NEXTOOL_PHP_DIR . '/inc/prereqcheck.class.php';
+   if (is_file($prereqFile)) {
+      require_once $prereqFile;
+      try {
+         PluginNextoolPrereqCheck::run('manual_sync', true);
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'PrereqCheck (manual_sync): ' . $e->getMessage());
+      }
    }
 }
 

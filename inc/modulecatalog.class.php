@@ -38,7 +38,7 @@ class PluginNextoolModuleCatalog {
     * pasta ausente (sem os arquivos no disco = download pendente, não "update").
     * Nota: all() NÃO serve para este diff -- ele colapsa version/available_version.
     *
-    * @return array<string, array{name: string, installed: string, available: string}>
+    * @return array<string, array{name: string, installed: string, available: string, min_version_nextools: string}>
     */
    public static function getPendingUpdates(): array {
       global $DB;
@@ -60,9 +60,12 @@ class PluginNextoolModuleCatalog {
             continue;
          }
          $pending[$moduleKey] = [
-            'name'      => (string)($row['name'] ?? $moduleKey),
-            'installed' => $installed,
-            'available' => $available,
+            'name'                 => (string)($row['name'] ?? $moduleKey),
+            'installed'            => $installed,
+            'available'            => $available,
+            // Base mínima exigida pela versão disponível (PrereqCheck deriva o alerta
+            // "atualize o NexTool" daqui, nextool-dev#260). Vazio = sem exigência.
+            'min_version_nextools' => trim((string)($row['min_version_nextools'] ?? '')),
          ];
       }
       return $pending;

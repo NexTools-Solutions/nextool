@@ -317,6 +317,12 @@ if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION
    session_write_close();
 }
 
+// Módulo DESABILITADO não atende AJAX autenticado (403 JSON). O ramo stateless acima
+// fica sem gate aqui -- roda antes do boot, sem banco -- e cada webhook chama
+// statelessModuleGate() depois de validar o segredo.
+require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+PluginNextoolModuleManager::sessionModuleGate($moduleKey, $filename, 'json');
+
 // Carrega o arquivo do módulo
 include($filePath);
 

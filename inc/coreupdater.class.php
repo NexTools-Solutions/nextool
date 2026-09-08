@@ -196,13 +196,8 @@ class PluginNextoolCoreUpdater {
 
       // curl (download) e phar (descompacta o .tar.gz via PharData -- built-in, SEM ext-zip,
       // que só serviria ao formato .zip legado, não mais gerado) são obrigatórias.
-      $requiredExtensions = ['curl', 'phar'];
-      $missingExtensions = [];
-      foreach ($requiredExtensions as $extension) {
-         if (!extension_loaded($extension)) {
-            $missingExtensions[] = $extension;
-         }
-      }
+      // Mesma lista do alerta de pré-requisito (PrereqCheck, nextool-dev#260).
+      $missingExtensions = self::missingRequiredExtensions();
       $extensionsOk = count($missingExtensions) === 0;
       $this->appendCheck($checks, $blocking, 'php_extensions', 'blocker', $extensionsOk,
          $extensionsOk
@@ -637,6 +632,14 @@ class PluginNextoolCoreUpdater {
             'staged_source' => null,
             'staged_at' => null,
          ]);
+         // Base nova: o alerta "atualize o NexTool" (PrereqCheck) precisa ser reavaliado
+         // no primeiro boot, não daqui a 1 h. A flag é versionada, mas o unlink é barato
+         // e não depende do nome exato.
+         if (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR)) {
+            foreach (glob(GLPI_CACHE_DIR . '/nextool_prereq_checked_v*') ?: [] as $prereqFlag) {
+               @unlink($prereqFlag);
+            }
+         }
 
          $this->logAction('apply', true, [
             'source' => $source,
@@ -2019,6 +2022,40 @@ class PluginNextoolCoreUpdater {
    }
 
    private function getWebProcessUser(): string {
+      return self::webProcessUser();
+   }
+
+   // ---- Fatos baratos reutilizados pelo PrereqCheck (nextool-dev#260) ----------
+   // Sem rede e sem proc_open: o preflight continua sendo a verdade na hora de agir.
+
+   /** Extensões obrigatórias para baixar e extrair pacotes (módulos e core). */
+   public static function missingRequiredExtensions(): array {
+      $missing = [];
+      foreach (['curl', 'phar'] as $extension) {
+         if (!extension_loaded($extension)) {
+            $missing[] = $extension;
+         }
+      }
+      return $missing;
+   }
+
+   /**
+    * Aproximação barata de "há verificador Ed25519": sodium, ou openssl >= 3.0 com
+    * proc_open disponível. Pode divergir de opensslCanVerifyEd25519() (que executa o
+    * binário); o preflight decide de verdade antes de aplicar.
+    */
+   public static function hasCheapSignatureVerifier(): bool {
+      if (extension_loaded('sodium')) {
+         return true;
+      }
+      return extension_loaded('openssl')
+         && defined('OPENSSL_VERSION_NUMBER')
+         && OPENSSL_VERSION_NUMBER >= 0x30000000
+         && function_exists('proc_open');
+   }
+
+   /** Usuário do processo PHP (para a dica de chown nas mensagens). */
+   public static function webProcessUser(): string {
       if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
          $info = posix_getpwuid(posix_geteuid());
          if (is_array($info) && !empty($info['name'])) {

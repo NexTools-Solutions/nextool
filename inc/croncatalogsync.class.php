@@ -76,6 +76,7 @@ class PluginNextoolCronCatalogSync {
       // cache/backoff/falha não devem emitir nem expirar alerta com informação velha.
       if ($source === 'remote') {
          self::notifyPendingUpdates($task);
+         self::runPrereqCheck($task);
       }
 
       // "Fez algo" = houve comunicação remota (o catálogo foi reavaliado/sincronizado).
@@ -160,6 +161,26 @@ class PluginNextoolCronCatalogSync {
          );
       } catch (Throwable $e) {
          $task->log('catalog_sync: alerta de módulos falhou: ' . $e->getMessage());
+      }
+   }
+
+   /**
+    * (nextool-dev#260) Pré-requisitos que exigem humano, com fatos frescos do sync
+    * remoto (core check e catálogo acima). Carona no ciclo de 6 h -- não é cron nova.
+    */
+   private static function runPrereqCheck(CronTask $task): void {
+      try {
+         $f = NEXTOOL_PHP_DIR . '/inc/prereqcheck.class.php';
+         if (is_file($f)) {
+            require_once $f;
+         }
+         if (!class_exists('PluginNextoolPrereqCheck')) {
+            return;
+         }
+         $r = PluginNextoolPrereqCheck::run('cron_sync', true);
+         $task->log(sprintf('catalog_sync: prereq conditions=%s', implode(',', $r['conditions'] ?? []) ?: 'none'));
+      } catch (Throwable $e) {
+         $task->log('catalog_sync: prereq check falhou: ' . $e->getMessage());
       }
    }
 }

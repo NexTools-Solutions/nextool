@@ -28,6 +28,16 @@ class PluginNextoolDistributionClient {
 
    use PluginNextoolHmacSignatureTrait;
 
+   /** Versão mínima exigida pelo servidor no último `nextool_upgrade_required` (null = não houve). */
+   private ?string $lastUpgradeRequiredVersion = null;
+
+   /** Código da RuntimeException lançada quando o servidor exige base mais nova. */
+   public const CODE_UPGRADE_REQUIRED = 426;
+
+   public function getLastUpgradeRequiredVersion(): ?string {
+      return $this->lastUpgradeRequiredVersion;
+   }
+
    public function __construct(
       private string $baseUrl,
       private string $clientIdentifier = '',
@@ -484,9 +494,12 @@ class PluginNextoolDistributionClient {
                )
                : __('É necessário atualizar o plugin Nextool para a versão mais recente para baixar ou atualizar módulos.', 'nextool');
             $message .= ' ' . __('Atualize em:', 'nextool') . ' https://nextoolsolutions.com/produtos/plugin-nextools-glpi';
-         } else {
-            $message = sprintf(__('Falha ao solicitar manifesto de distribuição: %s', 'nextool'), $message);
+            // Código 426 (Upgrade Required): o chamador distingue esta recusa das demais
+            // sem inspecionar a string e emite o alerta local (PrereqCheck, nextool-dev#260).
+            $this->lastUpgradeRequiredVersion = $minVer !== null && trim((string)$minVer) !== '' ? trim((string)$minVer) : null;
+            throw new RuntimeException($message, self::CODE_UPGRADE_REQUIRED);
          }
+         $message = sprintf(__('Falha ao solicitar manifesto de distribuição: %s', 'nextool'), $message);
          throw new RuntimeException($message);
       }
 

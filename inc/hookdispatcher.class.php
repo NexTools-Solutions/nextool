@@ -806,7 +806,7 @@ class PluginNextoolHookDispatcher {
       }
       $delivered = 0;
       foreach (array_chunk(array_values(array_unique($keys)), 10) as $chunk) {
-         $delivered = self::dispatchNotification([
+         $delivered += self::dispatchNotification([
             'source_key' => 'nextool.retract',
             'title'      => 'retract',
             'message'    => '',

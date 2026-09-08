@@ -27,7 +27,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.17.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.18.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -448,6 +448,21 @@ function plugin_init_nextool() {
             $manager->loadActiveModules();
             plugin_nextool_prof_stop('loadActiveModules');
 
+            // Menu da sessao vs conjunto de modulos ATIVOS. O core cacheia o menu em
+            // $_SESSION['glpimenu'] e so regenera em sessao nova; ao (des)ativar um
+            // modulo, ModuleManager::invalidateSessionMenu() cura a sessao de quem
+            // clicou, mas as DEMAIS sessoes ficariam com o item fantasma ate relogar.
+            // Assinatura do conjunto ativo por sessao: mudou -> descarta o menu (o
+            // core o remonta nesta mesma request, ja sem/com o modulo). Custo: um
+            // md5 de ~35 chaves; sem login e no-op.
+            if (isset($_SESSION['glpiactiveprofile']['id'])) {
+               $nxMenuSig = md5(implode(',', array_keys($manager->getActiveModules())));
+               if (($_SESSION['nextool_menu_sig'] ?? '') !== $nxMenuSig) {
+                  PluginNextoolModuleManager::invalidateSessionMenu();
+                  $_SESSION['nextool_menu_sig'] = $nxMenuSig;
+               }
+            }
+
             // Bundle de assets: colapsa os N registros de module_assets.php
             // feitos pelos onInit acima em 1 URL por tipo (css/js) - reduz
             // ~16-27 requests com bootstrap completo por page load para 2.
@@ -530,6 +545,24 @@ function plugin_init_nextool() {
                $_SESSION['nextool_session_rights_v'] = PLUGIN_NEXTOOL_VERSION;
             }
             plugin_nextool_prof_stop('rights');
+
+            // Pré-requisitos que exigem humano (nextool-dev#260): base desatualizada
+            // bloqueando módulos, extensão PHP ausente, diretório sem escrita -> alerta
+            // local (aba Alertas + sino). 1x/h real por file-flag em GLPI_CACHE_DIR
+            // (regime: 1 is_file + 1 filemtime, zero query); nunca derruba o boot.
+            plugin_nextool_prof_start('prereq');
+            $prereqFile = NEXTOOL_PHP_DIR . '/inc/prereqcheck.class.php';
+            if (file_exists($prereqFile)) {
+               require_once $prereqFile;
+               if (class_exists('PluginNextoolPrereqCheck')) {
+                  try {
+                     PluginNextoolPrereqCheck::run('boot');
+                  } catch (Throwable $e) {
+                     Toolbox::logInFile('plugin_nextool', 'PrereqCheck (boot): ' . $e->getMessage());
+                  }
+               }
+            }
+            plugin_nextool_prof_stop('prereq');
 
             // O loop que registrava as classes Config/PageConfig de todos os modulos
             // instalados (inclusive desativados) foi removido na 6.13.0 (#249): o
