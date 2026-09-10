@@ -780,7 +780,7 @@ class PluginNextoolCoreUpdater {
             $this->cleanupRemovedFiles($filesDir, $targetPath);
          } catch (Throwable $e) {
             $this->clearMaintenanceFlag();
-            $this->resetOpcache();
+            $this->invalidateFileCaches();
 
             $this->logAction('restore', false, [
                'source'          => $source,
@@ -797,7 +797,7 @@ class PluginNextoolCoreUpdater {
          }
 
          $this->clearMaintenanceFlag();
-         $this->resetOpcache();
+         $this->invalidateFileCaches();
 
          $restoredVersion = (string)($meta['version'] ?? 'desconhecida');
 
@@ -1481,7 +1481,7 @@ class PluginNextoolCoreUpdater {
          }
 
          // 6. Reset opcache BEFORE activation so any file reads get fresh content
-         $this->resetOpcache();
+         $this->invalidateFileCaches();
 
          // 7. Post-update: set version + activate directly in DB
          $this->postUpdatePluginActivation($targetVersion);
@@ -1535,7 +1535,7 @@ class PluginNextoolCoreUpdater {
       } finally {
          // Garante limpeza mesmo em falha precoce (createVersionedBackup ou setMaintenanceFlag)
          $this->clearMaintenanceFlag();
-         $this->resetOpcache();
+         $this->invalidateFileCaches();
       }
    }
 
@@ -1997,12 +1997,41 @@ class PluginNextoolCoreUpdater {
       }
    }
 
-   private function resetOpcache(): void {
+   /**
+    * Invalida os caches DERIVADOS DOS ARQUIVOS do plugin, apos sobrescreve-los no disco.
+    *
+    * Sao dois, e esquecer o segundo custou um chamado de cliente (2026-09-08):
+    * 1. OPcache -- bytecode PHP antigo;
+    * 2. cache de traducoes do GLPI (files/_cache/<versao>/translations) -- o GLPI NAO le o
+    *    .mo do disco a cada request. Sem invalidar, as strings NOVAS da versao saem no
+    *    idioma FONTE (portugues) enquanto as antigas traduzem normalmente, ate alguem rodar
+    *    `php bin/console cache:clear` no servidor -- que o cliente nao tem como fazer pela
+    *    interface. O sintoma parece defeito de i18n e nao e: e cache velho.
+    */
+   private function invalidateFileCaches(): void {
       if (function_exists('opcache_reset')) {
          @opcache_reset();
       }
       // Nota: NÃO enviar SIGUSR2 ao php-fpm aqui - mata o worker que está executando o apply.
       // opcache_reset() é suficiente para invalidar o cache da SAPI web.
+
+      // Best-effort: cache e efeito colateral do update, nunca pode derrubar o update.
+      // `Glpi\Cache\CacheManager` existe no GLPI 10 e no 11, mesmo namespace.
+      if (!class_exists('\\Glpi\\Cache\\CacheManager')) {
+         return;
+      }
+      try {
+         $manager = new \Glpi\Cache\CacheManager();
+         if (!method_exists($manager, 'getTranslationsCacheInstance')) {
+            return;
+         }
+         $cache = $manager->getTranslationsCacheInstance();
+         if ($cache !== null && method_exists($cache, 'clear')) {
+            $cache->clear();
+         }
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', '[coreupdater] falha ao invalidar cache de traducoes: ' . $e->getMessage());
+      }
    }
 
    private function getMaintenanceFlagPath(): string {

@@ -755,7 +755,10 @@ class PluginNextoolLicenseValidator {
             $syncOrigin = isset($context['origin']) ? (string)$context['origin'] : '';
             if ($syncOrigin !== 'config_status') {
                $planForSync = self::normalizePlan($responseData['plan'] ?? null) ?? '';
-               self::applyModulesCatalogSync($responseData['modules_catalog'], $planForSync);
+               $entitlementForSync = (isset($responseData['modules_entitlement']) && is_array($responseData['modules_entitlement']))
+                  ? $responseData['modules_entitlement']
+                  : [];
+               self::applyModulesCatalogSync($responseData['modules_catalog'], $planForSync, $entitlementForSync);
             }
          }
 
@@ -878,16 +881,18 @@ class PluginNextoolLicenseValidator {
 
    /**
     * Aplica sincronização do catálogo de módulos retornado pelo administrativo.
-    * Módulos DEV (billing_tier=DEV) são ocultados para ambientes sem plano DESENVOLVIMENTO:
+    * Módulos DEV (billing_tier=DEV) são ocultados para ambientes sem plano DESENVOLVIMENTO,
+    * exceto o DEV que uma licença vinculada ao ambiente NOMEIA (isDevModuleGrantedByLicense):
     * - não são inseridos ou são marcados como indisponíveis;
     * - módulos DEV já existentes localmente e ausentes no catálogo (ex.: plano mudou)
     *   são desabilitados (is_available=0, is_enabled=0).
     *
     * @param array $catalog Catálogo retornado pelo ContainerAPI
     * @param string $plan Plano do ambiente (FREE, LICENCIADO, DESENVOLVIMENTO, ENTERPRISE)
+    * @param array $entitlement modules_entitlement da MESMA resposta (prova do DEV nomeado)
     * @return void
     */
-   protected static function applyModulesCatalogSync(array $catalog, string $plan = '') {
+   protected static function applyModulesCatalogSync(array $catalog, string $plan = '', array $entitlement = []) {
       global $DB;
 
       $table = 'glpi_plugin_nextool_main_modules';
@@ -1049,8 +1054,11 @@ class PluginNextoolLicenseValidator {
          }
 
          $isAvailable = $isEnabled ? 1 : 0;
-         // Módulos DEV: exibir apenas para ambientes com plano DESENVOLVIMENTO (defesa em profundidade)
-         if ($billingTier === 'DEV' && !$envHasDevLicense) {
+         // Módulos DEV: exibir para o plano DESENVOLVIMENTO ou, fora dele, quando uma licença
+         // vinculada NOMEIA o módulo (defesa em profundidade: o servidor já filtra o catálogo).
+         if ($billingTier === 'DEV' && !$envHasDevLicense
+            && !self::isDevModuleGrantedByLicense($moduleKey, $entitlement)
+         ) {
             $isAvailable = 0;
          }
 
@@ -1775,6 +1783,24 @@ class PluginNextoolLicenseValidator {
       }
       $decoded = json_decode($raw, true);
       return is_array($decoded) ? $decoded : [];
+   }
+
+   /**
+    * Módulo DEV concedido por licença a ambiente FORA do plano Desenvolvimento.
+    *
+    * O servidor só inclui um módulo DEV no modules_entitlement quando alguma licença vinculada
+    * ao ambiente NOMEIA a chave (o wildcard '*' de cliente não conta). Essa entrada é a prova:
+    * o módulo passa a seguir as regras de módulo licenciado (download e atualização com licença
+    * ativa, uso livre se já baixado e ever_licensed) e só o selo continua DEV. Sem a entrada
+    * (servidor antigo, licença desvinculada) vale a regra de sempre: DEV só no plano
+    * Desenvolvimento. O chamador decide o plano; aqui só se lê a prova.
+    *
+    * @param string     $moduleKey
+    * @param array|null $entitlement Mapa da resposta corrente; null = o persistido
+    */
+   public static function isDevModuleGrantedByLicense(string $moduleKey, ?array $entitlement = null): bool {
+      $entitlement ??= self::getModulesEntitlement();
+      return !empty($entitlement[$moduleKey]['ever_licensed']);
    }
 
    /**

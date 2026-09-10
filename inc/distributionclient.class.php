@@ -463,6 +463,7 @@ class PluginNextoolDistributionClient {
       $this->deleteDir($destination);
       $this->recursiveCopy($candidate, $destination);
       $this->invalidateOpcache($destination, $moduleKey);
+      $this->invalidateTranslationsCache();
       $this->deleteDir($tmpExtract);
       @unlink($filePath);
    }
@@ -737,6 +738,37 @@ class PluginNextoolDistributionClient {
 
       if (is_file($classFile)) {
          @opcache_invalidate($classFile, true);
+      }
+   }
+
+   /**
+    * Invalida o cache de traducoes do GLPI apos gravar os arquivos do modulo.
+    *
+    * Irmao do invalidateOpcache(): o pacote acabou de trazer .mo novos, e o GLPI NAO le
+    * o .mo do disco a cada request -- serve as traducoes de um cache proprio
+    * (files/_cache/<versao>/translations). Sem isto, as strings NOVAS da versao saem no
+    * idioma FONTE (portugues) ate alguem rodar `php bin/console cache:clear` no servidor,
+    * enquanto as antigas traduzem normalmente. O sintoma parece defeito de i18n do modulo
+    * e nao e: e cache velho. Relatado por cliente em es_ES apos o aiassist 2.1.0 (2026-09-08).
+    *
+    * Best-effort de proposito: cache e efeito colateral da instalacao, nunca pode derruba-la.
+    * `Glpi\Cache\CacheManager` existe no GLPI 10 e no 11 com o mesmo namespace.
+    */
+   private function invalidateTranslationsCache(): void {
+      if (!class_exists('\\Glpi\\Cache\\CacheManager')) {
+         return;
+      }
+      try {
+         $manager = new \Glpi\Cache\CacheManager();
+         if (!method_exists($manager, 'getTranslationsCacheInstance')) {
+            return;
+         }
+         $cache = $manager->getTranslationsCacheInstance();
+         if ($cache !== null && method_exists($cache, 'clear')) {
+            $cache->clear();
+         }
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', '[distribution] falha ao invalidar cache de traducoes: ' . $e->getMessage());
       }
    }
 

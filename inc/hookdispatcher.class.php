@@ -486,6 +486,103 @@ class PluginNextoolHookDispatcher {
       return $actions;
    }
 
+
+   // ========================================
+   // TIMELINE ANSWER ACTIONS (ações na barra da timeline do chamado)
+   // ========================================
+   //
+   // O core coleta as ações em CommonITILObject::getTimelineItemtypes() iterando
+   // $PLUGIN_HOOKS['timeline_answer_actions'] e faz array_merge do retorno de cada
+   // PLUGIN. Como o slot é único por plugin ('nextool'), dois módulos que queiram
+   // um botão na timeline precisam de um ponto central -- é este registry.
+   //
+   // Difere dos demais slots: o payload é ['item' => CommonITILObject] e o retorno
+   // é a LISTA DE AÇÕES. Por isso NÃO usa installHook(), cujo encadeamento de hook
+   // de valor passaria o RETORNO do dispatcher como payload do legado; o instalador
+   // abaixo chama os dois com o payload ORIGINAL e MESCLA os retornos.
+
+   /** @var callable[] timelineActions[] = provider */
+   private static $timelineActions = [];
+
+   /**
+    * Registra um provider de ações da timeline (chamado no onInit() do módulo).
+    *
+    * @param callable $provider fn(array $options): array - recebe ['item' => CommonITILObject]
+    *                           e devolve [actionKey => definição] (ver Hooks::TIMELINE_ANSWER_ACTIONS)
+    */
+   public static function registerTimelineActions(callable $provider): void {
+      self::$timelineActions[] = $provider;
+   }
+
+   /**
+    * Despacha a coleta e mescla o retorno de todos os providers registrados.
+    *
+    * @param array $options Payload do core: ['item' => CommonITILObject]
+    * @return array [actionKey => definição] - vazio se não houver provider
+    */
+   public static function dispatchTimelineActions(array $options): array {
+      $actions = [];
+      foreach (self::$timelineActions as $provider) {
+         try {
+            $ret = call_user_func($provider, $options);
+            if (is_array($ret)) {
+               $actions = array_merge($actions, $ret);
+            }
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] timeline_answer_actions: %s',
+               $e->getMessage()
+            ));
+         }
+      }
+      return $actions;
+   }
+
+   /**
+    * Ocupa $PLUGIN_HOOKS['timeline_answer_actions']['nextool'] de forma MERGE-AWARE.
+    * Chamado pelo setup.php DEPOIS do loadActiveModules.
+    *
+    * Módulo em versão antiga que atribuiu o callback direto no slot durante o
+    * onInit() continua sendo chamado -- com o payload ORIGINAL -- e o retorno dele
+    * é mesclado ao do dispatcher. Sem isso, o botão do módulo antigo sumiria da
+    * timeline na janela base-nova + módulo-velho do parque instalado.
+    *
+    * @param array $PLUGIN_HOOKS por referência (global do GLPI)
+    */
+   public static function installTimelineActionsHook(array &$PLUGIN_HOOKS): void {
+      $dispatcher = [self::class, 'dispatchTimelineActions'];
+      $existing   = $PLUGIN_HOOKS['timeline_answer_actions']['nextool'] ?? null;
+
+      $isOwn = is_array($existing)
+         && (($existing[0] ?? null) === self::class || ($existing[0] ?? null) === 'PluginNextoolHookDispatcher');
+
+      if ($existing === null || $existing === $dispatcher || $isOwn) {
+         $PLUGIN_HOOKS['timeline_answer_actions']['nextool'] = $dispatcher;
+         return;
+      }
+
+      // Slot ocupado por callback de módulo antigo: chama os dois com o MESMO
+      // payload e mescla (o core espera uma lista de ações, não um encadeamento).
+      $PLUGIN_HOOKS['timeline_answer_actions']['nextool'] = static function ($options) use ($dispatcher, $existing): array {
+         $options = is_array($options) ? $options : [];
+         $actions = (array) call_user_func($dispatcher, $options);
+         if (is_callable($existing)) {
+            try {
+               $legacy = call_user_func($existing, $options);
+               if (is_array($legacy)) {
+                  $actions = array_merge($actions, $legacy);
+               }
+            } catch (Throwable $e) {
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  '[HookDispatcher] timeline_answer_actions (legado): %s',
+                  $e->getMessage()
+               ));
+            }
+         }
+         return $actions;
+      };
+   }
+
    // ========================================
    // POST ITEM FORM (modificar formulários nativos - ex.: dropdown de técnico)
    // ========================================

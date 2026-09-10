@@ -2719,8 +2719,12 @@ class PluginNextoolModuleManager {
          ];
       }
 
-      // Módulos DEV: apenas plano DESENVOLVIMENTO pode usar (Enterprise e demais não têm acesso)
-      if ($isDevModule && $plan !== 'DESENVOLVIMENTO') {
+      // Módulos DEV: o plano DESENVOLVIMENTO usa todos. Fora dele, só o DEV que uma licença
+      // vinculada NOMEIA -- e esse segue as regras de módulo licenciado abaixo (modo FREE,
+      // validade da licença, allowed_modules), como qualquer módulo PAID.
+      if ($isDevModule && $plan !== 'DESENVOLVIMENTO'
+         && !PluginNextoolLicenseValidator::isDevModuleGrantedByLicense($moduleKey)
+      ) {
          return [
             'success' => false,
             'message' => __('Módulos de desenvolvimento (DEV) estão disponíveis apenas para o plano Desenvolvimento.', 'nextool'),

@@ -222,6 +222,17 @@ foreach ($allModuleKeys as $moduleKey) {
    $isPaid = ($billingTier !== 'FREE');
    $isDevModule = ($billingTier === 'DEV');
 
+   // Entitlement do módulo (vem do modules_entitlement do ContainerAPI via cache)
+   $moduleEntitlement = $modulesEntitlement[$moduleKey] ?? null;
+   $everLicensed = $moduleEntitlement !== null && !empty($moduleEntitlement['ever_licensed']);
+
+   // DEV nomeado numa licença de ambiente fora do plano Desenvolvimento: segue as regras de
+   // módulo licenciado (ramo PAID abaixo). O selo e o filtro continuam DEV. Sem nomeação,
+   // vale a regra de sempre (DEV só no plano Desenvolvimento).
+   $isDevByLicense = $isDevModule && $licenseTier !== 'DESENVOLVIMENTO'
+      && PluginNextoolLicenseValidator::isDevModuleGrantedByLicense($moduleKey, $modulesEntitlement);
+   $isDevByPlan = $isDevModule && !$isDevByLicense;
+
    // Para detectar update, precisamos buscar version instalada do banco
    $updateAvailable = false;
    if ($isInstalled && $DB->tableExists('glpi_plugin_nextool_main_modules')) {
@@ -252,8 +263,8 @@ foreach ($allModuleKeys as $moduleKey) {
    }
    if (!$hasValidatedPlan) {
       $isAllowedByPlan = false;
-   } elseif ($isDevModule) {
-      // Módulos DEV: apenas plano DESENVOLVIMENTO
+   } elseif ($isDevByPlan) {
+      // Módulos DEV: plano DESENVOLVIMENTO (o DEV nomeado em licença cai nas regras abaixo)
       $isAllowedByPlan = ($licenseTier === 'DESENVOLVIMENTO');
    } elseif ($licenseTier === 'ENTERPRISE') {
       // Enterprise: todos exceto DEV (wildcard já cobre PAID/FREE)
@@ -268,13 +279,9 @@ foreach ($allModuleKeys as $moduleKey) {
 
    $isSuspended = ($licenseStatusCode === 'SUSPENDED');
 
-   // Entitlement do módulo (vem do modules_entitlement do ContainerAPI via cache)
-   $moduleEntitlement = $modulesEntitlement[$moduleKey] ?? null;
-   $everLicensed = $moduleEntitlement !== null && !empty($moduleEntitlement['ever_licensed']);
-
    // can_download_module: controla download e update (requer licença ativa)
    // can_use_module: controla instalar/ativar/desativar (permissivo se ever_licensed + baixado)
-   if ($isDevModule) {
+   if ($isDevByPlan) {
       $canDownloadModule = ($licenseTier === 'DESENVOLVIMENTO') && $isLicenseActive && !$isFreeTier && $catalogIsEnabled;
       $canUseModule = $canDownloadModule;
    } elseif ($isPaid) {

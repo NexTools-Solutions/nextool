@@ -98,7 +98,8 @@ declare(strict_types=1);
                      ['key' => 'free',     'label' => __('Gratuito', 'nextool'),     'icon' => 'ti ti-free-rights',    'btn' => 'btn-outline-teal',      'badge' => 'bg-teal text-white',      'count' => $fc['free']],
                      ['key' => 'licensed', 'label' => __('Licenciado', 'nextool'),   'icon' => 'ti ti-certificate',    'btn' => 'btn-outline-licensing',  'badge' => 'bg-licensing text-white', 'count' => $fc['licensed']],
                   ];
-                  if ($isDevEnvironment) {
+                  // Fora do plano Desenvolvimento o chip aparece quando há DEV nomeado em licença.
+                  if ($isDevEnvironment || $fc['dev'] > 0) {
                      $tierChips[] = ['key' => 'dev', 'label' => __('Em desenvolvimento', 'nextool'), 'icon' => 'ti ti-code', 'btn' => 'btn-outline-dev', 'badge' => 'bg-dev text-white', 'count' => $fc['dev']];
                   }
                   usort($tierChips, function($a, $b) { return $b['count'] - $a['count']; });
