@@ -46,8 +46,10 @@ class PluginNextoolLicenseValidator {
     * F2 -- capabilities anunciadas ao ContainerAPI (header X-Nextool-Caps). `entitlement-v1` =
     * este plugin verifica o token de entitlement (Ed25519, offline) e trata metadata vazia na
     * negação sem quebrar. Gate de compatibilidade por capability (nunca por versão numérica).
+    * `managed-services-v2` = conhece o serviço `whatsapp_cerebro` (WhatsApp gerenciado pelo servidor
+    * de atendimento, desenho v1 do whatsappbot) e guarda o `provider` de cada serviço.
     */
-   public const NEXTOOL_CAPABILITIES = 'entitlement-v1,managed-services-v1';
+   public const NEXTOOL_CAPABILITIES = 'entitlement-v1,managed-services-v1,managed-services-v2';
 
    /**
     * Namespaces de configuração persistidos via Config::setConfigurationValues por este validator.
@@ -113,7 +115,9 @@ class PluginNextoolLicenseValidator {
       // Mapa bloco-do-servidor -> chave local do serviço. `nexsuite_license` (#250): licença
       // NexBot gerenciada pelo portal -- api_url = backend, instance_name = license key,
       // instance_token = license secret (cifrado pelo SecretVault como o token da Evolution).
-      $map = ['whatsapp_instance' => 'whatsapp', 'nexsuite_license' => 'nexsuite'];
+      // `whatsapp_cerebro` (managed-services-v2): servidor de atendimento do whatsappbot --
+      // api_url = hub, instance_name = ambiente_id, instance_token = api_secret.
+      $map = ['whatsapp_instance' => 'whatsapp', 'nexsuite_license' => 'nexsuite', 'whatsapp_cerebro' => 'whatsapp_cerebro'];
 
       foreach ($map as $serverKey => $localKey) {
          if (!isset($services[$serverKey]) || !is_array($services[$serverKey])) {
@@ -148,6 +152,10 @@ class PluginNextoolLicenseValidator {
             'expires_at'     => isset($svc['expires_at']) ? (string) $svc['expires_at'] : '',
             'grace_until'    => isset($svc['grace_until']) ? (string) $svc['grace_until'] : '',
             'renewal_url'    => isset($svc['renewal_url']) ? (string) $svc['renewal_url'] : '',
+            // managed-services-v2: quem está atrás do serviço (evolution | nexsuite | uzapi | waba | pending).
+            // Filtrado: o valor vai para tela e decisão de transporte nos módulos.
+            'provider'       => (isset($svc['provider']) && preg_match('/^[a-z_]{1,32}$/', (string) $svc['provider']))
+                                   ? (string) $svc['provider'] : '',
             'updated_at'     => date('c'),
          ];
 

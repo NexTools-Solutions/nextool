@@ -37,7 +37,7 @@ class PluginNextoolConfig extends CommonDBTM {
 
    /**
     * Context das credenciais de SERVIÇOS GERENCIADOS entregues pelo servidor no /validate
-    * (managed-services-v1). 1 chave por serviço (ex.: 'whatsapp'), valor JSON com o token
+    * (managed-services-v1/v2). 1 chave por serviço ('whatsapp', 'nexsuite', 'whatsapp_cerebro'), valor JSON com o token
     * CIFRADO (SecretVault). Server-driven: o plugin nunca edita -- só consome via
     * getManagedService(). Limpo no uninstall (LGPD); re-entregue no próximo validate.
     */
@@ -245,9 +245,12 @@ class PluginNextoolConfig extends CommonDBTM {
     * servidor no Sincronizar. Decifra o token INTERNAMENTE (SecretVault) -- o chamador recebe
     * o valor pronto para uso e NUNCA deve logá-lo/ecoá-lo no DOM.
     *
+    * `provider` (managed-services-v2): quem está atrás do serviço. Servidor que não informa (v1)
+    * cai no padrão do serviço: whatsapp = evolution, nexsuite = nexsuite, whatsapp_cerebro = uzapi.
+    *
     * @return array{status:string, api_url:string, instance_name:string,
     *               instance_token_plain:string, expires_at:string, grace_until:string,
-    *               renewal_url:string}|null null = sem instância entregue/dados inválidos
+    *               renewal_url:string, provider:string}|null null = sem instância entregue/dados inválidos
     */
    public static function getManagedService(string $service): ?array {
       $stored = Config::getConfigurationValues(self::MANAGED_SERVICES_CONTEXT);
@@ -286,6 +289,9 @@ class PluginNextoolConfig extends CommonDBTM {
          'expires_at'           => isset($data['expires_at']) ? (string) $data['expires_at'] : '',
          'grace_until'          => isset($data['grace_until']) ? (string) $data['grace_until'] : '',
          'renewal_url'          => isset($data['renewal_url']) ? (string) $data['renewal_url'] : '',
+         'provider'             => (isset($data['provider']) && (string) $data['provider'] !== '')
+                                      ? (string) $data['provider']
+                                      : (['whatsapp' => 'evolution', 'nexsuite' => 'nexsuite', 'whatsapp_cerebro' => 'uzapi'][$service] ?? ''),
       ];
    }
 
