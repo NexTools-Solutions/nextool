@@ -20,6 +20,7 @@ if (!defined('GLPI_ROOT')) {
 }
 
 require_once __DIR__ . '/inc/modulespath.inc.php';
+require_once __DIR__ . '/inc/localeresolver.class.php';
 
 // Compat de versao: shim da interface de Search do GLPI 11 (no-op no GLPI 11,
 // declara stub no GLPI 10). Carregado ANTES de qualquer classe do plugin que
@@ -27,7 +28,7 @@ require_once __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.20.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.21.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -325,7 +326,21 @@ function plugin_init_nextool() {
       define('NEXTOOL_BOOT_FAST_PATH_ACTIVE', true);
    }
    plugin_nextool_prof_start('lang');
-   Plugin::loadLang('nextool');
+   $nxRequestedLocale = (string) ($_SESSION['glpilanguage'] ?? $CFG_GLPI['language'] ?? 'en_GB');
+   $nxDefaultLocale = (string) ($CFG_GLPI['language'] ?? 'en_GB');
+   $nxResolvedLocale = PluginNextoolLocaleResolver::resolveMoFile(
+      NEXTOOL_PHP_DIR . '/locales',
+      $nxRequestedLocale,
+      $nxDefaultLocale,
+      (array) ($CFG_GLPI['languages'] ?? [])
+   );
+   if ($nxResolvedLocale !== null) {
+      // O 3o argumento registra o catálogo escolhido sob o locale real da sessão.
+      // Assim es_CO usa es_ES.mo sem alterar o idioma corrente do GLPI.
+      Plugin::loadLang('nextool', $nxResolvedLocale['locale'], $nxRequestedLocale);
+   } else {
+      Plugin::loadLang('nextool');
+   }
    plugin_nextool_prof_stop('lang');
 
    $permissionfile = NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';

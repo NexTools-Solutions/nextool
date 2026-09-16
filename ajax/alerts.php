@@ -30,4 +30,4 @@ if ($action === 'mark_all_read') {
 }
 
 http_response_code(400);
-echo json_encode(['error' => 'Invalid action']);
+echo json_encode(['error' => __('Ação inválida', 'nextool')]);

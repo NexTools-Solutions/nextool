@@ -21,6 +21,8 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
+require_once __DIR__ . '/localeresolver.class.php';
+
 abstract class PluginNextoolBaseModule {
 
    /**
@@ -312,24 +314,15 @@ abstract class PluginNextoolBaseModule {
 
       $domain = 'nextool_' . $this->getModuleKey();
       $lang   = $_SESSION['glpilanguage'] ?? $CFG_GLPI['language'] ?? 'en_GB';
+      $resolved = PluginNextoolLocaleResolver::resolveMoFile(
+         $localesDir,
+         (string) $lang,
+         (string) ($CFG_GLPI['language'] ?? 'en_GB'),
+         (array) ($CFG_GLPI['languages'] ?? [])
+      );
 
-      // Resolver nome do arquivo .mo (mesmo padrão do Plugin::loadLang)
-      $mofile = null;
-      if (isset($CFG_GLPI['languages'][$lang])) {
-         $candidate = $localesDir . '/' . $CFG_GLPI['languages'][$lang][1];
-         if (file_exists($candidate)) {
-            $mofile = $candidate;
-         }
-      }
-      if ($mofile === null && file_exists($localesDir . '/' . $lang . '.mo')) {
-         $mofile = $localesDir . '/' . $lang . '.mo';
-      }
-      if ($mofile === null && file_exists($localesDir . '/en_GB.mo')) {
-         $mofile = $localesDir . '/en_GB.mo';
-      }
-
-      if ($mofile !== null) {
-         $TRANSLATE->addTranslationFile('gettext', $mofile, $domain, $lang);
+      if ($resolved !== null) {
+         $TRANSLATE->addTranslationFile('gettext', $resolved['path'], $domain, $lang);
       }
    }
 
