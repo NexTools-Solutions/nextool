@@ -28,7 +28,7 @@ require_once __DIR__ . '/inc/localeresolver.class.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.21.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.22.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -688,7 +688,9 @@ function plugin_init_nextool() {
                      // Acumula em array por seção: vários módulos podem registrar na mesma
                      // seção (ex.: 'management' - digitalsignature + autentique). O core
                      // (Html.php) aceita array de classes por seção do menu_toadd.
-                     if (empty($reg['uses_redefine_menus'])) {
+                     // A secao 'nextools' e remontada pelo redefine_menus (hook.php), que usa o
+                     // getMenuContent() da classe direto; via menu_toadd o item seria descartado.
+                     if (empty($reg['uses_redefine_menus']) && $reg['key'] !== 'nextools') {
                         if (!isset($PLUGIN_HOOKS['menu_toadd']['nextool'])) {
                            $PLUGIN_HOOKS['menu_toadd']['nextool'] = [];
                         }

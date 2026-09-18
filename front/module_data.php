@@ -38,11 +38,13 @@ $tables = $manager->getModuleDataTables($moduleKey);
 
 global $CFG_GLPI;
 
+// Sob o item do próprio módulo no menu NexTool ("Home > NexTool > <Módulo>"); sem o item
+// (módulo desativado ou sem página standalone) o core só omite o 3º nível.
 Html::header(
    sprintf(__('Dados do módulo %s', 'nextool'), $catalog['name']),
    $_SERVER['PHP_SELF'],
-   'config',
-   'plugins'
+   'nextools',
+   'module_' . $moduleKey
 );
 
 echo "<div class='card m-3'>";

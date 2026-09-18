@@ -399,12 +399,20 @@ function plugin_nextool_menu_page(string $url): string {
 
 /**
  * Aplica plugin_nextool_menu_page() a todos os alvos de um item de menu
- * (`default`, `default_dashboard`, `content[*].page`, `content[*].options[*].page`).
+ * (`default`, `default_dashboard`, `page`, `links[*]`, `content[*].page`, `content[*].options[*].page`).
  */
 function plugin_nextool_menu_normalize(array $item): array {
    foreach (['default', 'default_dashboard', 'page'] as $k) {
       if (isset($item[$k]) && is_string($item[$k])) {
          $item[$k] = plugin_nextool_menu_page($item[$k]);
+      }
+   }
+   // Botoes do breadcrumb (context_links): o core tambem renderiza com path().
+   if (isset($item['links']) && is_array($item['links'])) {
+      foreach ($item['links'] as $type => $link) {
+         if (is_string($link)) {
+            $item['links'][$type] = plugin_nextool_menu_page($link);
+         }
       }
    }
    foreach (['content', 'options'] as $k) {
@@ -417,6 +425,23 @@ function plugin_nextool_menu_normalize(array $item): array {
       }
    }
    return $item;
+}
+
+/**
+ * Classe de menu que o modulo registrou para a secao 'nextools' do menu NexTool, ou null.
+ * Contrato: getMenuRegistration() = ['key' => 'nextools', 'class' => X]; X::getMenuContent()
+ * devolve o item (array) ou false.
+ */
+function plugin_nextool_module_menu_class($module): ?string {
+   if (!is_object($module) || !method_exists($module, 'getMenuRegistration')) {
+      return null;
+   }
+   $reg = $module->getMenuRegistration();
+   if (!is_array($reg) || ($reg['key'] ?? '') !== 'nextools' || empty($reg['class'])) {
+      return null;
+   }
+   $class = (string) $reg['class'];
+   return class_exists($class) && method_exists($class, 'getMenuContent') ? $class : null;
 }
 
 function plugin_nextool_redefine_menus($menu) {
@@ -476,7 +501,7 @@ function _plugin_nextool_build_menus($menu) {
    // ---- Menu nativo "Nextools" (independente de módulos) ----
    // Caminhos SEM root_doc: o core prefixa ao renderizar (plugin_nextool_menu_page).
    $nextoolsItem = [
-      'title'   => __('Nextools', 'nextool'),
+      'title'   => __('NexTool', 'nextool'),
       'icon'    => 'ti ti-tool',
       'types'   => [],
       'content' => [],
@@ -491,6 +516,8 @@ function _plugin_nextool_build_menus($menu) {
          'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$1',
          'icon'  => 'ti ti-puzzle',
       ];
+      // Link do "NexTool" no breadcrumb (sem default o core usava /front/central.php).
+      $nextoolsItem['default'] = $nextoolsItem['content']['modulos']['page'];
    }
 
    // Subitens admin removidos do menu principal - acessíveis apenas via abas internas
@@ -540,6 +567,18 @@ function _plugin_nextool_build_menus($menu) {
             }
             $mod = $modManager->getModule($mk);
             if ($mod === null) {
+               continue;
+            }
+            // Modulo com classe de menu propria na secao 'nextools' (getMenuRegistration
+            // key='nextools'): o item vem do getMenuContent() dela -- titulo, pagina, icone e
+            // `links` (botoes do breadcrumb). A classe decide o gate e devolve false para
+            // esconder. Nao passa pelo menu_toadd: esta secao e remontada aqui, depois dele.
+            $menuClass = plugin_nextool_module_menu_class($mod);
+            if ($menuClass !== null) {
+               $data = $menuClass::getMenuContent();
+               if (is_array($data) && !empty($data['page'])) {
+                  $nextoolsItem['content']['module_' . $mk] = plugin_nextool_menu_normalize($data);
+               }
                continue;
             }
             if (method_exists($mod, 'usesStandaloneConfig') && $mod->usesStandaloneConfig() && $mod->hasConfig()) {

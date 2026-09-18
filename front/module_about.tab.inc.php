@@ -34,7 +34,10 @@ if (!$module) {
    return;
 }
 
-$billingTier = method_exists($module, 'getBillingTier') ? strtoupper($module->getBillingTier()) : '-';
+// Tier pelo ModuleManager: le o billing_tier do catalogo sincronizado (fonte da verdade, a
+// mesma que libera ou cobra o modulo) e so cai no getBillingTier() do codigo sem catalogo.
+// Ler direto do codigo exibia "DEV" ou "FREE" em modulos PAID quando o codigo divergia.
+$billingTier = strtoupper($manager->getBillingTier($moduleKey)) ?: '-';
 $tierBadge = $billingTier === 'FREE'
    ? '<span class="badge bg-success text-white">FREE</span>'
    : '<span class="badge bg-warning text-dark">' . Html::entities_deep($billingTier) . '</span>';

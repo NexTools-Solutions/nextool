@@ -373,6 +373,12 @@ abstract class PluginNextoolBaseModule {
     * retornar ['key' => string, 'class' => string]. A classe deve implementar
     * getMenuName() e getMenuContent().
     *
+    * Com `key => 'nextools'` a classe define o item do PRÓPRIO módulo no menu NexTool
+    * (em vez do item genérico da página standalone): o getMenuContent() devolve
+    * `title`, `page`, `icon` e opcionalmente `links` (botões do breadcrumb), ou false
+    * para esconder. As páginas do módulo passam `Html::header($t, $url, 'nextools',
+    * 'module_<chave>')` para o breadcrumb "Home > NexTool > <Módulo>" e os botões.
+    *
     * @return array{key: string, class: string}|null null se o módulo não possui menu
     */
    public function getMenuRegistration(): ?array {

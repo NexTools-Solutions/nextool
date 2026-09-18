@@ -40,11 +40,14 @@ if (!$item->getFromDB($id)) {
    $item->getFromDB($id);
 }
 
-// 'nextools' para destacar o menu Nextools em vez de Configurar > Plug-ins
+// 'nextools' destaca o menu NexTool em vez de Configurar > Plug-ins; o item 'modulos'
+// (hook.php, _plugin_nextool_build_menus) fecha o breadcrumb "Home > NexTool > Módulos".
+// O breadcrumb é desenhado no carregamento e as abas trocam por AJAX: vale para todas.
 Html::header(
    PluginNextoolMainConfig::getTypeName(),
    $_SERVER['PHP_SELF'],
-   'nextools'
+   'nextools',
+   'modulos'
 );
 
 // Respeita forcetab da URL para que links do menu abram a aba correta (igual Config > Geral).
@@ -104,6 +107,9 @@ $options = [
    'id'       => $id,
    'target'   => Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php',
    'forcetab' => $forcetab,
+   // Sem o cabeçalho de navegação nativo ("NexTool Solutions - N/A - ID 1" do registro
+   // técnico de config); opção do core no GLPI 10 e no 11.
+   'show_nav_header' => false,
 ];
 
 $item->display($options);
