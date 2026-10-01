@@ -163,6 +163,11 @@ if (!function_exists('plugin_nextool_boot_manifest_path')) {
     * que não seguem a pluralização padrão -> deriva "Columnresize_Log", inexistente)
     * e retorna null; o Search então estoura getItemForItemtype(null) (HTTP 500) ao
     * renderizar colunas dessas tabelas com dados. Popular o cache evita isso.
+    *
+    * Só tabelas do próprio NexTool (glpi_plugin_nextool_*). Uma classe de módulo que herda
+    * de um itemtype do core devolve a tabela DELE -- ex.: uma subclasse de Rule devolve
+    * glpi_rules -- e o pin a tornaria dona dessa tabela no GLPI inteiro pelo resto da
+    * requisição (getItemTypeForTable('glpi_rules') passaria a devolver a classe do módulo).
     */
    function plugin_nextool_pin_itemtype_table(string $class): void {
       if (!class_exists($class, false) || !is_subclass_of($class, 'CommonDBTM')) {
@@ -170,9 +175,19 @@ if (!function_exists('plugin_nextool_boot_manifest_path')) {
       }
       global $CFG_GLPI;
       $tbl = $class::getTable();
-      if (is_string($tbl) && $tbl !== '' && !isset($CFG_GLPI['glpiitemtypetables'][$tbl])) {
+      if (plugin_nextool_is_own_table($tbl) && !isset($CFG_GLPI['glpiitemtypetables'][$tbl])) {
          $CFG_GLPI['glpiitemtypetables'][$tbl] = $class;
       }
+   }
+}
+
+if (!function_exists('plugin_nextool_is_own_table')) {
+   /**
+    * A tabela pertence ao NexTool (base ou módulo)? Guarda do pin tabela->itemtype: tabelas
+    * do core (glpi_rules, glpi_profiles...) nunca podem ser remapeadas para classe NexTool.
+    */
+   function plugin_nextool_is_own_table($table): bool {
+      return is_string($table) && strncmp($table, 'glpi_plugin_nextool_', 20) === 0;
    }
 }
 

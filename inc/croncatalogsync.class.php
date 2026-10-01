@@ -79,6 +79,34 @@ class PluginNextoolCronCatalogSync {
          self::runPrereqCheck($task);
       }
 
+      // Cloud link (§2.12 e contrato 1.1, §2.13.2): a validação acima é por onde a credencial chega,
+      // então é aqui que a base REAFIRMA ao cérebro onde está o executor, em todo ciclo, mesmo sem
+      // mudança, e lê de volta o estado do destino. Falha não afeta o catálogo e tenta de novo no
+      // próximo ciclo.
+      $clientFile = NEXTOOL_PHP_DIR . '/inc/cloudclient.class.php';
+      if (is_file($clientFile)) {
+         try {
+            require_once $clientFile;
+            if ($source === 'remote') {
+               // O /validate deste ciclo atende um pedido de ressincronização pelo kid que tenha ficado
+               // para depois (servidor que não solta a resposta antes; ver PluginNextoolCloudResync).
+               require_once NEXTOOL_PHP_DIR . '/inc/cloudresync.class.php';
+               PluginNextoolCloudResync::satisfied();
+            }
+            $ep = PluginNextoolCloudClient::reportEndpoint();
+            if ($ep['action'] !== 'skipped') {
+               $task->log(sprintf(
+                  'cloud_endpoint: %s%s%s',
+                  $ep['action'],
+                  $ep['error'] !== '' ? ' (' . $ep['error'] . ')' : '',
+                  ($ep['destino'] ?? '') !== '' ? ' destino=' . $ep['destino'] : ''
+               ));
+            }
+         } catch (Throwable $e) {
+            $task->log('cloud_endpoint: erro: ' . $e->getMessage());
+         }
+      }
+
       // "Fez algo" = houve comunicação remota (o catálogo foi reavaliado/sincronizado).
       return $source === 'remote' ? 1 : 0;
    }

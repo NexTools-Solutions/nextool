@@ -105,7 +105,40 @@ function plugin_nextool_install() {
    if ($DB->tableExists($modulesTable) && !$DB->fieldExists($modulesTable, 'description')) {
       $migration->addField($modulesTable, 'description', 'text', ['after' => 'name', 'comment' => 'Descrição do módulo']);
    }
+   // Cloud link (auditoria de 2026-09-24, HI-06): a reserva do request_id passa a guardar o tipo da
+   // ferramenta e a impressão digital do pedido. Tabela criada antes disso não tem as colunas; o
+   // addField é no-op quando a coluna já existe (instalação nova, pelo install.sql). Linha antiga fica
+   // com kind 'write' (fail-closed) e args_hash vazio, e vence em 24 h.
+   // Os dois ADD saem num ALTER só; cada um referencia `tool`, que já existe (a ordem final fica
+   // tool, kind, args_hash, igual ao install.sql).
+   $cloudRequestsTable = 'glpi_plugin_nextool_cloud_requests';
+   if ($DB->tableExists($cloudRequestsTable)) {
+      $migration->addField($cloudRequestsTable, 'args_hash', "char(64) NOT NULL DEFAULT ''", [
+         'after'   => 'tool',
+         'comment' => 'sha256 of (service, tool, args)',
+      ]);
+      $migration->addField($cloudRequestsTable, 'kind', "varchar(8) NOT NULL DEFAULT 'write'", [
+         'after'   => 'tool',
+         'comment' => 'read|write (missing = write)',
+      ]);
+      // 6.27.0: teto por serviço (contrato §8.7). O addKey é no-op quando o índice já existe.
+      $migration->addKey($cloudRequestsTable, ['service', 'created_at'], 'service_window');
+   }
    $migration->executeMigration();
+
+   // Cloud link (ME-08): segredo local do pseudônimo do ator, gerado uma vez e guardado cifrado.
+   // Não-fatal: sem ele, o executor gera no primeiro uso.
+   $cloudExecutorFile = NEXTOOL_PHP_DIR . '/inc/cloudexecutor.class.php';
+   if (file_exists($cloudExecutorFile)) {
+      try {
+         require_once $cloudExecutorFile;
+         if (PluginNextoolCloudExecutor::actorKey(true) === null) {
+            Toolbox::logInFile('plugin_nextool', "Cloud link: segredo local do ator não gerado (chave da instância indisponível)\n");
+         }
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'Cloud link: falha ao gerar o segredo local do ator: ' . $e->getMessage() . "\n");
+      }
+   }
 
    // Chave de criptografia dos módulos (#161): migra do arquivo oculto para glpi_configs
    // (cifrada pelo GLPIKey da instância) já no install/upgrade da base, sem esperar o
@@ -282,6 +315,27 @@ function plugin_nextool_uninstall() {
    // (LGPD -- credencial não fica em banco de plugin desinstalado). São re-entregues pelo
    // servidor no primeiro Sincronizar após reinstalar.
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_managed_services']);
+   // Direito local por item pago (`modules_entitlement`), que também libera as funções de nuvem:
+   // sai junto com a credencial. Até a 6.24.1 ficava, e reinstalar trazia de volta o direito antigo
+   // sem nenhum /validate (auditoria de 2026-09-24, ME-11). Volta no primeiro Sincronizar.
+   try {
+      require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
+      PluginNextoolLicenseValidator::clearModulesEntitlement();
+   } catch (\Throwable $e) {
+      Toolbox::logInFile('plugin_nextool', 'Uninstall: falha ao apagar o modules_entitlement: ' . $e->getMessage());
+   }
+   // Cloud link: o segredo local do pseudônimo do ator (PluginNextoolCloudExecutor::CONFIG_CONTEXT)
+   // sai junto com as tabelas de requisições e nonces (sql/uninstall.sql). Sem as tabelas não há o
+   // que ele proteja, e reinstalar gera outro.
+   $DB->delete('glpi_configs', ['context' => 'plugin:nextool_cloud']);
+   // Log do cloud link (decisão (i): 30 dias): quem cumpre o prazo é a tarefa cloudPurge, que o GLPI
+   // remove no uninstall. O que ficasse aqui não venceria nunca.
+   try {
+      require_once NEXTOOL_PHP_DIR . '/inc/croncloudpurge.class.php';
+      PluginNextoolCronCloudPurge::removeLogs();
+   } catch (\Throwable $e) {
+      Toolbox::logInFile('plugin_nextool', 'Uninstall: falha ao apagar o log do cloud link: ' . $e->getMessage());
+   }
    // ATENÇÃO: NÃO apagar 'plugin:nextool_provisioning' (PluginNextoolConfig::PROVISIONING_CONTEXT).
    // O vínculo de provisionamento (client_identifier + segredo HMAC) é estado do
    // AMBIENTE, não config do plugin. Preservá-lo permite que reinstalar no mesmo

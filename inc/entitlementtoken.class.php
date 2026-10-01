@@ -21,6 +21,15 @@ class PluginNextoolEntitlementToken {
    public const ENTITLEMENT_CONTEXT = 'plugin:nextool_entitlement';
 
    /**
+    * Vida padrão do token no ContainerAPI (`ENTITLEMENT_TOKEN_TTL_SECONDS`, 7 dias). Só entra quando
+    * este GLPI nunca guardou um token que confira: com token, a vida vem dele (ver offlineGraceSeconds).
+    */
+   public const DEFAULT_TTL_SECONDS = 604800;
+
+   /** Memo por requisição da graça offline (o token só muda num /validate). */
+   private static ?int $graceMemo = null;
+
+   /**
     * Verifica o token e devolve os claims se VÁLIDO; senão null.
     *
     * @return array{v:int,environment_id:string,plan:string,allowed_modules:array,iat:int,exp:int,kid:string}|null
@@ -58,6 +67,36 @@ class PluginNextoolEntitlementToken {
       }
       $exp = (int) $claims['exp'];
       return $exp > 0 ? $exp : null;
+   }
+
+   /**
+    * Graça offline da licença, em segundos: a vida do token (`exp - iat`) que o servidor emitiu.
+    *
+    * É a regra que a licença já usa: sem alcançar o ContainerAPI, o direito vale até o `exp` do último
+    * token, que nasce no /validate com essa vida (7 dias por padrão, configurável no servidor). O direito
+    * local às funções de nuvem e a credencial do vínculo usam a MESMA duração a partir da última
+    * sincronização (N8 do plano da auditoria de 2026-09-24), para caírem junto com a licença, e não
+    * dias depois dela.
+    *
+    * Lê o token GUARDADO, com a assinatura conferida e sem olhar o `exp`: só a duração interessa. Assim,
+    * se o servidor passar a assinar com uma chave que esta base ainda não conhece, o token novo não é
+    * guardado, mas a duração continua vindo do anterior. Sem token nenhum, vale o padrão do servidor.
+    */
+   public static function offlineGraceSeconds(): int {
+      if (self::$graceMemo !== null) {
+         return self::$graceMemo;
+      }
+      $vida = 0;
+      if (class_exists('Config')) {
+         $values = Config::getConfigurationValues(self::ENTITLEMENT_CONTEXT, ['entitlement_token']);
+         $token  = isset($values['entitlement_token']) ? trim((string) $values['entitlement_token']) : '';
+         $claims = $token !== '' ? self::decodeAndVerifySignature($token) : null;
+         if ($claims !== null) {
+            $vida = (int) ($claims['exp'] ?? 0) - (int) ($claims['iat'] ?? 0);
+         }
+      }
+
+      return self::$graceMemo = ($vida > 0 ? $vida : self::DEFAULT_TTL_SECONDS);
    }
 
    /**

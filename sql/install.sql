@@ -158,3 +158,76 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_core_updates` (
   KEY `status` (`status`),
   KEY `date_creation` (`date_creation`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cloud link v1: requisições do cérebro (idempotência at-most-once + limites por ator e por ambiente).
+-- Retenção de 24 h, apagada de hora em hora pela tarefa agendada `cloudPurge`. Só o desfecho de
+-- ESCRITA guarda a resposta; leitura e recusa ficam com `response_blob` vazio, só para os limites.
+-- `actor_hash` = HMAC-SHA256(kind|external_id) com o segredo local do GLPI (contexto
+-- plugin:nextool_cloud, cifrado): o chat_id nunca é gravado em claro. Colunas `kind` e `args_hash`
+-- chegam às tabelas antigas pela migração do hook.php.
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_cloud_requests` (
+  `request_id` varchar(64) NOT NULL COMMENT 'id da requisição, gerado pelo cérebro',
+  `service` varchar(32) NOT NULL COMMENT 'chave do módulo dono da ferramenta',
+  `tool` varchar(64) NOT NULL COMMENT 'ferramenta executada',
+  `kind` varchar(8) NOT NULL DEFAULT 'write' COMMENT 'read|write (missing = write)',
+  `args_hash` char(64) NOT NULL DEFAULT '' COMMENT 'sha256 of (service, tool, args)',
+  `actor_hash` char(64) NOT NULL COMMENT 'HMAC-SHA256(kind|external_id) com o segredo local',
+  `code` varchar(32) NOT NULL COMMENT 'in_flight|ok|outcome_unknown|permission_denied|not_found|validation|unavailable|execution_error',
+  `response_blob` longtext NOT NULL COMMENT 'desfecho de escrita em JSON; vazio = sem conteúdo',
+  `duration_ms` int unsigned DEFAULT NULL COMMENT 'duração da execução',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`request_id`),
+  KEY `actor_window` (`actor_hash`,`created_at`),
+  KEY `service_window` (`service`,`created_at`),
+  KEY `created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cloud link (6.27.0, contrato §8.5): CONTATO EXTERNO (sem conta no GLPI). O requerente no GLPI é o usuário
+-- de serviço do canal; aqui fica quem é o contato de verdade e quais chamados são dele (é a regra de
+-- visibilidade do contato). Ver PluginNextoolCloudContacts. Retenção na tarefa cloudPurge.
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_cloud_contacts` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `service` varchar(32) NOT NULL COMMENT 'módulo de canal (ex.: whatsappbot)',
+  `channel` varchar(16) NOT NULL COMMENT 'canal (whatsapp, telegram...)',
+  `contact_ref` varchar(64) NOT NULL COMMENT 'contato no canal (telefone com DDI, chat_id...)',
+  `contact_label` varchar(255) NOT NULL DEFAULT '' COMMENT 'nome informado pelo canal',
+  `first_seen` timestamp NULL DEFAULT NULL,
+  `last_seen` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `contato` (`service`,`channel`,`contact_ref`),
+  KEY `last_seen` (`last_seen`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_cloud_contact_tickets` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `contacts_id` int unsigned NOT NULL,
+  `tickets_id` int unsigned NOT NULL,
+  `date_creation` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `contato_chamado` (`contacts_id`,`tickets_id`),
+  KEY `tickets_id` (`tickets_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Auditoria por contato externo: uma linha por ação executada, sem conteúdo. 90 dias.
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_cloud_contact_log` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `contacts_id` int unsigned NOT NULL,
+  `service` varchar(32) NOT NULL,
+  `tool` varchar(64) NOT NULL,
+  `tickets_id` int unsigned NOT NULL DEFAULT 0,
+  `request_id` varchar(64) NOT NULL DEFAULT '',
+  `code` varchar(32) NOT NULL DEFAULT '',
+  `date_creation` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `contacts_id` (`contacts_id`,`date_creation`),
+  KEY `date_creation` (`date_creation`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cloud link v1: nonces consumidos (anti-replay, 10 min). A PK é a própria trava -- o INSERT
+-- recusa o segundo uso sem SELECT prévio, que deixaria janela entre a checagem e a gravação.
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_cloud_nonces` (
+  `nonce` varchar(128) NOT NULL,
+  `expires_at` timestamp NOT NULL COMMENT 'momento em que o nonce pode ser apagado',
+  PRIMARY KEY (`nonce`),
+  KEY `expires_at` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

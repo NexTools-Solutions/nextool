@@ -33,6 +33,9 @@ class PluginNextoolModuleAudit extends PluginNextoolBaseAuditLog {
     * @param array $data
     */
    public static function log(array $data) {
+      // GLPI 10: a mensagem e os detalhes podem trazer valor de formulário (já escapado) e texto de fora (cru).
+      // Tudo vira cru aqui e a linha é escapada na gravação (PluginNextoolDbCompat::row).
+      $data = PluginNextoolDbCompat::unescapeIncoming($data);
       global $DB;
 
       if (!$DB->tableExists(self::getTable())) {
@@ -54,7 +57,7 @@ class PluginNextoolModuleAudit extends PluginNextoolBaseAuditLog {
       ];
 
       $audit = new self();
-      $result = $audit->add($record);
+      $result = $audit->add(PluginNextoolDbCompat::row($record));
 
       self::recordHistory(
          (string)($data['action'] ?? ''),

@@ -584,6 +584,243 @@ class PluginNextoolHookDispatcher {
    }
 
    // ========================================
+   // TIMELINE ITEMS (itens próprios na timeline do chamado) -- nextool-dev#268
+   // ========================================
+   //
+   // O core chama o hook com ['item' => CommonITILObject, 'timeline' => &array] e IGNORA o
+   // retorno: cada callback acrescenta entradas no array, que chega por referência dentro do
+   // payload. O slot é único por plugin ('nextool'); este registry deixa vários módulos
+   // contribuírem. GLPI 11: `timeline_items`. GLPI 10: `show_in_timeline` -- o 11 ainda o
+   // chama, obsoleto e com aviso, por isso o instalador usa só um dos dois.
+   //
+   // Entrada: ['type' => itemtype resolvível por getItemForItemtype (ou 'object' => instância),
+   //           'item' => ['id', 'date' ou 'date_creation', 'users_id', 'content',
+   //                      'is_content_safe', 'can_edit', 'timeline_position', ...],
+   //           'object' => ?CommonDBTM]. Renderização: HTML pronto (content + is_content_safe,
+   // como o core faz com o ITILReminder) ou template próprio declarado via
+   // timeline_answer_actions (registerTimelineActions). Vale nas duas interfaces: o provider
+   // decide o que mostra no autoatendimento.
+
+   /** @var callable[] timelineItems[] = provider */
+   private static $timelineItems = [];
+
+   /**
+    * Registra um provider de itens da timeline (chamado no onInit() do módulo).
+    *
+    * @param callable $provider fn(array $params): void - recebe ['item' => CommonITILObject,
+    *                           'timeline' => &array] e ACRESCENTA entradas em $params['timeline']
+    */
+   public static function registerTimelineItems(callable $provider): void {
+      self::$timelineItems[] = $provider;
+   }
+
+   /** Hook de itens da timeline do major em execução: timeline_items (11) ou show_in_timeline (10). */
+   public static function timelineItemsHookName(): string {
+      return defined('Glpi\Plugin\Hooks::TIMELINE_ITEMS') ? 'timeline_items' : 'show_in_timeline';
+   }
+
+   /**
+    * Despacha para os providers. A timeline vem por REFERÊNCIA em $params['timeline'] (a
+    * cópia do array mantém a referência): cada provider acrescenta nela. A falha de um
+    * provider vai para o log e não impede os demais.
+    *
+    * @param array $params Payload do core: ['item' => CommonITILObject, 'timeline' => &array]
+    */
+   public static function dispatchTimelineItems(array $params): void {
+      foreach (self::$timelineItems as $i => $provider) {
+         $before = is_array($params['timeline'] ?? null) ? array_fill_keys(array_keys($params['timeline']), true) : null;
+         try {
+            call_user_func($provider, $params);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] timeline_items: %s',
+               $e->getMessage()
+            ));
+         }
+         if ($before !== null && is_array($params['timeline'] ?? null)) {
+            self::dropInvalidTimelineEntries($params['timeline'], $before, 'provider ' . $i);
+         }
+      }
+   }
+
+   /**
+    * Tira da timeline as entradas NOVAS que derrubariam o core. A ordenação da timeline
+    * (CommonITILObject::getTimelineItems, nos dois majors) usa item.date_creation ou
+    * item.date e, no empate, SUBTRAI item.id: id que não é número vira TypeError e a página
+    * inteira do chamado deixa de abrir. A entrada ruim sai com log; o resto da timeline fica.
+    *
+    * @param array  $timeline a timeline do core (por referência)
+    * @param array  $before   chaves que já existiam antes do provider
+    * @param string $origin   quem acrescentou (para o log)
+    */
+   private static function dropInvalidTimelineEntries(array &$timeline, array $before, string $origin): void {
+      foreach (array_diff_key($timeline, $before) as $key => $entry) {
+         $item = is_array($entry) && is_array($entry['item'] ?? null) ? $entry['item'] : null;
+         $date = $item !== null ? ($item['date_creation'] ?? $item['date'] ?? null) : null;
+         $id   = $item['id'] ?? null;
+         if ($item !== null && is_string($date) && $date !== '' && (is_int($id) || (is_string($id) && is_numeric($id)))) {
+            continue;
+         }
+         unset($timeline[$key]);
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            '[HookDispatcher] timeline_items: entrada "%s" descartada (%s): precisa de item.id numérico e de item.date ou item.date_creation',
+            (string) $key,
+            $origin
+         ));
+      }
+   }
+
+   /**
+    * Ocupa o slot de itens da timeline do plugin, MERGE-AWARE. Chamado pelo setup.php
+    * DEPOIS do loadActiveModules.
+    *
+    * - Nenhum provider registrado: não ocupa o slot (custo zero na timeline).
+    * - Módulo em versão antiga que atribuiu o callback direto no slot durante o onInit()
+    *   continua sendo chamado, com o MESMO payload (a mesma timeline por referência),
+    *   junto com os providers. Sem isso, o item do módulo antigo sumiria na janela
+    *   base-nova + módulo-velho do parque instalado.
+    *
+    * @param array $PLUGIN_HOOKS por referência (global do GLPI)
+    */
+   public static function installTimelineItemsHook(array &$PLUGIN_HOOKS): void {
+      $hook       = self::timelineItemsHookName();
+      $dispatcher = [self::class, 'dispatchTimelineItems'];
+      $existing   = $PLUGIN_HOOKS[$hook]['nextool'] ?? null;
+
+      $isOwn = is_array($existing)
+         && (($existing[0] ?? null) === self::class || ($existing[0] ?? null) === 'PluginNextoolHookDispatcher');
+
+      if (self::$timelineItems === []) {
+         return;
+      }
+      if ($existing === null || $isOwn) {
+         $PLUGIN_HOOKS[$hook]['nextool'] = $dispatcher;
+         return;
+      }
+
+      $PLUGIN_HOOKS[$hook]['nextool'] = static function ($params) use ($dispatcher, $existing): void {
+         $params = is_array($params) ? $params : [];
+         call_user_func($dispatcher, $params);
+         if (is_callable($existing)) {
+            $before = is_array($params['timeline'] ?? null) ? array_fill_keys(array_keys($params['timeline']), true) : null;
+            try {
+               call_user_func($existing, $params);
+            } catch (Throwable $e) {
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  '[HookDispatcher] timeline_items (legado): %s',
+                  $e->getMessage()
+               ));
+            }
+            if ($before !== null && is_array($params['timeline'] ?? null)) {
+               self::dropInvalidTimelineEntries($params['timeline'], $before, 'legado');
+            }
+         }
+      };
+   }
+
+   // ========================================
+   // NOTIFICAÇÕES NATIVAS (eventos, destinatários e tags de um alvo do core)
+   // ========================================
+   //
+   // O core chama quatro hooks por CLASSE do alvo (ex.: NotificationTargetTicket), sempre
+   // com o próprio NotificationTarget como payload, e ignora o retorno:
+   //  - item_get_events: acrescentar em $target->events (tela de Notificações e raise);
+   //  - item_add_targets: $target->addTarget(...) (opções da aba Destinatários; o evento
+   //    da notificação está em $target->raiseevent);
+   //  - item_action_targets: para cada destinatário configurado ($target->data traz type e
+   //    items_id), $target->addToRecipientsList(...) ou os helpers do alvo;
+   //  - item_get_datas: tags em $target->data, já no idioma do destinatário (o core troca o
+   //    idioma antes; o domínio de tradução do módulo precisa ser recarregado pelo provider).
+   // O slot é único por plugin ('nextool') e por classe; este registry deixa vários módulos
+   // contribuírem com eventos na mesma classe.
+
+   /** Hooks de notificação do core => fase passada ao provider. */
+   private const NOTIFICATION_HOOKS = [
+      'item_get_events'     => 'events',
+      'item_add_targets'    => 'add_targets',
+      'item_action_targets' => 'action_targets',
+      'item_get_datas'      => 'data',
+   ];
+
+   /** @var array<string, callable[]> notificationProviders[classe do alvo] = [provider, ...] */
+   private static $notificationProviders = [];
+
+   /**
+    * Registra um provider de notificação (chamado no onInit() do módulo).
+    *
+    * @param string   $targetClass Ex.: 'NotificationTargetTicket'
+    * @param callable $provider    fn(string $phase, NotificationTarget $target): void, com
+    *                              $phase em 'events', 'add_targets', 'action_targets', 'data'
+    */
+   public static function registerNotificationProvider(string $targetClass, callable $provider): void {
+      self::$notificationProviders[$targetClass][] = $provider;
+   }
+
+   public static function dispatchNotificationEvents($target): void        { self::dispatchNotificationPhase('events', $target); }
+   public static function dispatchNotificationAddTargets($target): void    { self::dispatchNotificationPhase('add_targets', $target); }
+   public static function dispatchNotificationActionTargets($target): void { self::dispatchNotificationPhase('action_targets', $target); }
+   public static function dispatchNotificationData($target): void          { self::dispatchNotificationPhase('data', $target); }
+
+   /** A falha de um provider vai para o log e não impede os demais nem o envio. */
+   private static function dispatchNotificationPhase(string $phase, $target): void {
+      if (!($target instanceof NotificationTarget)) {
+         return;
+      }
+      foreach (self::$notificationProviders[get_class($target)] ?? [] as $provider) {
+         try {
+            call_user_func($provider, $phase, $target);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] notificação %s (%s): %s',
+               $phase,
+               get_class($target),
+               $e->getMessage()
+            ));
+         }
+      }
+   }
+
+   /**
+    * Ocupa os slots de notificação das classes com provider, MERGE-AWARE. Chamado pelo
+    * setup.php DEPOIS do loadActiveModules; sem provider, não ocupa nada.
+    *
+    * Módulo em versão antiga que atribuiu o callback direto no slot continua sendo chamado,
+    * com o mesmo alvo, depois dos providers.
+    *
+    * @param array $PLUGIN_HOOKS por referência (global do GLPI)
+    */
+   public static function installNotificationHooks(array &$PLUGIN_HOOKS): void {
+      $methods = [
+         'events'         => 'dispatchNotificationEvents',
+         'add_targets'    => 'dispatchNotificationAddTargets',
+         'action_targets' => 'dispatchNotificationActionTargets',
+         'data'           => 'dispatchNotificationData',
+      ];
+      foreach (array_keys(self::$notificationProviders) as $class) {
+         foreach (self::NOTIFICATION_HOOKS as $hook => $phase) {
+            $dispatcher = [self::class, $methods[$phase]];
+            $existing   = $PLUGIN_HOOKS[$hook]['nextool'][$class] ?? null;
+            $isOwn = is_array($existing)
+               && (($existing[0] ?? null) === self::class || ($existing[0] ?? null) === 'PluginNextoolHookDispatcher');
+            if ($existing === null || $isOwn) {
+               $PLUGIN_HOOKS[$hook]['nextool'][$class] = $dispatcher;
+               continue;
+            }
+            $PLUGIN_HOOKS[$hook]['nextool'][$class] = static function ($target) use ($dispatcher, $existing, $hook): void {
+               call_user_func($dispatcher, $target);
+               if (is_callable($existing)) {
+                  try {
+                     call_user_func($existing, $target);
+                  } catch (Throwable $e) {
+                     Toolbox::logInFile('plugin_nextool', sprintf('[HookDispatcher] %s (legado): %s', $hook, $e->getMessage()));
+                  }
+               }
+            };
+         }
+      }
+   }
+
+   // ========================================
    // POST ITEM FORM (modificar formulários nativos - ex.: dropdown de técnico)
    // ========================================
 

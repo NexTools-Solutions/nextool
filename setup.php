@@ -28,7 +28,7 @@ require_once __DIR__ . '/inc/localeresolver.class.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.22.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.30.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -176,12 +176,22 @@ function plugin_nextool_boot() {
             'nextool',
             '#^/ajax/module_ajax\\.php$#'
          );
+         // Cloud link v1: push do cérebro, autenticado por HMAC (sem cookie/CSRF).
+         \Glpi\Http\SessionManager::registerPluginStatelessPath(
+            'nextool',
+            '#^/ajax/cloud_exec\\.php$#'
+         );
       }
       if (class_exists('\Glpi\Http\Firewall')
           && method_exists('\Glpi\Http\Firewall', 'addPluginStrategyForLegacyScripts')) {
          \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
             'nextool',
             '#^/ajax/module_ajax\\.php#',
+            \Glpi\Http\Firewall::STRATEGY_NO_CHECK
+         );
+         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
+            'nextool',
+            '#^/ajax/cloud_exec\\.php#',
             \Glpi\Http\Firewall::STRATEGY_NO_CHECK
          );
          // Assets buscados pelo browser (script/link) NAO podem cair no fallback
@@ -608,7 +618,9 @@ function plugin_init_nextool() {
                   } catch (\Throwable $ntErr) {
                      continue;
                   }
-                  if (is_string($ntTable) && $ntTable !== '' && !isset($CFG_GLPI['glpiitemtypetables'][$ntTable])) {
+                  // Só tabela do NexTool: subclasse de itemtype do core (ex.: de Rule, que
+                  // devolve glpi_rules) não pode virar a dona da tabela do core.
+                  if (plugin_nextool_is_own_table($ntTable) && !isset($CFG_GLPI['glpiitemtypetables'][$ntTable])) {
                      $CFG_GLPI['glpiitemtypetables'][$ntTable] = $ntClass;
                   }
                }
@@ -669,6 +681,16 @@ function plugin_init_nextool() {
                // AÇÕES, então o callback de módulo antigo é MESCLADO (mesmo payload),
                // nunca encadeado -- ver installTimelineActionsHook().
                PluginNextoolHookDispatcher::installTimelineActionsHook($PLUGIN_HOOKS);
+
+               // timeline_items (GLPI 11) / show_in_timeline (GLPI 10): itens próprios dos
+               // módulos na timeline do chamado (registrados via registerTimelineItems no
+               // onInit). Só ocupa o slot se algum módulo registrou -- ver installTimelineItemsHook().
+               PluginNextoolHookDispatcher::installTimelineItemsHook($PLUGIN_HOOKS);
+
+               // item_get_events / item_add_targets / item_action_targets / item_get_datas:
+               // eventos de notificação próprios dos módulos num alvo do core (registrados via
+               // registerNotificationProvider no onInit). Só ocupa as classes com provider.
+               PluginNextoolHookDispatcher::installNotificationHooks($PLUGIN_HOOKS);
             }
 
             // Registra menus de módulos ativos via getMenuRegistration()
@@ -750,7 +772,8 @@ function plugin_nextool_check_config() {
 }
 
 /**
- * Registra as CronTasks do NexTool. Idempotente: CronTask::register faz early-return se a task
+ * Registra as CronTasks do NexTool: `catalogSync` (6 h) e `cloudPurge` (1 h, retenção do cloud link).
+ * Idempotente: CronTask::register faz early-return se a task
  * já existe (ver learning_crontask_register_idempotent). MODE_EXTERNAL obrigatório para
  * poll/integração (web-hit MODE_INTERNAL trava em state=2). Chamado no install/upgrade (F2).
  * Mudança futura de freq/mode exige UPDATE explícito em glpi_crontasks (register não atualiza).
@@ -786,5 +809,20 @@ function _plugin_nextool_register_crons() {
             Config::setConfigurationValues('plugin:nextool_distribution', ['catalogsync_freq_migrated' => '1']);
          }
       }
+   }
+
+   // Cloud link (auditoria de 2026-09-24, ME-08): retenção de 24 h com prazo, de hora em hora. Antes
+   // era sorteio dentro do executor e do guard, e sem uso nada era apagado.
+   if (!class_exists('PluginNextoolCronCloudPurge')) {
+      $purgeFile = __DIR__ . '/inc/croncloudpurge.class.php';
+      if (file_exists($purgeFile)) {
+         require_once $purgeFile;
+      }
+   }
+   if (class_exists('PluginNextoolCronCloudPurge')) {
+      CronTask::register('PluginNextoolCronCloudPurge', 'cloudPurge', HOUR_TIMESTAMP, [
+         'comment' => 'Cloud link: apaga os registros de ações com mais de 24 horas e o log com mais de 30 dias',
+         'mode'    => CronTask::MODE_EXTERNAL,
+      ]);
    }
 }

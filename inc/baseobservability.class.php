@@ -135,7 +135,10 @@ abstract class PluginNextoolBaseObservability {
          if (!$DB->tableExists($table)) {
             return;
          }
-         $DB->insert($table, [
+         // O detalhe costuma ser texto de fora (mensagem de exceção, resposta de API): no GLPI 10 o insert não
+         // escapa, e um apóstrofo fazia a linha sumir em silêncio (6.27.0, PluginNextoolDbCompat).
+         require_once NEXTOOL_PHP_DIR . '/inc/dbcompat.class.php';
+         $DB->insert($table, PluginNextoolDbCompat::row([
             'level'                   => $level,
             'action'                  => mb_substr($action, 0, 50),
             'detail'                  => is_array($detail)
@@ -143,7 +146,7 @@ abstract class PluginNextoolBaseObservability {
                : ($detail !== null && $detail !== '' ? (string) $detail : null),
             'users_id'                => (int) Session::getLoginUserID() ?: null,
             static::logDateColumn()   => date('Y-m-d H:i:s'),
-         ]);
+         ]));
       } catch (\Throwable $e) {
          // fail-silent
       }

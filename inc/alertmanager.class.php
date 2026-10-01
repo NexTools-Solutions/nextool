@@ -52,6 +52,19 @@ class PluginNextoolAlertManager {
 
    public static function sanitizeBody(string $body): string {
       $clean = strip_tags($body, self::ALLOWED_HTML_TAGS);
+      // O corpo vem de fora (ContainerAPI, cérebro). Atributo e URL quem decide é o sanitizador de
+      // rich text do core, por lista de PERMITIDOS: preserva `style`, `class` e `target` e remove
+      // evento e `javascript:`. As regex abaixo eram uma lista de PROIBIDOS e deixavam passar
+      // `<div style="x"onmouseover=...>` e `href="jav&#x61;script:..."`. Ficam só como reserva.
+      if (method_exists('Glpi\RichText\RichText', 'getSafeHtml')) {
+         // No GLPI 10 (htmLawed) o sanitizador codifica de novo as entidades, e `&rarr;`, usado nos
+         // avisos do servidor, apareceria como o texto "&rarr;". Lá o corpo entra DECODIFICADO e
+         // passa de novo pela lista de tags: o sanitizador refaz o escape do que for texto.
+         if (defined('GLPI_VERSION') && version_compare(GLPI_VERSION, '11.0.0-dev', '<')) {
+            $clean = strip_tags(html_entity_decode($clean, ENT_QUOTES | ENT_HTML5, 'UTF-8'), self::ALLOWED_HTML_TAGS);
+         }
+         return \Glpi\RichText\RichText::getSafeHtml($clean);
+      }
       // Remove atributos perigosos que strip_tags preserva
       $clean = preg_replace('/\s+on\w+\s*=\s*["\'][^"\']*["\']/i', '', $clean);
       $clean = preg_replace('/\s+on\w+\s*=\s*\S+/i', '', $clean);
@@ -193,14 +206,20 @@ class PluginNextoolAlertManager {
          if ($colon !== false) {
             self::expireLocalFamily(substr($key, 0, $colon + 1));
          }
-         $DB->insert(self::TABLE, [
+         // GLPI 10: título e corpo trazem tradução (fr/it com apóstrofo) e a mensagem do erro de SQL da migração,
+         // e o insert não escapa. Sem gravar, o sino não publica: publicar sem a linha deixava um aviso sem histórico.
+         $gravou = $DB->insert(self::TABLE, PluginNextoolDbCompat::row([
             'remote_alert_id' => self::syntheticRemoteId($key),
             'local_key'       => $key,
             'title'           => $title,
             'body'            => $body,
             'alert_type'      => $type,
             'date_end'        => $dateEnd,
-         ]);
+         ]));
+         if (!$gravou) {
+            Toolbox::logInFile('plugin_nextool', 'AlertManager: alerta local ' . $key . " não gravado\n");
+            return false;
+         }
          self::publishLocalNotification($key, $title, $body, $type);
          return true;
       } catch (Throwable $e) {

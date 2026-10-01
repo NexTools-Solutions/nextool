@@ -248,9 +248,13 @@ class PluginNextoolConfig extends CommonDBTM {
     * `provider` (managed-services-v2): quem está atrás do serviço. Servidor que não informa (v1)
     * cai no padrão do serviço: whatsapp = evolution, nexsuite = nexsuite, whatsapp_cerebro = uzapi.
     *
+    * `synced_at`: epoch da última resposta do servidor que entregou esta linha (0 = desconhecido). O
+    * cloud link usa para a validade local da credencial (`PluginNextoolCloudCreds::isActive`). Linha
+    * gravada até a 6.24.1 não tem o campo: vale o `updated_at`, que é gravado junto desde a 6.23.0.
+    *
     * @return array{status:string, api_url:string, instance_name:string,
     *               instance_token_plain:string, expires_at:string, grace_until:string,
-    *               renewal_url:string, provider:string}|null null = sem instância entregue/dados inválidos
+    *               renewal_url:string, provider:string, synced_at:int}|null null = sem instância entregue/dados inválidos
     */
    public static function getManagedService(string $service): ?array {
       $stored = Config::getConfigurationValues(self::MANAGED_SERVICES_CONTEXT);
@@ -281,6 +285,12 @@ class PluginNextoolConfig extends CommonDBTM {
          $status = $status !== '' ? $status : 'pending_provisioning';
       }
 
+      if (array_key_exists('synced_at', $data)) {
+         $syncedAt = (int) $data['synced_at'];
+      } else {
+         $syncedAt = !empty($data['updated_at']) ? (int) strtotime((string) $data['updated_at']) : 0;
+      }
+
       return [
          'status'               => $status,
          'api_url'              => $apiUrl,
@@ -292,6 +302,62 @@ class PluginNextoolConfig extends CommonDBTM {
          'provider'             => (isset($data['provider']) && (string) $data['provider'] !== '')
                                       ? (string) $data['provider']
                                       : (['whatsapp' => 'evolution', 'nexsuite' => 'nexsuite', 'whatsapp_cerebro' => 'uzapi'][$service] ?? ''),
+         'synced_at'            => max(0, $syncedAt),
+      ];
+   }
+
+   /**
+    * URL que o SERVIDOR manda o plugin usar é aceitável? Só https, e uma URL bem formada.
+    *
+    * Régua única para endereço controlado pelo servidor: a URL da plataforma (`adoptPlatformUrl`) e o
+    * `api_url` do vínculo do cloud link, para onde vão pedidos assinados e o token do bot. Sem ela o
+    * `api_url` era gravado e usado como viesse, inclusive `http://` (auditoria de 2026-09-24, LO-03).
+    */
+   public static function isHttpsUrl(string $url): bool {
+      $url = rtrim(trim($url), '/');
+
+      return $url !== ''
+         && stripos($url, 'https://') === 0
+         && filter_var($url, FILTER_VALIDATE_URL) !== false;
+   }
+
+   /**
+    * Entitlement gerenciado -- serviço SEM segredo, entregue só para dizer "este ambiente pode usar X".
+    *
+    * Difere do `getManagedService()` de propósito: aquele exige `api_url` e `instance_name`, porque
+    * serve para FALAR com um provedor. Um entitlement puro (ex.: `telegram_bot`) não tem endereço nem
+    * token -- quem executa é o cloud link, com a credencial do `nextool_cloud`. Exigir os mesmos
+    * campos faria a linha ser descartada e o direito nunca valer.
+    *
+    * Fail-CLOSED: sem linha, devolve null e o chamador recusa. Um entitlement que "passa quando não
+    * existe" não é entitlement.
+    *
+    * **Não concede direito ao cloud link.** Foi a "segunda fonte" do `PluginNextoolCloudCreds::entitled()`
+    * até o plano da auditoria de 2026-09-24 (decisão h, ME-05), que a removeu: o direito às funções de
+    * nuvem vem só da licença. Fica como leitor da linha, para quem já o chamava.
+    *
+    * @return array{status:string, expires_at:string, grace_until:string}|null
+    * @since 6.23.0 (managed-services-v3)
+    */
+   public static function getManagedEntitlement(string $service): ?array {
+      $stored = Config::getConfigurationValues(self::MANAGED_SERVICES_CONTEXT);
+      $raw = isset($stored[$service]) ? (string) $stored[$service] : '';
+      if ($raw === '') {
+         return null;
+      }
+      $data = json_decode($raw, true);
+      if (!is_array($data)) {
+         return null;
+      }
+      $status = isset($data['status']) ? (string) $data['status'] : '';
+      if ($status === '') {
+         return null;
+      }
+
+      return [
+         'status'      => $status,
+         'expires_at'  => isset($data['expires_at']) ? (string) $data['expires_at'] : '',
+         'grace_until' => isset($data['grace_until']) ? (string) $data['grace_until'] : '',
       ];
    }
 

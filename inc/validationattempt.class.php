@@ -289,6 +289,9 @@ class PluginNextoolValidationAttempt extends PluginNextoolBaseAuditLog implement
     *   - user_id (int)
     */
    public static function logAttempt(array $data) {
+      // GLPI 10: a mensagem e os detalhes podem trazer valor de formulário (já escapado) e texto de fora (cru).
+      // Tudo vira cru aqui e a linha é escapada na gravação (PluginNextoolDbCompat::row).
+      $data = PluginNextoolDbCompat::unescapeIncoming($data);
       global $DB;
 
       // Se a tabela ainda não existir (ambiente que não rodou as migrations de licenciamento),
@@ -316,6 +319,6 @@ class PluginNextoolValidationAttempt extends PluginNextoolBaseAuditLog implement
          'user_id'          => isset($data['user_id']) ? (int)$data['user_id'] : null,
       ];
 
-      return $attempt->add($input);
+      return $attempt->add(PluginNextoolDbCompat::row($input));
    }
 }

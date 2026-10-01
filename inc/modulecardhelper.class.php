@@ -135,8 +135,8 @@ class PluginNextoolModuleCardHelper {
                $primary = self::renderLicensingButton($state);
             } elseif ($catalogDisabled) {
                $primary = self::renderBadge(__('Download indisponível (catálogo desativado)', 'nextool'));
-            } elseif (empty($state['has_zip_extension'])) {
-               $primary = self::renderBadge(__('Pré-requisito: extensão php-zip não instalada', 'nextool'), 'badge bg-danger text-white me-1');
+            } elseif (!empty($state['missing_package_extensions'])) {
+               $primary = self::renderBadge(sprintf(__('Pré-requisito: extensão PHP ausente (%s)', 'nextool'), implode(', ', (array) $state['missing_package_extensions'])), 'badge bg-danger text-white me-1');
             } elseif ($dlBlocked) {
                $msg = sprintf(__('Nextool %s necessário para baixar', 'nextool'), $dlMinVer);
                $primary = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . '</span>';
@@ -177,8 +177,8 @@ class PluginNextoolModuleCardHelper {
             if (!empty($state['account_link_required'])) {
                // Atualizar baixa do servidor -> mesmo gate de vínculo universal. Oferece o vínculo.
                $primary = self::renderAccountLinkButton();
-            } elseif (empty($state['has_zip_extension'])) {
-               $primary = self::renderBadge(__('Atualização indisponível: extensão php-zip não instalada', 'nextool'), 'badge bg-danger text-white me-1');
+            } elseif (!empty($state['missing_package_extensions'])) {
+               $primary = self::renderBadge(sprintf(__('Atualização indisponível: extensão PHP ausente (%s)', 'nextool'), implode(', ', (array) $state['missing_package_extensions'])), 'badge bg-danger text-white me-1');
             } elseif ($isSuspended && $state['is_paid']) {
                $primary = self::renderBadge(__('Atualização bloqueada: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
             } else {

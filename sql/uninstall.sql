@@ -11,6 +11,15 @@ DROP TABLE IF EXISTS `glpi_plugin_nextool_main_module_audit`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_config_audit`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_core_updates`;
 
+-- Cloud link v1: requisições (idempotência e limites) e nonces saem com o plugin, nos dois modos de
+-- desinstalação (retenção, decisão do DPO de 2026-09-24). O segredo local do pseudônimo do ator
+-- (contexto plugin:nextool_cloud) é apagado pelo hook.php.
+DROP TABLE IF EXISTS `glpi_plugin_nextool_cloud_requests`;
+DROP TABLE IF EXISTS `glpi_plugin_nextool_cloud_nonces`;
+DROP TABLE IF EXISTS `glpi_plugin_nextool_cloud_contact_log`;
+DROP TABLE IF EXISTS `glpi_plugin_nextool_cloud_contact_tickets`;
+DROP TABLE IF EXISTS `glpi_plugin_nextool_cloud_contacts`;
+
 -- ATENÇÃO: glpi_plugin_nextool_main_modules (REGISTRO de módulos: estado
 -- is_installed/is_enabled/config por ambiente) NÃO é removido. Preservá-lo, junto
 -- com as tabelas de dados e os arquivos dos módulos (também preservados), permite

@@ -382,30 +382,45 @@ class PluginNextoolModuleManager {
          if (((int)($row['is_enabled'] ?? 0)) !== 1) {
             continue;
          }
-         // Instancia sob demanda (manifesto de boot): módulos inativos nunca são
-         // instanciados no caminho quente.
-         $module = $this->getModule($moduleKey);
-         if ($module === null) {
-            continue;
-         }
-         if ($this->checkDependencies($module)) {
-            $this->nxProf('start', 'mm:lang:' . $moduleKey);
-            $module->loadModuleLang();
-            $this->nxProf('stop', 'mm:lang:' . $moduleKey);
-            // onInit() pode disparar migração de schema idempotente (ex.: ensureSchema quando a
-            // versão do módulo muda). A Migration do GLPI ecoa a tela de progresso ("Tarefa
-            // concluída. (0 segundo)") direto no HTML (Migration::outputMessageToHtml). Como isto
-            // roda no BOOT dos módulos (não é ação do usuário), capturamos e descartamos esse
-            // output para não vazar uma mensagem fixa no topo da página (bug no GLPI 10).
-            $this->nxProf('start', 'mm:onInit:' . $moduleKey);
-            ob_start(static function () { return ''; }); // handler descarta (imune ao ob_flush da Migration)
-            try {
-               $module->onInit();
-            } finally {
-               ob_end_clean();
-               $this->nxProf('stop', 'mm:onInit:' . $moduleKey);
+         // Isolamento por módulo: antes, uma exceção no boot de UM módulo saía deste laço e o
+         // catch do setup.php abortava todos os módulos seguintes (e o dispatcher) no request --
+         // um módulo quebrado desligava em silêncio, por exemplo, a proteção de login do secguard.
+         // Agora o módulo com erro só fica fora de loadedModules; os demais carregam normalmente.
+         try {
+            // Instancia sob demanda (manifesto de boot): módulos inativos nunca são
+            // instanciados no caminho quente.
+            $module = $this->getModule($moduleKey);
+            if ($module === null) {
+               continue;
             }
-            $this->loadedModules[$moduleKey] = $module;
+            if ($this->checkDependencies($module)) {
+               $this->nxProf('start', 'mm:lang:' . $moduleKey);
+               $module->loadModuleLang();
+               $this->nxProf('stop', 'mm:lang:' . $moduleKey);
+               // onInit() pode disparar migração de schema idempotente (ex.: ensureSchema quando a
+               // versão do módulo muda). A Migration do GLPI ecoa a tela de progresso ("Tarefa
+               // concluída. (0 segundo)") direto no HTML (Migration::outputMessageToHtml). Como isto
+               // roda no BOOT dos módulos (não é ação do usuário), capturamos e descartamos esse
+               // output para não vazar uma mensagem fixa no topo da página (bug no GLPI 10).
+               $this->nxProf('start', 'mm:onInit:' . $moduleKey);
+               ob_start(static function () { return ''; }); // handler descarta (imune ao ob_flush da Migration)
+               try {
+                  $module->onInit();
+               } finally {
+                  ob_end_clean();
+                  $this->nxProf('stop', 'mm:onInit:' . $moduleKey);
+               }
+               $this->loadedModules[$moduleKey] = $module;
+            }
+         } catch (\Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               "[ModuleBoot] %s ignorado neste request (%s: %s em %s:%d)\n",
+               $moduleKey,
+               get_class($e),
+               $e->getMessage(),
+               $e->getFile(),
+               $e->getLine()
+            ));
          }
       }
 
@@ -602,9 +617,10 @@ class PluginNextoolModuleManager {
             ['id' => $row['id']]
          );
       } else {
+         // GLPI 10: nome traduzido e config padrão em JSON (acentos como `\u00e1`) precisam do escape.
          $result = $DB->insert(
             'glpi_plugin_nextool_main_modules',
-            [
+            PluginNextoolDbCompat::row([
                'module_key'    => $moduleKey,
                'name'          => $module->getName(),
                'version'       => $module->getVersion(),
@@ -615,7 +631,7 @@ class PluginNextoolModuleManager {
                'is_available'  => 0,
                'config'        => json_encode($module->getDefaultConfig()),
                'date_creation' => date('Y-m-d H:i:s')
-            ]
+            ])
          );
       }
 
@@ -831,6 +847,24 @@ class PluginNextoolModuleManager {
          $module->onEnable();
       } else {
          $module->onDisable();
+      }
+
+      // Cloud link (B2, nextool-dev#279): módulo com ferramentas de entrada decide se o endereço
+      // declarado à nuvem gera aviso. Redeclara depois da resposta, sem esperar o ciclo de 6 h.
+      try {
+         $tools = $module->getCloudTools();
+      } catch (\Throwable $e) {
+         $tools = [];
+      }
+      if (is_array($tools) && $tools !== []) {
+         require_once NEXTOOL_PHP_DIR . '/inc/cloudclient.class.php';
+         if (method_exists('PluginNextoolCloudClient', 'afterInboundChange')) {
+            try {
+               PluginNextoolCloudClient::afterInboundChange();
+            } catch (\Throwable $e) {
+               // Sem vínculo legível: a reafirmação do ciclo de 6 h cobre.
+            }
+         }
       }
 
       return $this->buildModuleActionResult($moduleKey, $action, true,
@@ -2124,7 +2158,8 @@ class PluginNextoolModuleManager {
          $moduleKey . '.error' => mb_substr($error, 0, 255),
       ];
       try {
-         Config::setConfigurationValues(self::UPGRADE_STATE_CONTEXT, $values);
+         // GLPI 10: `.error` leva a mensagem do erro de SQL (quase sempre com apóstrofo) e o Config grava sem escape.
+         Config::setConfigurationValues(self::UPGRADE_STATE_CONTEXT, PluginNextoolDbCompat::row($values));
          if ($this->upgradeStateCache !== null) {
             $this->upgradeStateCache = array_merge($this->upgradeStateCache, $values);
          }

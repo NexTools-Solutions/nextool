@@ -48,8 +48,16 @@ class PluginNextoolLicenseValidator {
     * negação sem quebrar. Gate de compatibilidade por capability (nunca por versão numérica).
     * `managed-services-v2` = conhece o serviço `whatsapp_cerebro` (WhatsApp gerenciado pelo servidor
     * de atendimento, desenho v1 do whatsappbot) e guarda o `provider` de cada serviço.
+    * `managed-services-v3` = conhece o vínculo do **cloud link** (`nextool_cloud`, com segredo) e
+    * entitlements SEM token (`telegram_bot`). Só quem anuncia v3 recebe esses dois blocos: sem a
+    * capability, o ContainerAPI não os entrega, e uma base antiga nunca vê chave que não sabe usar.
+    * `cloud-link-v1.1` = fala o contrato 1.1 do cloud link (kid e ressincronização, estado do destino,
+    * anúncio de capacidades, motivo depois da assinatura, resumo de saúde no /validate). É o piso do
+    * primeiro cliente (K6 do plano da auditoria de 2026-09-24): com a flag ligada no ContainerAPI, só
+    * quem anuncia recebe o `nextool_cloud`. Base sem ela perde o bloco, e omitir o bloco APAGA a
+    * credencial local: ligar a flag só depois de os ambientes com vínculo estarem nesta base.
     */
-   public const NEXTOOL_CAPABILITIES = 'entitlement-v1,managed-services-v1,managed-services-v2';
+   public const NEXTOOL_CAPABILITIES = 'entitlement-v1,managed-services-v1,managed-services-v2,managed-services-v3,cloud-link-v1.1';
 
    /**
     * Namespaces de configuração persistidos via Config::setConfigurationValues por este validator.
@@ -62,6 +70,25 @@ class PluginNextoolLicenseValidator {
       'plugin:nextool_managed_services',
       'plugin:nextool_comm_state',
    ];
+
+   /** Chave do mapa de direitos por item pago, no contexto do token de entitlement. */
+   private const ENTITLEMENT_KEY = 'modules_entitlement';
+
+   /**
+    * Quando o mapa foi confirmado pela última vez por uma resposta com `valid=true` (epoch). É dele
+    * que conta a validade do direito local às funções de nuvem. '0' = invalidado (perda de licença).
+    */
+   public const ENTITLEMENT_SYNCED_AT_KEY = 'modules_entitlement_synced_at';
+
+   /**
+    * Marcador de MAPA COMPLETO na resposta do /validate (campo do nível de cima, JSON `true`).
+    *
+    * Com ele, o `modules_entitlement` da mesma resposta é a lista inteira dos itens pagos que este
+    * ambiente enxerga: chave ausente não tem direito, e o mapa vazio revoga tudo. Sem ele (servidor
+    * até o N6 do plano, ou resposta degradada), o mapa vazio é tratado como falha do servidor e não
+    * apaga nada -- o ContainerAPI devolve `[]` quando não consegue montar o mapa.
+    */
+   public const ENTITLEMENT_COMPLETE_FLAG = 'modules_entitlement_complete';
 
    /**
     * Encapsula Config::setConfigurationValues + try/catch + log de falha.
@@ -86,7 +113,7 @@ class PluginNextoolLicenseValidator {
     */
    private static function adoptPlatformUrl(string $url): void {
       $url = rtrim(trim($url), '/');
-      if ($url === '' || stripos($url, 'https://') !== 0 || filter_var($url, FILTER_VALIDATE_URL) === false) {
+      if (!PluginNextoolConfig::isHttpsUrl($url)) {
          return;
       }
       $dist = Config::getConfigurationValues('plugin:nextool_distribution');
@@ -117,7 +144,20 @@ class PluginNextoolLicenseValidator {
       // instance_token = license secret (cifrado pelo SecretVault como o token da Evolution).
       // `whatsapp_cerebro` (managed-services-v2): servidor de atendimento do whatsappbot --
       // api_url = hub, instance_name = ambiente_id, instance_token = api_secret.
-      $map = ['whatsapp_instance' => 'whatsapp', 'nexsuite_license' => 'nexsuite', 'whatsapp_cerebro' => 'whatsapp_cerebro'];
+      // `nextool_cloud` (managed-services-v3): vínculo do CLOUD LINK -- api_url = hub,
+      // instance_name = ambiente, instance_token = api_secret (do qual a base deriva o `inbound`).
+      // `telegram_bot` (managed-services-v3): entitlement PURO, sem token. Não é mais entregue
+      // (ContainerAPI, 2026-09-24) e deixou de valer como direito (decisão h do plano da auditoria de
+      // 2026-09-24): segue no mapa só para a cópia antiga que tenha sobrado ser apagada, pela regra de
+      // ausência abaixo.
+      $map = [
+         'whatsapp_instance' => 'whatsapp',
+         'nexsuite_license'  => 'nexsuite',
+         'whatsapp_cerebro'  => 'whatsapp_cerebro',
+         'nextool_cloud'     => 'nextool_cloud',
+         'telegram_bot'      => 'telegram_bot',
+      ];
+      $now = time();
 
       foreach ($map as $serverKey => $localKey) {
          if (!isset($services[$serverKey]) || !is_array($services[$serverKey])) {
@@ -144,9 +184,20 @@ class PluginNextoolLicenseValidator {
             }
          }
 
+         $apiUrl = isset($svc['api_url']) ? (string) $svc['api_url'] : '';
+         if ($localKey === 'nextool_cloud' && $apiUrl !== '' && !PluginNextoolConfig::isHttpsUrl($apiUrl)) {
+            // Vínculo do cloud link só com https (auditoria de 2026-09-24, LO-03): para esse endereço vão
+            // os pedidos assinados e o token do bot. O bloco é gravado sem o endereço, o que desliga o
+            // vínculo (getManagedService exige api_url) -- manter a cópia anterior deixaria valendo um
+            // vínculo que o servidor acabou de mudar. O valor não vai para o log.
+            Toolbox::logInFile('plugin_nextool',
+               "[SECURITY] managed_services: api_url do nextool_cloud recusado (exige https); vinculo desligado ate o servidor entregar um endereco valido\n");
+            $apiUrl = '';
+         }
+
          $payload = [
             'status'         => isset($svc['status']) ? (string) $svc['status'] : '',
-            'api_url'        => isset($svc['api_url']) ? (string) $svc['api_url'] : '',
+            'api_url'        => $apiUrl,
             'instance_name'  => isset($svc['instance_name']) ? (string) $svc['instance_name'] : '',
             'instance_token' => $encryptedToken,
             'expires_at'     => isset($svc['expires_at']) ? (string) $svc['expires_at'] : '',
@@ -156,25 +207,34 @@ class PluginNextoolLicenseValidator {
             // Filtrado: o valor vai para tela e decisão de transporte nos módulos.
             'provider'       => (isset($svc['provider']) && preg_match('/^[a-z_]{1,32}$/', (string) $svc['provider']))
                                    ? (string) $svc['provider'] : '',
-            'updated_at'     => date('c'),
+            'updated_at'     => date('c', $now),
+            // Última confirmação do servidor: é dela que conta a validade local da credencial do cloud
+            // link (PluginNextoolCloudCreds::isActive). Epoch, para não depender de fuso.
+            'synced_at'      => $now,
          ];
 
          self::persistConfig($context, [$localKey => json_encode($payload, JSON_UNESCAPED_SLASHES)], 'managed_services ' . $localKey);
       }
-   }
 
-   /** Remove TODAS as credenciais de serviços gerenciados (sem instância no servidor). */
-   private static function clearManagedServices(): void {
-      require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
-      $context = PluginNextoolConfig::MANAGED_SERVICES_CONTEXT;
-      $stored = Config::getConfigurationValues($context);
-      foreach (array_keys($stored) as $key) {
-         if ($stored[$key] === '' || $stored[$key] === null) {
-            continue;
-         }
-         self::persistConfig($context, [$key => ''], 'managed_services clear');
+      // Cloud link (contrato 1.1, §2.13.2): se a entrega mudou o vínculo desde a última declaração
+      // aceita (chave nova, reativação, ambiente novo), a base redeclara o endereço logo depois da
+      // resposta deste pedido, inclusive no Sincronizar; se o vínculo foi suspenso ou revogado, esquece
+      // a declaração, para a reativação redeclarar. Sem isso, desfazer uma revogação (chave nova, mesmo
+      // ambiente) deixava o cérebro sem destino até alguém mudar a URL.
+      try {
+         require_once NEXTOOL_PHP_DIR . '/inc/cloudclient.class.php';
+         PluginNextoolCloudClient::afterCredentialSync();
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao conferir a declaracao do cloud link - ' . get_class($e) . "\n");
       }
    }
+
+   // REMOVIDO em 6.23.0: `clearManagedServices()`, que limpava o contexto INTEIRO quando o
+   // `/validate` respondia sem o bloco `managed_services`. Virou revogação silenciosa quando o
+   // ContainerAPI ganhou caminhos que omitem o bloco tendo a feature (kill-switch e catch
+   // fail-soft) -- ver o comentário em validateLicense(). A revogação legítima passou a chegar
+   // como bloco PRESENTE e vazio, tratada pelo `persistManagedServices()`, que limpa serviço a
+   // serviço. Não reintroduzir: limpar tudo por ausência apaga credencial boa de outros serviços.
 
    /** Decodifica um valor armazenado do context managed_services ('' -> []). */
    private static function decodeStoredManagedService(string $raw): array {
@@ -506,6 +566,24 @@ class PluginNextoolLicenseValidator {
          $payload['context'] = $context;
       }
 
+      // Cloud link (contrato 1.1, §2.13.5; auditoria ME-01): resumo de saúde do canal para a ficha
+      // "Cloud link" do portal. Só existe com vínculo; a falha em montá-lo nunca atrapalha a validação.
+      $saudeCloud = null;
+      try {
+         $saudeCloud = self::cloudLinkHealth();
+      } catch (\Throwable $e) {
+         $saudeCloud = null;
+      }
+      if ($saudeCloud !== null) {
+         $payload['cloud_link_saude'] = [
+            'ultima_entrada_aceita' => $saudeCloud['ultima_entrada_aceita'],
+            // Objeto no JSON também quando vazio (`{}`, não `[]`).
+            'recusas'               => (object) $saudeCloud['recusas'],
+            'kid'                   => $saudeCloud['kid'],
+            'desvio_relogio_s'      => $saudeCloud['desvio_relogio_s'],
+         ];
+      }
+
       $httpCode        = null;
       $responseTimeMs  = null;
 
@@ -606,6 +684,17 @@ class PluginNextoolLicenseValidator {
          }
       }
 
+      // O ContainerAPI recebeu o resumo de saúde do cloud link: as recusas enviadas saem da contagem, e
+      // o próximo resumo traz só as novas. Sem resposta 2xx, nada muda e elas vão no próximo.
+      if ($saudeCloud !== null && $useDistributionValidation && is_array($responseData)
+          && $httpCode !== null && $httpCode >= 200 && $httpCode < 300) {
+         try {
+            PluginNextoolCloudRequestGuard::healthReported($saudeCloud['recusas']);
+         } catch (\Throwable $e) {
+            // diagnóstico: as recusas só voltam no próximo resumo
+         }
+      }
+
       $valid           = false;
       $message         = '';
       $allowedModules  = [];
@@ -651,6 +740,8 @@ class PluginNextoolLicenseValidator {
          // só preserva o direito já provado, sem aplicar alterações destrutivas offline.
          if (!self::applyOfflineEntitlement($clientId, $valid, $plan, $allowedModules, $licenseStatus, $warnings, $message)) {
             self::enforceFreeModeFallback('Falha ao comunicar com o ContainerAPI');
+            // Sem a graça offline a licença caiu, e o direito às funções de nuvem cai junto (ME-11).
+            self::invalidateModulesEntitlementRight('sem comunicacao e sem graca offline');
          }
       } else if (!empty($responseData['re_enroll_required'])) {
          // F3-B -- fork manual: descarta a identidade local e re-enrolla; encerra esta rodada em FREE
@@ -663,6 +754,8 @@ class PluginNextoolLicenseValidator {
          $licenseStatus = null;
          $message = __('Ambiente em reconfiguração de identidade (re-enroll). Modo FREE até concluir.', 'nextool');
          self::enforceFreeModeFallback('re_enroll_required');
+         // O direito guardado é da identidade descartada (ME-11).
+         self::invalidateModulesEntitlementRight('re_enroll_required');
       } else {
          // Campos adicionais da nova fase 3 (podem ou não estar presentes conforme versão do administrativo)
          if (!empty($responseData['license_status'])) {
@@ -708,6 +801,14 @@ class PluginNextoolLicenseValidator {
             self::persistVerifiedEntitlement($clientId, $responseData);
          } else {
             $valid = false;
+            // Veredito do servidor sobre a licença (`valid` presente e falso: sem licença, vencida,
+            // suspensa, negada pelo anti-clone): o direito local às funções de nuvem cai na hora
+            // (auditoria de 2026-09-24, ME-11 e ME-23). Até a 6.24.1 a base mostrava FREE e o módulo
+            // seguia em modo nuvem. Resposta SEM `valid` (401 de assinatura, 429, erro 5xx com corpo)
+            // não é veredito: o direito fica como estava e vence pela validade, se durar.
+            if (array_key_exists('valid', $responseData)) {
+               self::invalidateModulesEntitlementRight('valid=false');
+            }
             // Pode vir "error" + "message" ou apenas "message"
             if (!empty($responseData['message'])) {
                $message = $responseData['message'];
@@ -787,15 +888,28 @@ class PluginNextoolLicenseValidator {
             self::adoptPlatformUrl((string) $responseData['platform_url']);
          }
 
-         // Instâncias gerenciadas (managed-services-v1): credenciais server-driven da instância
-         // Evolution do ambiente. Presente -> persiste (token cifrado). AUSENTE: só limpa com
-         // resposta autenticada E válida (nunca por falha transitória/negação -- e um servidor
-         // sem a feature não pode apagar credenciais boas; a ContainerAPI a trata como aditiva
-         // permanente).
+         // Instâncias gerenciadas (managed-services-v1): credenciais server-driven do ambiente.
+         //
+         // Bloco PRESENTE (inclusive `[]`) -> persiste, e o que não veio dentro dele é revogação:
+         // o servidor olhou e disse o que existe. Bloco AUSENTE -> **não mexe**, porque o servidor
+         // não falou do assunto.
+         //
+         // Até 6.23.0 a ausência também limpava, apoiada nesta premissa do comentário original:
+         // "um servidor sem a feature não pode apagar credenciais boas; a ContainerAPI a trata
+         // como aditiva permanente". A premissa era verdadeira enquanto a ÚNICA razão para omitir
+         // fosse não ter a feature. O kill-switch (`delivery_enabled`) e o `catch` fail-soft do
+         // `appendManagedServices` criaram um servidor que TEM a feature e mesmo assim omite --
+         // e aí "ausência = não sei" virou "ausência = revogue". Pior: a limpeza por ausência
+         // apagava o contexto INTEIRO, então uma única exceção no ContainerAPI derrubava todos os
+         // vínculos do ambiente de uma vez (Evolution, cérebro, cloud link), sem nada no log do
+         // cliente.
+         //
+         // A revogação real continua chegando: desde 2026-09-21 o ContainerAPI manda
+         // `managed_services => []` EXPLÍCITO quando não há linha viva. Os dois lados dependem um
+         // do outro -- se alguém transformar aquele `[]` de volta num early-return sem bloco,
+         // revogação para de propagar e ninguém percebe.
          if (isset($responseData['managed_services']) && is_array($responseData['managed_services'])) {
             self::persistManagedServices($responseData['managed_services']);
-         } elseif ($valid) {
-            self::clearManagedServices();
          }
 
          // Persistir alertas recebidos + apagar os REVOGADOS na origem (#239). A lista de
@@ -806,9 +920,10 @@ class PluginNextoolLicenseValidator {
             self::persistAlerts($alertsIn, $revokedIn);
          }
 
-         // Persistir e aplicar modules_entitlement (anti-pirataria)
+         // Persistir o modules_entitlement, que também é o direito local às funções de nuvem (com
+         // validade desde o N8: ver syncModulesEntitlement), e aplicar a anti-pirataria.
+         self::syncModulesEntitlement($responseData, $valid);
          if (!empty($responseData['modules_entitlement']) && is_array($responseData['modules_entitlement'])) {
-            self::persistModulesEntitlement($responseData['modules_entitlement']);
             // Aplicar entitlement APENAS se comunicação 100% OK e origin != config_status
             $syncOrigin = isset($context['origin']) ? (string)$context['origin'] : '';
             if ($valid && $syncOrigin !== 'config_status') {
@@ -1098,16 +1213,18 @@ class PluginNextoolLicenseValidator {
             if (empty($row['version']) && $version !== '') {
                $updateData['version'] = $version;
             }
+            // GLPI 10: nome, descrição e recursos vêm da ContainerAPI e o update não escapa; um apóstrofo derrubava
+            // a linha inteira (versão disponível e plano ficavam velhos).
             $DB->update(
                $table,
-               $updateData,
+               PluginNextoolDbCompat::row($updateData),
                ['module_key' => $moduleKey]
             );
         } else {
             // Cria registro básico local para o módulo do catálogo (ainda não instalado)
             $DB->insert(
                $table,
-               [
+               PluginNextoolDbCompat::row([
                   'module_key'             => $moduleKey,
                   'name'                   => $name !== '' ? $name : $moduleKey,
                   'description'            => $description !== '' ? $description : null,
@@ -1128,7 +1245,7 @@ class PluginNextoolLicenseValidator {
                   'is_available'           => $isAvailable,
                   'config'                 => json_encode([]),
                   'date_creation'          => date('Y-m-d H:i:s'),
-               ]
+               ])
             );
          }
       }
@@ -1605,6 +1722,9 @@ class PluginNextoolLicenseValidator {
          $input['last_failure_date']    = date('Y-m-d H:i:s');
       }
 
+      // GLPI 10: o CommonDBTM espera a entrada escapada, e a mensagem e o retrato da licença vêm da ContainerAPI (um
+      // apóstrofo derrubava o UPDATE inteiro e deixava status, módulos e validade velhos).
+      $input = PluginNextoolDbCompat::row($input);
       if (!empty($currentConfig['id'])) {
          $input['id'] = (int)$currentConfig['id'];
          $configObj->update($input);
@@ -1771,12 +1891,134 @@ class PluginNextoolLicenseValidator {
    }
 
    /**
-    * Persiste modules_entitlement na config GLPI para uso no config.form.php.
+    * Aplica o `modules_entitlement` de uma resposta do /validate ao mapa guardado.
+    *
+    * É também o direito local às funções de nuvem (`PluginNextoolCloudCreds::entitled`), por isso as
+    * regras abaixo são de revogação e de validade, e não só de cache (auditoria de 2026-09-24: ME-11,
+    * ME-23; N8 do plano):
+    *  - `valid=true` + marcador de completo: o mapa é substituído, inclusive por vazio (revoga tudo);
+    *  - `valid=true` sem o marcador: mapa com itens substitui o guardado, como até a 6.24.1; mapa
+    *    VAZIO é degradação do servidor e não mexe em nada;
+    *  - `valid=false`: a resposta só REBAIXA o que já está guardado (status e `ever_licensed`), nunca
+    *    concede nem acrescenta chave. É o caso do ambiente negado pelo anti-clone, que ainda recebia
+    *    o produto como ativo. Com o marcador, a chave que saiu da lista é removida;
+    *  - a validade (`modules_entitlement_synced_at`) só é renovada por resposta com `valid=true` que
+    *    confirme o mapa. A perda de licença a zera (`invalidateModulesEntitlementRight`).
+    *
+    * Pública para o E2E aplicar uma resposta sintética sem depender do ContainerAPI.
+    *
+    * @return string o que foi feito: absent | degraded | replaced | confirmed | downgraded | unchanged
     */
-   private static function persistModulesEntitlement(array $entitlement): void {
-      self::persistConfig('plugin:nextool_entitlement', [
-         'modules_entitlement' => json_encode($entitlement, JSON_UNESCAPED_SLASHES),
-      ], 'modules_entitlement');
+   public static function syncModulesEntitlement(array $responseData, bool $valid, int $now = 0): string {
+      $incoming = (isset($responseData[self::ENTITLEMENT_KEY]) && is_array($responseData[self::ENTITLEMENT_KEY]))
+         ? $responseData[self::ENTITLEMENT_KEY]
+         : null;
+      if ($incoming === null) {
+         return 'absent'; // o servidor não falou do assunto
+      }
+      $complete = ($responseData[self::ENTITLEMENT_COMPLETE_FLAG] ?? null) === true;
+      $now      = $now > 0 ? $now : time();
+
+      $stored = self::getModulesEntitlement();
+      $novo   = self::mergeModulesEntitlement($stored, $incoming, $valid, $complete);
+      if ($novo === null) {
+         return 'degraded';
+      }
+
+      $values = [];
+      if ($novo !== $stored) {
+         $values[self::ENTITLEMENT_KEY] = json_encode($novo, JSON_UNESCAPED_SLASHES);
+      }
+      if ($valid) {
+         $values[self::ENTITLEMENT_SYNCED_AT_KEY] = (string) $now;
+      }
+      if ($values !== []) {
+         self::persistConfig(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, $values, 'modules_entitlement');
+      }
+      if (!$valid) {
+         return $novo !== $stored ? 'downgraded' : 'unchanged';
+      }
+
+      return $novo !== $stored ? 'replaced' : 'confirmed';
+   }
+
+   /**
+    * Regra de junção do `syncModulesEntitlement`, sem banco (pura, para teste).
+    *
+    * @param array $stored   mapa guardado
+    * @param array $incoming mapa da resposta
+    * @return array|null o mapa novo, ou null quando a resposta é degradação e nada muda
+    */
+   public static function mergeModulesEntitlement(array $stored, array $incoming, bool $valid, bool $complete): ?array {
+      if ($valid) {
+         if ($complete || $incoming !== []) {
+            return $incoming;
+         }
+         return null; // vazio sem o marcador: o servidor não conseguiu montar o mapa
+      }
+
+      // valid=false: só rebaixa, e nunca acrescenta chave.
+      if (!$complete && $incoming === []) {
+         return null;
+      }
+      $novo = [];
+      foreach ($stored as $chave => $linha) {
+         if (!array_key_exists($chave, $incoming)) {
+            if (!$complete) {
+               $novo[$chave] = $linha; // resposta parcial não apaga
+            }
+            continue; // lista inteira sem a chave: removida
+         }
+         $linha = is_array($linha) ? $linha : [];
+         $veio  = is_array($incoming[$chave]) ? $incoming[$chave] : [];
+         $atual = (string) ($linha['status'] ?? '');
+         $novoStatus = (string) ($veio['status'] ?? '');
+         $linha['status'] = self::entitlementRank($novoStatus) < self::entitlementRank($atual) ? $novoStatus : $atual;
+         $linha['ever_licensed'] = !empty($linha['ever_licensed']) && !empty($veio['ever_licensed']);
+         $novo[$chave] = $linha;
+      }
+
+      return $novo;
+   }
+
+   /** Ordem dos status do mapa: só `active` concede; o que não se conhece vale o mínimo. */
+   private static function entitlementRank(string $status): int {
+      return ['active' => 2, 'expired' => 1][$status] ?? 0;
+   }
+
+   /**
+    * Perda de licença: zera a validade do direito local às funções de nuvem, que volta na próxima
+    * resposta com `valid=true`. O mapa fica, porque a tela usa o `ever_licensed` dele.
+    *
+    * Quem chama no fluxo do `validateLicense`: o veredito `valid=false` do servidor, o re-enroll e a
+    * falha de comunicação sem a graça offline. NÃO é chamado pelo `enforceFreeModeFallback`, que roda
+    * também em 429, 401 de assinatura e erro 5xx com corpo -- nesses, derrubar o direito faria o módulo
+    * trocar de modo por um soluço do servidor. Pública para o E2E.
+    */
+   public static function invalidateModulesEntitlementRight(string $motivo = ''): void {
+      if (!class_exists('Config')) {
+         return;
+      }
+      $atual = Config::getConfigurationValues(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [self::ENTITLEMENT_SYNCED_AT_KEY]);
+      if (($atual[self::ENTITLEMENT_SYNCED_AT_KEY] ?? null) === '0') {
+         return;
+      }
+      self::persistConfig(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [self::ENTITLEMENT_SYNCED_AT_KEY => '0'], 'modules_entitlement invalidate');
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         "LicenseValidator: direito local as funcoes de nuvem invalidado (%s); volta no proximo /validate com licenca valida.\n",
+         $motivo !== '' ? $motivo : 'perda de licenca'
+      ));
+   }
+
+   /**
+    * Apaga o mapa e a validade (uninstall). Reinstalar não pode trazer de volta o direito antigo: ele
+    * volta no primeiro /validate, como a credencial do vínculo.
+    */
+   public static function clearModulesEntitlement(): void {
+      if (!class_exists('Config')) {
+         return;
+      }
+      Config::deleteConfigurationValues(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [self::ENTITLEMENT_KEY, self::ENTITLEMENT_SYNCED_AT_KEY]);
    }
 
    /**
@@ -1785,12 +2027,54 @@ class PluginNextoolLicenseValidator {
     * @return array<string, array{status: string, ever_licensed: bool}>
     */
    public static function getModulesEntitlement(): array {
-      $raw = Config::getConfigurationValue('plugin:nextool_entitlement', 'modules_entitlement') ?? '';
+      $raw = Config::getConfigurationValue(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, self::ENTITLEMENT_KEY) ?? '';
       if ($raw === '') {
          return [];
       }
       $decoded = json_decode($raw, true);
       return is_array($decoded) ? $decoded : [];
+   }
+
+   /**
+    * Epoch da última confirmação do mapa por uma resposta com `valid=true` (0 = nunca ou invalidado).
+    *
+    * Base gravada até a 6.24.1 não tem a chave: vale a data do último token de entitlement guardado,
+    * que só é gravado em resposta com `valid=true`, a mesma que gravou o mapa. Assim a atualização não
+    * derruba o modo nuvem até o próximo /validate. A chave com '0' NÃO cai nessa regra.
+    */
+   public static function getModulesEntitlementSyncedAt(): int {
+      $values = Config::getConfigurationValues(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [
+         self::ENTITLEMENT_SYNCED_AT_KEY,
+         'entitlement_token_synced_at',
+      ]);
+      if (array_key_exists(self::ENTITLEMENT_SYNCED_AT_KEY, $values)) {
+         return max(0, (int) $values[self::ENTITLEMENT_SYNCED_AT_KEY]);
+      }
+      $legado = (string) ($values['entitlement_token_synced_at'] ?? '');
+
+      return $legado !== '' ? max(0, (int) strtotime($legado)) : 0;
+   }
+
+   /**
+    * Resumo de saúde do cloud link para o /validate (`cloud_link_saude`, contrato 1.1 §2.13.5; auditoria
+    * ME-01): última entrada aceita (ISO 8601), recusas por motivo desde o último resumo aceito pelo
+    * ContainerAPI, kid da chave local e desvio do relógio (GLPI menos o horário de quem chamou, em
+    * segundos). Os contadores são mantidos pelo guard da entrada (PluginNextoolCloudRequestGuard).
+    *
+    * Sem ele, o motivo de cada recusa ficava só no log dentro do container do cliente, e a ficha do
+    * portal não tinha como dizer se a nuvem chega a este GLPI. Nada aqui é dado pessoal.
+    *
+    * @return array{ultima_entrada_aceita:?string, recusas:array<string,int>, kid:string, desvio_relogio_s:?int}|null
+    *         null = sem vínculo do cloud link (o campo não vai no /validate)
+    */
+   public static function cloudLinkHealth(): ?array {
+      $f = NEXTOOL_PHP_DIR . '/inc/cloudrequestguard.class.php';
+      if (!is_file($f)) {
+         return null;
+      }
+      require_once $f;
+
+      return PluginNextoolCloudRequestGuard::healthSummary();
    }
 
    /**
@@ -2011,16 +2295,19 @@ class PluginNextoolLicenseValidator {
          ];
          try {
             $existing = $DB->request(['FROM' => $table, 'WHERE' => ['remote_alert_id' => $remoteId], 'LIMIT' => 1]);
+            // GLPI 10: título e corpo do comunicado vêm da ContainerAPI (HTML com `'`) e o insert não escapa.
             if (count($existing) > 0) {
                // UPSERT (#107): alerta editado no admin (texto/validade) reflete na
                // próxima sincronização. is_read/date_read são preservados de propósito
                // -- edição não reabre o popup para quem já leu.
-               $DB->update($table, $data, ['remote_alert_id' => $remoteId]);
-            } else {
-               $DB->insert($table, array_merge(['remote_alert_id' => $remoteId], $data));
+               $DB->update($table, PluginNextoolDbCompat::row($data), ['remote_alert_id' => $remoteId]);
+            } elseif ($DB->insert($table, PluginNextoolDbCompat::row(array_merge(['remote_alert_id' => $remoteId], $data)))) {
                // Alerta NOVO também vai pro canal de notificações (sino por usuário,
-               // audiência = admins da base). Só no INSERT: edição não re-notifica.
+               // audiência = admins da base). Só no INSERT: edição não re-notifica. Sem a
+               // linha gravada, o sino não avisa de um comunicado que o console não mostra.
                self::publishAlertNotification($remoteId, $data);
+            } else {
+               Toolbox::logInFile('plugin_nextool', 'LicenseValidator: alerta #' . $remoteId . " não gravado\n");
             }
          } catch (Throwable $e) {
             Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao persistir alerta #' . $remoteId . ' - ' . $e->getMessage());

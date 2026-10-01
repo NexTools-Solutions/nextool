@@ -31,11 +31,15 @@ class PluginNextoolDocumentHelper {
     * @param string $path    arquivo de origem (fora ou dentro de GLPI_UPLOAD_DIR)
     * @param array  $options
     *   - name (string, obrigatorio)       nome do Document (truncado em 250)
-    *   - filename (string)                nome "original" exibido/baixado (default: basename do path)
+    *   - filename (string)                nome "original" exibido/baixado (default: basename do path);
+    *                                      vai no nome gravado depois do prefixo, que o core remove
     *   - entities_id (int, default 0)
     *   - is_recursive (int 0|1, default 0)
     *   - documentcategories_id (int, default 0)
     *   - itemtype / items_id              vinculo criado pelo post_addItem do core
+    *   - no_reopen (bool, default false)  num chamado/ITIL Pendente, o core REABRE ao ligar o
+    *                                      documento (ParentStatus); true passa `_no_reopen` e
+    *                                      deixa o status com quem chama
     *   - prefix (string, default 'nextool') prefixo do nome gravado em GLPI_UPLOAD_DIR
     *   - extension (string)               extensao do nome gravado (default: a do path, ou 'bin')
     *   - comment (string)                 comentario do Document; o SHA256 e acrescentado
@@ -69,8 +73,12 @@ class PluginNextoolDocumentHelper {
          return $fail('nao foi possivel criar GLPI_UPLOAD_DIR', $logChannel);
       }
 
-      // Nome gravado: <prefixo>-<8 hex>.<ext>. Nunca o nome vindo do usuario
-      // (traversal); o nome "bonito" vai em `filename`, que o core so exibe.
+      // Nome gravado: <prefixo>-<8 hex>[-<nome exibido>]. O core EXIBE o nome gravado
+      // menos o `_prefix_filename` (Document::moveUploadedDocument sobrescreve o
+      // `filename` do input): so passado em `filename`, o nome "bonito" era ignorado e
+      // o documento aparecia como "orderservice-signed-1a2b3c4d.pdf" (desde a 6.15.0).
+      // O nome vindo do usuario perde diretorio e caracteres de controle (traversal) e
+      // o prefixo aleatorio na frente impede nome oculto (".htaccess").
       $prefix = preg_replace('/[^a-z0-9_-]/i', '', (string)($options['prefix'] ?? 'nextool')) ?: 'nextool';
       $ext    = strtolower((string)($options['extension'] ?? pathinfo($path, PATHINFO_EXTENSION)));
       $ext    = preg_replace('/[^a-z0-9]/', '', $ext) ?: 'bin';
@@ -79,7 +87,9 @@ class PluginNextoolDocumentHelper {
       } catch (Throwable $e) {
          $sufixo = substr(sha1(uniqid('', true)), 0, 8);
       }
-      $stored = $prefix . '-' . $sufixo . '.' . $ext;
+      $head   = $prefix . '-' . $sufixo;
+      $pretty = self::displayName((string)($options['filename'] ?? ''), $ext);
+      $stored = $pretty !== '' ? $head . '-' . $pretty : $head . '.' . $ext;
       $final  = $uploadDir . DIRECTORY_SEPARATOR . $stored;
 
       $jaNoUploadDir = realpath(dirname($path)) === realpath($uploadDir);
@@ -90,10 +100,12 @@ class PluginNextoolDocumentHelper {
             }
             @unlink($path);
          }
-      } else {
-         // Ja esta no diretorio de upload (ex.: UploadHelper::store): usa como esta.
+      } elseif ($pretty === '' || !@rename($path, $final)) {
+         // Ja esta no diretorio de upload (ex.: UploadHelper::store): usa como esta,
+         // renomeando so para levar o nome exibido.
          $stored = basename($path);
          $final  = $path;
+         $pretty = '';
       }
       if (!is_file($final) || !is_readable($final)) {
          return $fail('arquivo nao chegou ao diretorio de upload', $logChannel);
@@ -119,6 +131,9 @@ class PluginNextoolDocumentHelper {
          'upload_file'           => $stored,
          'filename'              => (string)($options['filename'] ?? basename($path)),
       ];
+      if ($pretty !== '') {
+         $input['_prefix_filename'] = [$head . '-'];
+      }
       if ($comment !== '') {
          $input['comment'] = $comment;
       }
@@ -130,6 +145,9 @@ class PluginNextoolDocumentHelper {
       if ($itemtype !== '' && $itemsId > 0) {
          $input['itemtype'] = $itemtype;
          $input['items_id'] = $itemsId;
+         if (!empty($options['no_reopen'])) {
+            $input['_no_reopen'] = true;
+         }
       }
 
       try {
@@ -151,5 +169,33 @@ class PluginNextoolDocumentHelper {
          'stored_filename' => $stored,
          'error'           => '',
       ];
+   }
+
+   /**
+    * Nome exibido seguro: sem diretorio nem caractere de controle, terminando na
+    * extensao do arquivo gravado (o core valida o tipo pelo nome exibido) e com
+    * ate 200 bytes. Corte por byte, nunca basename/pathinfo: os dois dependem da
+    * locale e podem comer caractere acentuado. Vazio = sem nome exibido.
+    */
+   private static function displayName(string $name, string $ext): string {
+      $name = str_replace('\\', '/', $name);
+      $slash = strrpos($name, '/');
+      if ($slash !== false) {
+         $name = substr($name, $slash + 1);
+      }
+      $name = trim((string)preg_replace('/[\x00-\x1F\x7F]+/u', '', $name));
+      if ($name === '' || trim($name, '.') === '') {
+         return '';
+      }
+      $dot = strrpos($name, '.');
+      $nameExt = $dot === false ? '' : substr($name, $dot + 1);
+      if ($dot !== false && strtolower($nameExt) === $ext) {
+         $stem = substr($name, 0, $dot);
+      } else {
+         $stem = $name;
+         $nameExt = $ext;
+      }
+      $stem = trim(mb_strcut($stem, 0, 200 - strlen($nameExt) - 1, 'UTF-8'));
+      return $stem === '' ? '' : $stem . '.' . $nameExt;
    }
 }

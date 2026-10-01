@@ -40,6 +40,246 @@ abstract class PluginNextoolBaseModule {
    abstract public function getModuleKey();
 
    /**
+    * Ferramentas que este módulo expõe ao cloud link (push do cérebro).
+    *
+    * Formato: `['<tool>' => ['bit' => <int>, 'kind' => 'read'|'write', 'handler' => callable, 'schema' => array]]`.
+    * O executor (`PluginNextoolCloudExecutor`) resolve o módulo pelo `service` do corpo, confere o bit
+    * com a sessão do ator montada e só então chama o handler. O handler devolve dado ESTRUTURADO --
+    * nunca texto pronto: quem redige a mensagem é o cérebro, que conhece o canal e o idioma.
+    *
+    * `bit` é o VALOR inteiro (> 0) do bit de uso do módulo, não o nome da constante. Sem a chave
+    * `bit`, a ferramenta não tem porta própria e o vínculo do chat já a autoriza (use só para o que
+    * não expõe dado, como o `resolve_actor`). Qualquer outro valor (nome, 0, negativo) é tratado como
+    * configuração errada e a ferramenta é RECUSADA -- ver `PluginNextoolCloudExecutor::toolBit()`.
+    *
+    * `kind` diz se a ferramenta GRAVA alguma coisa no GLPI. A regra do produto é at-most-once: perder
+    * uma ação é aceitável, executá-la duas vezes não (auditoria do cloud link, 2026-09-24).
+    *  - `'read'`: só lê. Nada da resposta fica gravado, e um retry com o mesmo `request_id` roda de novo.
+    *  - `'write'`: grava. O desfecho fica gravado por 24 h e é a resposta de todo retry com o mesmo id.
+    *    Se o handler lançar exceção depois de começar, a resposta é `outcome_unknown` (a ação pode ter
+    *    sido registrada), nunca uma segunda execução. Por ficar gravado, o resultado de uma escrita traz
+    *    só o DESFECHO (códigos e ids), nunca conteúdo do chamado.
+    *  Sem a chave, ou com qualquer valor que não seja exatamente `'read'`, vale `'write'` (fail-closed:
+    *  tratar escrita como leitura permitiria repeti-la). Ver `PluginNextoolCloudExecutor::toolKind()`.
+    *
+    * Recusa declarada: a ferramenta de escrita que desiste ANTES de gravar qualquer coisa (faltou
+    * campo, o GLPI nega o direito, o arquivo não baixou) acrescenta `'_not_written' => true` ao
+    * resultado (`PluginNextoolCloudExecutor::NOT_WRITTEN`). Só assim o `request_id` volta a poder
+    * executar; a base tira a marca antes de responder. Sem a marca, a resposta é o desfecho definitivo.
+    * NUNCA marcar depois de gravar (inclusive gravação parcial, como o acompanhamento do pendenciar
+    * antes de o status ser recusado): o retry executaria de novo. As recusas da própria base (bit,
+    * conta, sessão) acontecem antes do handler e não precisam de marca.
+    *
+    * Default vazio: módulo que não declara nada simplesmente não é alcançável pela nuvem.
+    *
+    * @return array<string, array{bit?:int, kind?:string, handler:callable, schema?:array}>
+    * @since 6.23.0
+    */
+   public function getCloudTools(): array {
+      return [];
+   }
+
+   /**
+    * A nuvem pode executar as ferramentas deste módulo AGORA?
+    *
+    * O executor já exige o módulo instalado e ativo; este hook é para o que só o módulo sabe, como
+    * um modo local forçado pelo administrador. Default true.
+    *
+    * @since pós-6.24.1 (auditoria do cloud link, 2026-09-24)
+    */
+   public function isCloudEnabled(): bool {
+      return true;
+   }
+
+   /**
+    * Resolve o ator externo (ex.: chat do Telegram) no usuário LOCAL do GLPI.
+    *
+    * Regra inviolável: o `users_id` sai da tabela de vínculo do módulo, NUNCA do corpo da requisição.
+    * Aceitar identidade pelo wire é o buraco clássico de impersonação.
+    *
+    * `external_id` (opcional no retorno, LO-09 da auditoria de 2026-09-24): a forma CANÔNICA do
+    * identificador que resolveu o ator (ex.: o chat_id sem zeros à esquerda). A base a usa no
+    * pseudônimo do ator, que é o balde do limite por ator e a amarração do `request_id`. Sem ela vale o
+    * identificador cru do corpo, e `0123` e `123` contam em baldes separados.
+    *
+    * @param array $actor `{kind, external_id}` como veio do cérebro
+    * @return array{users_id:int, external_id?:string, language?:string, display_name?:string}|null
+    * @since 6.23.0
+    */
+   public function resolveCloudActor(array $actor): ?array {
+      return null;
+   }
+
+   /**
+    * Chave de LICENÇA que habilita as funções de nuvem deste módulo.
+    *
+    * Por padrão é a própria chave do módulo -- serve a módulo PAGO, em que ter o módulo licenciado
+    * é ter as funções dele. Módulo **FREE com feature paga** sobrescreve com a chave do PRODUTO
+    * (ex.: `feature_telegram_interacao`): o módulo é gratuito e não aparece no `modules_entitlement`
+    * (que só lista `PAID`), então quem responde "pagou?" é o item do produto, não o do módulo.
+    *
+    * Confundir os dois foi o desenho que o owner recusou em 2026-09-21: autorizar pela chave do
+    * módulo faz o sistema de licenças deixar de valer assim que um módulo gratuito tem parte paga.
+    *
+    * É a ÚNICA fonte do direito (`PluginNextoolCloudCreds::entitled()`), e ele vale até a graça offline
+    * da licença depois da última sincronização.
+    *
+    * @since 6.23.0
+    */
+   public function getCloudLicenseKey(): ?string {
+      return null; // null = usa a chave do módulo
+   }
+
+   /**
+    * SEM EFEITO: o valor é ignorado. O direito às funções de nuvem vem SÓ da licença, pela chave de
+    * `getCloudLicenseKey()`.
+    *
+    * Era a "segunda fonte" do direito: uma linha de `managed_services` que, declarada aqui, liberava as
+    * ferramentas mesmo sem a licença cobrir o produto. Foi removida no plano da auditoria de 2026-09-24
+    * (decisão h, ME-05): autorizava sem olhar datas nem chaves, e um módulo que declarasse o próprio
+    * vínculo (`nextool_cloud`) ficava liberado em todo ambiente com vínculo, que é compartilhado entre
+    * os produtos. Produto vendido como serviço entra como item `feature_*` da licença.
+    *
+    * O método continua existindo porque o executor o usa para reconhecer um módulo com ferramentas de
+    * nuvem, e módulos antigos o sobrescrevem. Não declare nada novo aqui.
+    *
+    * @since 6.23.0
+    * @deprecated desde a remoção da segunda fonte (auditoria de 2026-09-24); ver `getCloudLicenseKey()`
+    */
+   public function getCloudEntitlement(): ?string {
+      return null;
+   }
+
+   /**
+    * CONTATO EXTERNO (sem conta no GLPI) -> usuário de serviço do canal (contrato do cloud link §8.5).
+    *
+    * Default null: o módulo NÃO atende contato externo, e o executor recusa. O módulo de canal que atende
+    * sobrescreve e devolve null quando a opção do CLIENTE está desligada (é a segunda barreira: o cérebro
+    * só manda contato externo com a opção ligada, e a base não confia nele).
+    *
+    * A base já separou e validou o `external_id` ("<canal>:<contato>") em `channel` e `contact_ref`. O
+    * módulo devolve a forma CANÔNICA do contato (ex.: telefone só com dígitos e DDI), que é o balde do
+    * limite por ator e a chave da ligação contato <-> chamado, e o usuário de serviço
+    * (`PluginNextoolCloudServiceUser::ensure()`). Nunca um usuário que não seja a conta de serviço do canal.
+    *
+    * @param array $actor `{kind, external_id, display_name?, channel, contact_ref}`
+    * @return array{users_id:int, channel:string, contact_ref:string, display_name?:string}|null
+    * @since 6.27.0
+    */
+   public function resolveCloudExternalActor(array $actor): ?array {
+      return null;
+   }
+
+   /** `operation_mode` na config do módulo: segue o vínculo (nuvem quando há) ou força o local. */
+   public const CLOUD_SETTING_AUTO  = 'auto';
+   public const CLOUD_SETTING_LOCAL = 'local';
+
+   /** Modo EFETIVO das funções de nuvem do módulo. */
+   public const CLOUD_MODE_LOCAL = 'local';
+   public const CLOUD_MODE_CLOUD = 'cloud';
+
+   /** Janela em que a tela afirma "nuvem" sem ressalva: contato da nuvem nos últimos 7 dias (O1). */
+   public const CLOUD_CONTACT_WINDOW_SECONDS = 604800;
+
+   /**
+    * Há cloud link vigente PARA ESTE MÓDULO? As duas condições, sempre juntas:
+    *
+    *  1. o **vínculo** `nextool_cloud` (credencial de assinatura), COMPARTILHADO entre os módulos do
+    *     ambiente, porque o canal é um só;
+    *  2. o **direito** ao produto (`getCloudLicenseKey()`, pela licença), por produto.
+    *
+    * Checar só o vínculo dava um estado silenciosamente quebrado: com o vínculo ativo (ele serve outros
+    * produtos) e o direito suspenso, a tela anunciava nuvem enquanto o executor recusava toda ferramenta.
+    * É a MESMA régua do executor (`PluginNextoolCloudCreds::entitled()`), por isso mora aqui e não em
+    * cada módulo: até a 6.26.2 ela existia só dentro do telegrambot.
+    *
+    * O nome não é `cloudLinkAvailable` DE PROPÓSITO: o telegrambot até a 3.5.0 tem um método privado
+    * estático com esse nome, e a base nova com o módulo antigo daria erro fatal no PHP (mudar a
+    * visibilidade ou o estático de um método herdado). Método novo no BaseModule precisa de nome que
+    * nenhum módulo publicado use.
+    *
+    * @since 6.27.0
+    */
+   public function hasCloudProductLink(): bool {
+      $file = NEXTOOL_PHP_DIR . '/inc/cloudcreds.class.php';
+      if (!is_file($file)) {
+         return false;
+      }
+      require_once $file;
+      try {
+         $cred = PluginNextoolCloudCreds::get();
+         if ($cred === null || !PluginNextoolCloudCreds::isActive($cred)) {
+            return false;
+         }
+
+         return PluginNextoolCloudCreds::entitled(
+            $this->getCloudLicenseKey() ?? $this->getModuleKey(),
+            $this->getCloudEntitlement()
+         );
+      } catch (\Throwable $e) {
+         return false;
+      }
+   }
+
+   /**
+    * Modo EFETIVO das funções de nuvem e o porquê, em dado estruturado (o texto da tela é do módulo, no
+    * domínio de tradução dele).
+    *
+    * O modo não é escolhido livremente: a nuvem depende do vínculo e do produto (`hasCloudProductLink()`).
+    * O cliente só pode DESLIGAR (`operation_mode = local`); nunca sai `cloud` sem as duas condições,
+    * porque prometer nuvem sem vínculo deixa o canal mudo.
+    *
+    * @return array{mode:string, setting:string, cloud_available:bool, forced_local:bool}
+    * @since 6.27.0
+    */
+   public function getCloudModeInfo(): array {
+      $config  = $this->getConfig();
+      $setting = is_array($config) ? (string) ($config['operation_mode'] ?? self::CLOUD_SETTING_AUTO) : self::CLOUD_SETTING_AUTO;
+      if (!in_array($setting, [self::CLOUD_SETTING_AUTO, self::CLOUD_SETTING_LOCAL], true)) {
+         $setting = self::CLOUD_SETTING_AUTO;
+      }
+      $available = $this->hasCloudProductLink();
+      $forced    = $setting === self::CLOUD_SETTING_LOCAL;
+
+      return [
+         'mode'            => (!$forced && $available) ? self::CLOUD_MODE_CLOUD : self::CLOUD_MODE_LOCAL,
+         'setting'         => $setting,
+         'cloud_available' => $available,
+         'forced_local'    => $forced,
+      ];
+   }
+
+   /**
+    * Último contato da nuvem com este GLPI (O1 da auditoria de 2026-09-24): a última chamada com
+    * assinatura válida que a base aceitou (`PluginNextoolCloudRequestGuard::healthState()`). A tela só
+    * afirma "nuvem" sem ressalva com contato em CLOUD_CONTACT_WINDOW_SECONDS. Sem contato, não é erro: num GLPI em
+    * que ninguém usou o canal a nuvem não chama (decisão do owner em 26/09).
+    *
+    * @param int|null $ultima timestamp do último contato (injetável no teste; padrão: o da base)
+    * @param int      $now    timestamp (injetável no teste)
+    * @return array{ultima:int, recente:bool}
+    * @since 6.27.0
+    */
+   public static function getCloudContactInfo(?int $ultima = null, int $now = 0): array {
+      if ($ultima === null) {
+         $ultima = 0;
+         $guard  = NEXTOOL_PHP_DIR . '/inc/cloudrequestguard.class.php';
+         if (is_file($guard)) {
+            require_once $guard;
+            try {
+               $ultima = (int) (PluginNextoolCloudRequestGuard::healthState()['ultima'] ?? 0);
+            } catch (\Throwable $e) {
+               $ultima = 0;
+            }
+         }
+      }
+      $ultima = max(0, $ultima);
+      $now    = $now > 0 ? $now : time();
+
+      return ['ultima' => $ultima, 'recente' => $ultima > 0 && $ultima >= $now - self::CLOUD_CONTACT_WINDOW_SECONDS];
+   }
+
+   /**
     * Nome amigável do módulo (exibido na interface)
     * Exemplo: 'Email Tools', 'Report Tools', 'Custom Fields'
     * 
@@ -706,20 +946,35 @@ abstract class PluginNextoolBaseModule {
          'LIMIT' => 1
       ]);
 
+      // GLPI 10: o valor de formulário chega escapado pelo core, e o JSON era gravado sem escape. Acento virava
+      // `u00e1`, apóstrofo derrubava o UPDATE e aspas deixavam o JSON inválido: aí o getConfig() voltava aos
+      // defaults e o save seguinte, com merge sobre `[]`, apagava as outras chaves. Agora o que chega é desfeito
+      // para o formato cru (o que está no banco já é cru) e a linha final é escapada. No GLPI 11 nada muda.
+      $config = PluginNextoolDbCompat::unescapeIncoming($config);
+
       $now = date('Y-m-d H:i:s');
       if (count($iterator)) {
          if (!$replace) {
             // Merge sobre o persistido cru: preserva chaves de outras abas/handlers.
             $row       = $iterator->current();
-            $persisted = json_decode($row['config'] ?? '{}', true);
+            $bruto     = (string) ($row['config'] ?? '');
+            $persisted = json_decode($bruto !== '' ? $bruto : '{}', true);
+            if (!is_array($persisted) && $bruto !== '' && $bruto !== 'null') {
+               // Config gravada ilegível (JSON inválido de antes desta correção): o merge sai sobre `[]`. Fica
+               // registrado para o suporte saber por que as outras chaves voltaram ao padrão.
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  "[CONFIG] %s: a config gravada não é JSON válido (%d bytes); as chaves não enviadas neste save voltam ao padrão\n",
+                  $this->getModuleKey(), strlen($bruto)
+               ));
+            }
             $config    = array_merge(is_array($persisted) ? $persisted : [], $config);
          }
          return $DB->update(
             'glpi_plugin_nextool_main_modules',
-            [
+            PluginNextoolDbCompat::row([
                'config' => json_encode($config),
                'date_mod' => $now
-            ],
+            ]),
             ['module_key' => $this->getModuleKey()]
          );
       }
@@ -727,7 +982,7 @@ abstract class PluginNextoolBaseModule {
       // Sem registro: cria linha para persistir a config (ex.: módulo acessado antes do install/catálogo)
       return $DB->insert(
          'glpi_plugin_nextool_main_modules',
-         [
+         PluginNextoolDbCompat::row([
             'module_key'         => $this->getModuleKey(),
             'name'               => $this->getName(),
             'config'             => json_encode($config),
@@ -737,7 +992,7 @@ abstract class PluginNextoolBaseModule {
             'billing_tier'        => $this->getBillingTier(),
             'date_creation'      => $now,
             'date_mod'           => $now,
-         ]
+         ])
       );
    }
 

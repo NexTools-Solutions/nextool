@@ -192,7 +192,12 @@ if (function_exists('plugin_version_nextool')) {
    $currentPluginVersion = isset($info['version']) ? (string) $info['version'] : null;
 }
 
-$hasZipExtension = class_exists('ZipArchive');
+// Pré-requisito de download e atualização de módulo: a MESMA lista do verificador de pré-requisitos
+// (PluginNextoolPrereqCheck) e do auto-update -- curl para baixar, phar para extrair o .tar.gz. Até a 6.26.2
+// a tela exigia o php-zip, que a extração só usa como fallback de pacote .zip: com phar e sem zip ela
+// bloqueava o download à toa; com zip e sem phar, deixava baixar e a extração falhava.
+require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
+$missingPackageExtensions = PluginNextoolCoreUpdater::missingRequiredExtensions();
 
 foreach ($allModuleKeys as $moduleKey) {
    $meta = $catalogMeta[$moduleKey] ?? [];
@@ -450,7 +455,7 @@ foreach ($allModuleKeys as $moduleKey) {
          'can_uninstall_module'    => $moduleCanUninstall,
          'can_view_module'         => $moduleCanView,
          'is_license_suspended'    => $isSuspended,
-         'has_zip_extension'       => $hasZipExtension,
+         'missing_package_extensions' => $missingPackageExtensions,
          'website_url'             => $meta['website_url'] ?? null,
          'compat_glpi_majors'      => $meta['compat_glpi_majors'] ?? null,
          'blocked_reason'          => $blockedReason,
