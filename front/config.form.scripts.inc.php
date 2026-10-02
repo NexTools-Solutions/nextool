@@ -717,7 +717,8 @@ function nextoolInitCoreUpdateModal() {
             }
          }
 
-         // After apply success with needs_reload - redirect to plugins page (safe core page)
+         // After apply success with needs_reload - reload the current page (#264).
+         // redirect_url continua respeitado se o backend algum dia voltar a envia-lo.
          if (stepIndex === 2 && payload && payload.data && payload.data.needs_reload) {
             if (actionBtn) { actionBtn.disabled = true; actionBtn.innerHTML = LABEL_DONE; }
             if (alertEl) {
@@ -726,10 +727,14 @@ function nextoolInitCoreUpdateModal() {
             }
             isRunning = false;
             wasStarted = false;
-            var redirectUrl = (payload.data && payload.data.redirect_url)
-               ? payload.data.redirect_url
-               : '/front/plugin.php';
-            setTimeout(function() { window.location.href = redirectUrl; }, 3000);
+            var redirectUrl = (payload.data && payload.data.redirect_url) ? payload.data.redirect_url : '';
+            setTimeout(function() {
+               if (redirectUrl) {
+                  window.location.href = redirectUrl;
+               } else {
+                  window.location.reload();
+               }
+            }, 3000);
             return;
          }
 

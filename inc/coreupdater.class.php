@@ -1497,19 +1497,18 @@ class PluginNextoolCoreUpdater {
             @file_put_contents(GLPI_CACHE_DIR . '/nextool_pending_apply', $targetVersion);
          }
 
-         global $CFG_GLPI;
-         $rootDoc = $CFG_GLPI['root_doc'] ?? '';
-
+         // Sem redirect_url (#264): o front recarrega a pagina atual. Nada aqui depende da
+         // lista de plugins -- os passos 1, 7 e 7b ja deixam o plugin ativo no banco, e o
+         // boot do setup.php recarrega os direitos nextool* da sessao na nova versao.
          return [
             'success' => true,
-            'message' => __('Atualização concluída com sucesso. Redirecionando...', 'nextool'),
+            'message' => __('Atualização concluída com sucesso. Recarregando...', 'nextool'),
             'data' => [
                'previous_version' => $this->getInstalledCoreVersion(),
                'target_version' => $targetVersion,
                'current_version' => $targetVersion,
                'final_state' => 'completed',
                'needs_reload' => true,
-               'redirect_url' => $rootDoc . '/front/plugin.php',
             ],
          ];
       } catch (Throwable $e) {

@@ -28,7 +28,7 @@ require_once __DIR__ . '/inc/localeresolver.class.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.30.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.30.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -323,6 +323,11 @@ function plugin_init_nextool() {
    // (Symfony) NAO serve .js estatico de plugin por path direto (/plugins/X/js/*.js ->
    // 404) -- mesmo padrao do add_css. Ver front/nextool-tabs.js.php.
    $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-tabs.js.php';
+
+   // Ordenacao padrao das grades Search::show em abas de modulo (#275). Precisa ser
+   // pre_show_tab, e nao o boot: o ajax/common.tabs.php preenche sort/order com ''
+   // DEPOIS do init do plugin. Ver plugin_nextool_pre_show_tab() no hook.php.
+   $PLUGIN_HOOKS['pre_show_tab']['nextool'] = 'plugin_nextool_pre_show_tab';
 
    try {
    // Base do scan de classes declaradas DURANTE o init (ver abaixo): so as

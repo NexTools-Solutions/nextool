@@ -420,6 +420,32 @@ function plugin_nextool_giveItem($itemtype, $ID, $data, $num) {
 }
 
 /**
+ * Hook pre_show_tab - devolve a ordenacao padrao as grades das abas NexTool (#275).
+ *
+ * O ajax/common.tabs.php (GLPI 10 e 11) faz `$_GET['sort'] = ''` e `$_GET['order'] = ''`
+ * quando a URL nao traz o parametro. O Search::show() da aba le o $_GET global e o
+ * QueryBuilder::manageParams() so aplica o getDefaultSearchRequest() da classe com
+ * `!isset($params['sort'])` -- isset('') e true, e a grade abria por id ASC.
+ *
+ * Remove apenas as chaves VAZIAS, e so em aba fornecida por classe NexTool. Nunca
+ * preenche valor: a ordem padrao e de cada classe (DefaultSearchRequestInterface) e o
+ * clique no cabecalho (sort/order com valor) continua valendo.
+ *
+ * @param array $params ['item' => CommonGLPI, 'options' => ['itemtype' => ..., ...]]
+ */
+function plugin_nextool_pre_show_tab($params) {
+   $tabItemtype = (string)($params['options']['itemtype'] ?? '');
+   if (stripos($tabItemtype, 'PluginNextool') !== 0) {
+      return;
+   }
+   foreach (['sort', 'order'] as $key) {
+      if (isset($_GET[$key]) && $_GET[$key] === '') {
+         unset($_GET[$key]);
+      }
+   }
+}
+
+/**
  * Hook redefine_menus - Cria menus de primeiro nível na barra principal.
  *
  * 1. "Nextools" (nativo do plugin) - menu principal com submenu por módulo/admin.

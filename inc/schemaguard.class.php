@@ -69,6 +69,8 @@ class PluginNextoolSchemaGuard {
          return $result;
       }
 
+      self::purgeOrphanShadows();
+
       $shadowCreated = [];
       try {
          foreach ($statements as $realTable => $statement) {
@@ -83,7 +85,7 @@ class PluginNextoolSchemaGuard {
             self::dropShadow($shadowTable); // resto de execução anterior interrompida
             $shadowSql = self::rewriteToShadow($statement, $realTable, $shadowTable);
 
-            if (!self::runDdl($shadowSql)) {
+            if (!self::createShadow($shadowSql)) {
                $result['errors'][] = sprintf('falha ao criar sombra de %s', $realTable);
                continue;
             }
@@ -438,6 +440,63 @@ class PluginNextoolSchemaGuard {
          Toolbox::logInFile('plugin_nextool',
             '[SCHEMA] DDL falhou: ' . $e->getMessage() . ' | ' . substr($statement, 0, 160) . "\n");
          return false;
+      }
+   }
+
+   /**
+    * Cria a tabela-sombra sem a checagem de chave com sinal do core (#267).
+    *
+    * O DBmysql::checkForDeprecatedTableOptions() avisa em todo CREATE TABLE quando
+    * allow_signed_keys é falso, inclusive em falso positivo (`int(10) unsigned`). A
+    * tabela real já avisou na instalação; a sombra repetia o aviso a cada upgrade, sem
+    * informação nova. O ALTER do heal() atua na tabela real e continua checado.
+    */
+   private static function createShadow(string $statement): bool {
+      global $DB;
+
+      if (!property_exists($DB, 'allow_signed_keys')) {
+         return self::runDdl($statement);
+      }
+      $previous = $DB->allow_signed_keys;
+      $DB->allow_signed_keys = true;
+      try {
+         return self::runDdl($statement);
+      } finally {
+         $DB->allow_signed_keys = $previous;
+      }
+   }
+
+   /**
+    * Remove sombras órfãs de execuções anteriores que morreram no meio (timeout, restart
+    * do FPM). Como o nome leva o runId, nenhuma execução seguinte reconhece a sombra de
+    * outra, e a órfã ficava no banco do cliente para sempre.
+    *
+    * Só apaga sombra criada há mais de 1 h: uma execução concorrente dura segundos, então
+    * a sombra dela nunca entra no corte. Roda uma vez por processo.
+    */
+   private static function purgeOrphanShadows(): void {
+      global $DB;
+      static $done = false;
+      if ($done) {
+         return;
+      }
+      $done = true;
+
+      try {
+         $iterator = $DB->request([
+            'SELECT' => ['TABLE_NAME'],
+            'FROM'   => 'information_schema.TABLES',
+            'WHERE'  => [
+               'TABLE_SCHEMA' => new \QueryExpression('DATABASE()'),
+               'TABLE_NAME'   => ['LIKE', self::SHADOW_PREFIX . '%'],
+               new \QueryExpression('`CREATE_TIME` < NOW() - INTERVAL 1 HOUR'),
+            ],
+         ]);
+         foreach ($iterator as $row) {
+            self::dropShadow((string) ($row['TABLE_NAME'] ?? ''));
+         }
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', '[SCHEMA] limpeza de sombras órfãs falhou: ' . $e->getMessage() . "\n");
       }
    }
 

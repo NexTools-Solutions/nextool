@@ -18,6 +18,14 @@
  * -------------------------------------------------------------------------
  * @license GPLv3+
  */
+// Sem isto o PHP mantem os headers anti-cache da sessao (Expires: 1981 +
+// Pragma: no-cache), que anulam o Cache-Control abaixo: o browser re-baixava
+// o asset a cada page load (#273). Mesmo tratamento do front/module_assets.php.
+if (session_status() === PHP_SESSION_ACTIVE) {
+   session_write_close();
+}
+header_remove('Expires');
+header_remove('Pragma');
 header('Content-Type: application/javascript; charset=UTF-8');
 header('Cache-Control: public, max-age=3600');
 ?>

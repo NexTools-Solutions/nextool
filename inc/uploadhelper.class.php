@@ -176,11 +176,11 @@ final class PluginNextoolUploadHelper {
 
       $mode = (int)($options['dir_mode'] ?? 0755);
       $dir  = $targetDir;
-      if (!is_dir($dir) && !@mkdir($dir, $mode, true) && !is_dir($dir)) {
+      if (!self::isUsableDir($dir, $mode)) {
          $dir = '';
          foreach ((array)($options['fallback_dirs'] ?? []) as $candidate) {
-            if (is_dir($candidate) || (@mkdir($candidate, $mode, true) || is_dir($candidate))) {
-               $dir = $candidate;
+            if (self::isUsableDir((string)$candidate, $mode)) {
+               $dir = (string)$candidate;
                $result['used_fallback'] = true;
                break;
             }
@@ -258,6 +258,21 @@ final class PluginNextoolUploadHelper {
       }
       $result['contents'] = $raw;
       return $result;
+   }
+
+   /**
+    * Diretório existe (ou foi criado) E aceita escrita. Só a existência não basta:
+    * pasta sem permissão para o usuário do servidor web levava ao move_failed sem
+    * tentar os fallback_dirs (#270).
+    */
+   private static function isUsableDir(string $dir, int $mode): bool {
+      if ($dir === '') {
+         return false;
+      }
+      if (!is_dir($dir) && !@mkdir($dir, $mode, true) && !is_dir($dir)) {
+         return false;
+      }
+      return is_writable($dir);
    }
 
    /** Sufixo único; random_bytes com degradação para uniqid (3 cópias no ecossistema). */

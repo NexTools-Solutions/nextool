@@ -34,8 +34,18 @@ if (!defined('GLPI_ROOT')) {
 }
 require_once GLPI_ROOT . '/inc/includes.php';
 
+// Sem isto o PHP mantem os headers anti-cache da sessao (Expires: 1981 +
+// Pragma: no-cache), que anulam o Cache-Control abaixo: o browser re-baixava
+// o asset a cada page load (#273). Mesmo tratamento do front/module_assets.php.
+if (session_status() === PHP_SESSION_ACTIVE) {
+   session_write_close();
+}
+header_remove('Expires');
+header_remove('Pragma');
 header('Content-Type: application/javascript; charset=UTF-8');
-header('Cache-Control: public, max-age=3600');
+// private: as strings do aviso saem no idioma do usuario e a URL nao varia
+// por idioma -- um cache compartilhado nao pode servir o de um usuario a outro.
+header('Cache-Control: private, max-age=3600');
 
 $i18n = [
    'title'   => __('Sessão expirada', 'nextool'),

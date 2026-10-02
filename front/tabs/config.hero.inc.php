@@ -165,15 +165,6 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                <p class="text-danger small mb-0"><?php echo __('Conceder permissão de escrita para o usuário do servidor web (Apache/Nginx/IIS) na pasta de plugins do GLPI, incluindo o diretório nextool.', 'nextool'); ?></p>
             </div>
             <div class="d-none mb-2" id="nextool-modal-confirm-apply" data-confirm-word="<?php echo Html::entities_deep(__('confirmo', 'nextool')); ?>">
-               <div class="alert alert-warning mb-2">
-                  <div class="d-flex align-items-start">
-                     <i class="ti ti-flask me-2 mt-1" style="flex-shrink:0;font-size:1.2rem"></i>
-                     <div>
-                        <strong><?php echo __('Feature experimental', 'nextool'); ?></strong>
-                        <p class="mb-0 mt-1 small"><?php echo __('A atualização automática é uma funcionalidade experimental. Recomendamos ter um backup recente antes de prosseguir. Caso algo dê errado, você pode restaurar a versão anterior usando a seção de backups abaixo.', 'nextool'); ?></p>
-                     </div>
-                  </div>
-               </div>
                <label for="nextool-modal-confirm-apply-input" class="form-label">
                   <?php echo sprintf(__('Para continuar, digite %s', 'nextool'), '<strong>' . __('confirmo', 'nextool') . '</strong>'); ?>
                </label>
