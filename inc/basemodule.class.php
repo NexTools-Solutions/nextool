@@ -131,6 +131,19 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Capabilities EXTRAS que este módulo anuncia ao ContainerAPI no `X-Nextool-Caps` do /validate, somadas às da
+    * base (`PluginNextoolLicenseValidator::capabilities()`). Só identificadores `[a-z0-9.-]`. Quem lê é o servidor,
+    * que entrega blocos ou faz concessões apenas a quem anuncia: o aiassist anuncia `ai-credits-free-grant-v1` só
+    * no modo gerenciado, para a cota grátis de IA ser pedida de propósito, e não por todo ambiente que atualiza.
+    *
+    * @return string[]
+    * @since 2026-10 (AI Assist gerenciado, fase 2)
+    */
+   public function extraCapabilities(): array {
+      return [];
+   }
+
+   /**
     * SEM EFEITO: o valor é ignorado. O direito às funções de nuvem vem SÓ da licença, pela chave de
     * `getCloudLicenseKey()`.
     *

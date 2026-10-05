@@ -56,8 +56,39 @@ class PluginNextoolLicenseValidator {
     * primeiro cliente (K6 do plano da auditoria de 2026-09-24): com a flag ligada no ContainerAPI, só
     * quem anuncia recebe o `nextool_cloud`. Base sem ela perde o bloco, e omitir o bloco APAGA a
     * credencial local: ligar a flag só depois de os ambientes com vínculo estarem nesta base.
+    * `ai-credits-v1` = guarda o bloco `ai_credits` do /validate (saldo de créditos de IA do AI Assist gerenciado,
+    * sem dado pessoal; `persistAiCredits()`/`getAiCredits()`). Capabilities de MÓDULO entram por
+    * `PluginNextoolBaseModule::extraCapabilities()` e são somadas em `capabilities()`.
     */
-   public const NEXTOOL_CAPABILITIES = 'entitlement-v1,managed-services-v1,managed-services-v2,managed-services-v3,cloud-link-v1.1';
+   public const NEXTOOL_CAPABILITIES = 'entitlement-v1,managed-services-v1,managed-services-v2,managed-services-v3,cloud-link-v1.1,ai-credits-v1';
+
+   /** Contexto GLPI do bloco `ai_credits` do /validate (saldo de créditos de IA, AI Assist gerenciado). */
+   public const AI_CREDITS_CONTEXT = 'plugin:nextool_ai_credits';
+
+   /**
+    * `X-Nextool-Caps` completo: as da base + as que os módulos ATIVOS anunciam (`extraCapabilities()`), sem repetir.
+    * Falha de um módulo não derruba o /validate: vai só a lista da base.
+    */
+   public static function capabilities(): string {
+      $caps = explode(',', self::NEXTOOL_CAPABILITIES);
+      try {
+         require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+         foreach ((array) PluginNextoolModuleManager::getInstance()->getActiveModules() as $module) {
+            if (!is_object($module) || !method_exists($module, 'extraCapabilities')) {
+               continue;
+            }
+            foreach ((array) $module->extraCapabilities() as $cap) {
+               $cap = (string) $cap;
+               if (preg_match('/^[a-z0-9][a-z0-9.-]{1,40}$/', $cap) && !in_array($cap, $caps, true)) {
+                  $caps[] = $cap;
+               }
+            }
+         }
+      } catch (\Throwable $e) {
+         // só a lista da base
+      }
+      return implode(',', $caps);
+   }
 
    /**
     * Namespaces de configuração persistidos via Config::setConfigurationValues por este validator.
@@ -94,9 +125,44 @@ class PluginNextoolLicenseValidator {
     * Encapsula Config::setConfigurationValues + try/catch + log de falha.
     * Logs vão para o arquivo plugin_nextool com prefixo do label.
     */
+   /**
+    * Fuso da instância (nextool-dev#265): o do GLPI quando o admin ativou os fusos (`$CFG_GLPI['timezone']`), senão
+    * o do PHP. Só identificador IANA válido ("America/Bogota"); qualquer outra coisa não vai.
+    */
+   private static function instanceTimezone(): string {
+      $tz = (string) ($GLOBALS['CFG_GLPI']['timezone'] ?? '');
+      if ($tz === '' || $tz === '0') {
+         $tz = date_default_timezone_get();
+      }
+      return in_array($tz, timezone_identifiers_list(), true) ? $tz : '';
+   }
+
+   /**
+    * Mapa {locale: texto} do catálogo (nextool-dev#262) em JSON, só com locale no formato `xx_YY` e texto sem tags,
+    * cortado em $max. Nada válido = null (a exibição cai no nome/descrição únicos).
+    */
+   private static function i18nMapJson($value, int $max): ?string {
+      if (!is_array($value)) {
+         return null;
+      }
+      $out = [];
+      foreach ($value as $locale => $text) {
+         if (!is_string($locale) || preg_match('/^[a-z]{2}_[A-Z]{2}$/', $locale) !== 1 || !is_scalar($text)) {
+            continue;
+         }
+         $text = trim(strip_tags((string) $text));
+         if ($text !== '') {
+            $out[$locale] = mb_substr($text, 0, $max);
+         }
+      }
+      return $out !== [] ? json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+   }
+
    private static function persistConfig(string $namespace, array $values, string $logLabel): void {
       try {
-         Config::setConfigurationValues($namespace, $values);
+         // GLPI 10: os valores vêm do servidor (e-mail da conta, URL, JSON) e o Config::add/update não escapa; um
+         // apóstrofo (`o'brien@x.com`) derrubava a gravação em silêncio (SQL 1064 só no sql-errors.log).
+         Config::setConfigurationValues($namespace, PluginNextoolDbCompat::row($values));
       } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', sprintf(
             'LicenseValidator: falha ao persistir %s - %s',
@@ -104,6 +170,45 @@ class PluginNextoolLicenseValidator {
             $e->getMessage()
          ));
       }
+   }
+
+   /**
+    * Guarda o bloco `ai_credits` do /validate (só campos conhecidos, escalares) e a hora da sincronização.
+    */
+   private static function persistAiCredits(array $block): void {
+      $permitidas = ['balance_micros', 'reserved_micros', 'available_micros', 'free_remaining_micros', 'free_granted',
+         'currency', 'purchase_url', 'trial', 'ever_credited'];
+      $limpo = [];
+      foreach ($permitidas as $k) {
+         if (array_key_exists($k, $block) && (is_scalar($block[$k]) || $block[$k] === null)) {
+            $limpo[$k] = $block[$k];
+         }
+      }
+      $json = json_encode($limpo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+      if ($json === false) {
+         return;
+      }
+      self::persistConfig(self::AI_CREDITS_CONTEXT, ['ai_credits' => $json, 'synced_at' => (string) time()], 'ai_credits');
+   }
+
+   /**
+    * Último bloco `ai_credits` recebido, com `synced_at` (epoch). null = nunca recebido (base recém-atualizada,
+    * servidor sem a política ligada). Valores em micro-BRL (1000000 = R$ 1,00).
+    *
+    * @return array<string,mixed>|null
+    */
+   public static function getAiCredits(): ?array {
+      $values = Config::getConfigurationValues(self::AI_CREDITS_CONTEXT, ['ai_credits', 'synced_at']);
+      $raw = (string) ($values['ai_credits'] ?? '');
+      if ($raw === '') {
+         return null;
+      }
+      $decoded = json_decode($raw, true);
+      if (!is_array($decoded)) {
+         return null;
+      }
+      $decoded['synced_at'] = (int) ($values['synced_at'] ?? 0);
+      return $decoded;
    }
 
    /**
@@ -521,6 +626,19 @@ class PluginNextoolLicenseValidator {
          'php_version'    => PHP_VERSION,
       ];
 
+      // nextool-dev#265 (decisão do owner, 2026-10-02): idioma PADRÃO da instância e fuso, para priorizar as
+      // traduções dos módulos. Configuração da instância, nunca dado de usuário (a preferência de cada usuário em
+      // $_SESSION['glpilanguage'] não é lida). O fuso desempata o GLPI instalado em inglês com usuários de outro
+      // idioma. Servidor antigo ignora as chaves; nada muda na resposta.
+      $instanceLanguage = (string) ($GLOBALS['CFG_GLPI']['language'] ?? '');
+      if ($instanceLanguage !== '' && isset($GLOBALS['CFG_GLPI']['languages'][$instanceLanguage])) {
+         $clientInfo['glpi_language'] = $instanceLanguage;
+      }
+      $instanceTimezone = self::instanceTimezone();
+      if ($instanceTimezone !== '') {
+         $clientInfo['timezone'] = $instanceTimezone;
+      }
+
       // Só envia environment_id se tivermos um identificador gerado; se não tiver,
       // o administrativo ainda pode tratar o ambiente como FREE tier.
       if (!empty($clientId)) {
@@ -912,6 +1030,12 @@ class PluginNextoolLicenseValidator {
             self::persistManagedServices($responseData['managed_services']);
          }
 
+         // Saldo de créditos de IA do AI Assist gerenciado (`ai-credits-v1`): bloco ADITIVO, sem dado pessoal. A ausência
+         // não apaga (servidor antigo ou política desligada); o módulo decide pela idade (`synced_at`) o que mostrar.
+         if (isset($responseData['ai_credits']) && is_array($responseData['ai_credits'])) {
+            self::persistAiCredits($responseData['ai_credits']);
+         }
+
          // Persistir alertas recebidos + apagar os REVOGADOS na origem (#239). A lista de
          // revogados é aditiva (servidor antigo não manda; plugin antigo ignora).
          $alertsIn  = (!empty($responseData['alerts']) && is_array($responseData['alerts'])) ? $responseData['alerts'] : [];
@@ -1161,6 +1285,15 @@ class PluginNextoolLicenseValidator {
          $screenshotUrl = isset($entry['screenshot_url']) ? trim((string)$entry['screenshot_url']) : null;
          if ($screenshotUrl === '') { $screenshotUrl = null; }
          $downloadCount = isset($entry['download_count']) ? (int)$entry['download_count'] : 0;
+         // nextool-dev#262: nome/descrição por idioma. Chave AUSENTE = servidor antigo, não mexe no que já está gravado;
+         // presente (mesmo vazia) = o servidor falou, grava o que veio (null se nada válido).
+         $i18nData = [];
+         if (array_key_exists('name_i18n', $entry)) {
+            $i18nData['name_i18n'] = self::i18nMapJson($entry['name_i18n'], 255);
+         }
+         if (array_key_exists('description_i18n', $entry)) {
+            $i18nData['description_i18n'] = self::i18nMapJson($entry['description_i18n'], 2000);
+         }
 
          // Bloco platforms (ContainerAPI 4.0+). Quando ausente, cai no fallback
          // legado: módulo é considerado compatível apenas com a plataforma atual.
@@ -1209,7 +1342,7 @@ class PluginNextoolLicenseValidator {
                'screenshot_url'        => $screenshotUrl,
                'download_count'        => $downloadCount,
                'date_mod'              => date('Y-m-d H:i:s'),
-            ];
+            ] + $i18nData;
             if (empty($row['version']) && $version !== '') {
                $updateData['version'] = $version;
             }
@@ -1245,7 +1378,7 @@ class PluginNextoolLicenseValidator {
                   'is_available'           => $isAvailable,
                   'config'                 => json_encode([]),
                   'date_creation'          => date('Y-m-d H:i:s'),
-               ])
+               ] + $i18nData)
             );
          }
       }
@@ -1350,7 +1483,7 @@ class PluginNextoolLicenseValidator {
       $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
       // F2 -- anuncia a capability: o servidor passa a (a) emitir o token de entitlement e (b) zerar
       // a metadata na negação (este plugin trata metadata vazia sem quebrar -- TEST-03).
-      $headers[] = 'X-Nextool-Caps: ' . self::NEXTOOL_CAPABILITIES;
+      $headers[] = 'X-Nextool-Caps: ' . self::capabilities();
 
       if (function_exists('curl_init')) {
          $ch = curl_init($apiEndpoint);
@@ -2417,6 +2550,10 @@ class PluginNextoolLicenseValidator {
     * não exibe (o popup/aba Alertas continuam cobrindo).
     */
    private static function publishAlertNotification(int $remoteId, array $data): void {
+      // Conteúdo das guias Serviços/Novidades (nextool-dev#277) não é aviso: não vai para o sino.
+      if (in_array((string) ($data['alert_type'] ?? ''), PluginNextoolAlertManager::VITRINE_TYPES, true)) {
+         return;
+      }
       try {
          if (!class_exists('PluginNextoolHookDispatcher')
              || !method_exists('PluginNextoolHookDispatcher', 'dispatchNotification')) {

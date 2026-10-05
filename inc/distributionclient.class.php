@@ -539,28 +539,6 @@ class PluginNextoolDistributionClient {
       return $payload;
    }
 
-   public function submitContactLead(array $leadData): array {
-      if (!$this->supportsSignedRequests()) {
-         throw new RuntimeException(__('Integração HMAC não configurada. Informe o identificador e o segredo na aba de distribuição.', 'nextool'));
-      }
-
-      $body = json_encode($leadData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-      if ($body === false) {
-         throw new RuntimeException(__('Falha ao montar payload do formulário de contato.', 'nextool'));
-      }
-
-      $response = $this->performRequest($this->baseUrl . '/api/contact/leads', [
-         'method' => 'POST',
-         'body' => $body,
-         'headers' => array_merge(
-            ['Content-Type: application/json'],
-            self::buildHmacHeadersV2($this->clientIdentifier, '/api/contact/leads', $body, $this->clientSecret)
-         ),
-         'timeout' => 60,
-      ]);
-
-      return $this->decodeJsonResponse($response, __('Falha ao enviar o formulário de contato.', 'nextool'));
-   }
 
    /**
     * F3 -- solicita um código de vínculo de conta ao ContainerAPI (assinado HMAC do ambiente).

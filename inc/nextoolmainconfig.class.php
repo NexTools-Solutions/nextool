@@ -29,6 +29,9 @@ class PluginNextoolMainConfig extends CommonDBTM {
 
    /** Tabs fixos (1-5): Módulos, Contato, Licenciamento, Alertas, Logs */
    const FIXED_TAB_COUNT = 5;
+   /** Guias de divulgação (nextool-dev#277): números altos, fora da faixa das guias de módulo. */
+   const TAB_SERVICOS  = 90;
+   const TAB_NOVIDADES = 91;
 
    // O $rightname='config' acima cobre o bypass de admin global (config UPDATE).
    // Para perfis customizados com permissões granulares do plugin, os métodos
@@ -167,7 +170,9 @@ class PluginNextoolMainConfig extends CommonDBTM {
             continue;
          }
 
-         $name = $row['name'] ?? $module->getName() ?? $moduleKey;
+         $name = isset($row['name'])
+            ? PluginNextoolModuleCatalog::localized($row['name_i18n'] ?? null, (string) $row['name'])
+            : ($module->getName() ?? $moduleKey);
          $icon = $module->getIcon();
 
          $tabs[$tabNum] = [
@@ -199,6 +204,8 @@ class PluginNextoolMainConfig extends CommonDBTM {
          'PluginNextoolMainConfig$3',
          'PluginNextoolMainConfig$4',
          'PluginNextoolMainConfig$5',
+         'PluginNextoolMainConfig$' . self::TAB_SERVICOS,
+         'PluginNextoolMainConfig$' . self::TAB_NOVIDADES,
       ];
       $moduleTabs = self::getModuleConfigTabs();
       foreach (array_keys($moduleTabs) as $tabNum) {
@@ -218,6 +225,10 @@ class PluginNextoolMainConfig extends CommonDBTM {
          3 => self::createTabEntry(__('Licenciamento', 'nextool'), 0, $item::getType(), 'ti ti-key'),
          4 => self::createTabEntry(__('Alertas', 'nextool'), 0, $item::getType(), 'ti ti-bell'),
          5 => self::createTabEntry(__('Logs', 'nextool'), 0, $item::getType(), 'ti ti-report-analytics'),
+         // nextool-dev#277: números fixos FORA da faixa das guias de módulo (que começam em FIXED_TAB_COUNT + 1):
+         // aumentar o FIXED_TAB_COUNT renumeraria as guias de módulo e quebraria links com forcetab.
+         self::TAB_SERVICOS  => self::createTabEntry(__('Serviços', 'nextool'), 0, $item::getType(), 'ti ti-briefcase'),
+         self::TAB_NOVIDADES => self::createTabEntry(__('Novidades', 'nextool'), 0, $item::getType(), 'ti ti-sparkles'),
       ];
 
       $moduleTabs = self::getModuleConfigTabs();
@@ -238,7 +249,8 @@ class PluginNextoolMainConfig extends CommonDBTM {
          return false;
       }
 
-      $tabMap = [1 => 'modules', 2 => 'contato', 3 => 'licenca', 4 => 'alertas', 5 => 'logs'];
+      $tabMap = [1 => 'modules', 2 => 'contato', 3 => 'licenca', 4 => 'alertas', 5 => 'logs',
+                 self::TAB_SERVICOS => 'servicos', self::TAB_NOVIDADES => 'novidades'];
       $moduleTabs = self::getModuleConfigTabs();
 
       if (isset($tabMap[$tabnum])) {

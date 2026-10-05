@@ -145,7 +145,9 @@ final class PluginNextoolCommBackoff {
 
    private static function persist(array $values): void {
       try {
-         Config::setConfigurationValues(self::CONTEXT, $values);
+         // GLPI 10: a mensagem do curl ("Couldn't connect to server") tem apóstrofo e o Config não escapa -- a
+         // linha de last_network_error se perdia (os contadores, em linhas próprias, eram gravados).
+         Config::setConfigurationValues(self::CONTEXT, PluginNextoolDbCompat::row($values));
       } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', sprintf(
             'CommBackoff: falha ao persistir estado - %s',

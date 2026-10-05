@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_modules` (
    `module_key` varchar(100) NOT NULL COMMENT 'Chave única do módulo (ex: emailtools)',
    `name` varchar(255) NOT NULL COMMENT 'Nome amigável do módulo',
    `description` text DEFAULT NULL COMMENT 'Descrição do módulo',
+  `name_i18n` text DEFAULT NULL COMMENT 'Nome por idioma (JSON {locale: nome}, do catálogo central; nextool-dev#262)',
+  `description_i18n` text DEFAULT NULL COMMENT 'Descrição por idioma (JSON {locale: texto}, do catálogo central)',
    `version` varchar(20) DEFAULT NULL COMMENT 'Versão instalada do módulo (semantic versioning)',
    `available_version` varchar(20) DEFAULT NULL COMMENT 'Última versão disponível no catálogo oficial',
    `min_version_nextools` varchar(50) DEFAULT NULL COMMENT 'Versão mínima do plugin Nextool para este módulo',

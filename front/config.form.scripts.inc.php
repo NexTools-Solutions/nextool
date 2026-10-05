@@ -1075,53 +1075,6 @@ document.addEventListener('glpi.load', _nextoolSyncCooldown.init);
 // F5 -- nextoolRegenerateHmac removido: a rotação de segredo/identidade é coordenada pelo servidor
 // (re-enroll/migrate). Sem botões que disparem a ação 'regenerate_hmac'.
 
-function nextoolInitContactForm() {
-   var form = document.getElementById('nextool-contact-form');
-   if (!form || form.dataset.bound === '1') return;
-   form.dataset.bound = '1';
-   var feedback = document.getElementById('nextool-contact-feedback');
-   var submitButton = form.querySelector('button[type="submit"]');
-   form.addEventListener('submit', function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      form.classList.add('was-validated');
-      if (!form.checkValidity()) return;
-      var formData = new FormData(form);
-      // GLPI 10: para requisições AJAX, usar o token do meta `glpi:csrf_token` no header.
-      // O token do formulário continua indo no body via FormData.
-      var csrfToken = nextoolGetAjaxCsrfToken();
-      if (!csrfToken) {
-         // Fallback: se o meta não existir por algum motivo, tentar o token do formulário.
-         try {
-            csrfToken = String(formData.get('_glpi_csrf_token') || '');
-         } catch (e) {
-            csrfToken = '';
-         }
-      }
-      if (submitButton) submitButton.disabled = true;
-      if (feedback) { feedback.classList.remove('text-danger', 'text-success'); feedback.classList.add('text-muted'); feedback.textContent = <?php echo json_encode(__('Enviando contato...', 'nextool')); ?>; }
-      fetch(form.action, { method: 'POST', body: formData, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-Glpi-Csrf-Token': csrfToken }, credentials: 'same-origin' })
-         .then(function (r) { return r.json().catch(function () { return {}; }); })
-         .then(function (data) {
-            if (feedback) {
-               feedback.classList.remove('text-muted');
-               if (data && data.success) {
-                  form.reset();
-                  form.classList.remove('was-validated');
-                  feedback.classList.add('text-success');
-                  feedback.textContent = data.message || <?php echo json_encode(__('Contato enviado com sucesso! Nossa equipe retornará em breve.', 'nextool')); ?>;
-               } else {
-                  feedback.classList.add('text-danger');
-                  feedback.textContent = (data && data.message) ? data.message : <?php echo json_encode(__('Não foi possível enviar o contato. Tente novamente em instantes.', 'nextool')); ?>;
-               }
-            }
-         })
-         .catch(function () {
-            if (feedback) { feedback.classList.remove('text-muted'); feedback.classList.add('text-danger'); feedback.textContent = <?php echo json_encode(__('Erro inesperado ao enviar o formulário.', 'nextool')); ?>; }
-         })
-         .finally(function () { if (submitButton) submitButton.disabled = false; });
-   });
-}
 
 function nextoolInitContactSourceField() {
    var wrapper = document.getElementById('contact-source-other-wrapper');
@@ -1148,7 +1101,6 @@ function nextoolInitContactModulesField() {
 }
 
 function _nextoolInitContactAll() {
-   nextoolInitContactForm();
    nextoolInitContactSourceField();
    nextoolInitContactModulesField();
 }

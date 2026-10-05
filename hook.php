@@ -105,6 +105,12 @@ function plugin_nextool_install() {
    if ($DB->tableExists($modulesTable) && !$DB->fieldExists($modulesTable, 'description')) {
       $migration->addField($modulesTable, 'description', 'text', ['after' => 'name', 'comment' => 'Descrição do módulo']);
    }
+   // nextool-dev#262: nome e descrição por idioma vindos do catálogo central (JSON {locale: texto}).
+   foreach (['name_i18n' => 'description', 'description_i18n' => 'name_i18n'] as $i18nField => $after) {
+      if ($DB->tableExists($modulesTable) && !$DB->fieldExists($modulesTable, $i18nField)) {
+         $migration->addField($modulesTable, $i18nField, 'text', ['after' => $after, 'null' => true]);
+      }
+   }
    // Cloud link (auditoria de 2026-09-24, HI-06): a reserva do request_id passa a guardar o tipo da
    // ferramenta e a impressão digital do pedido. Tabela criada antes disso não tem as colunas; o
    // addField é no-op quando a coluna já existe (instalação nova, pelo install.sql). Linha antiga fica

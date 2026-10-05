@@ -43,25 +43,6 @@ class PluginNextoolConfig extends CommonDBTM {
     */
    const MANAGED_SERVICES_CONTEXT = 'plugin:nextool_managed_services';
 
-   /** Origens permitidas no formulário de contato (LO-01). Fonte única para validação + template. */
-   public const CONTACT_SOURCES = [
-      'canais_jmba',
-      'indicacao',
-      'linkedin',
-      'telegram',
-      'outros',
-   ];
-
-   /** Motivos permitidos no formulário de contato (LO-01). */
-   public const CONTACT_REASONS = [
-      'duvidas',
-      'apresentacao',
-      'desenvolvimento',
-      'melhoria',
-      'contratar',
-      'outros',
-   ];
-
    static $rightname = 'config';
 
    public static function getPluginVersion(): string {

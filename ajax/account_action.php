@@ -148,9 +148,11 @@ try {
          // próximo /validate. Vinculado => link_required=0 (download FREE liberado de imediato).
          $persist = ['linked' => $isLinked ? '1' : '0', 'email' => (string) ($data['portal_email'] ?? '')];
          if ($isLinked) { $persist['link_required'] = '0'; }
-         Config::setConfigurationValues('plugin:nextool_account_link', array_merge(
+         // GLPI 10: portal_email vem do servidor e o Config não escapa (apóstrofo no e-mail = gravação perdida);
+         // os valores já gravados também são relidos crus e regravados aqui.
+         Config::setConfigurationValues('plugin:nextool_account_link', PluginNextoolDbCompat::row(array_merge(
             Config::getConfigurationValues('plugin:nextool_account_link'), $persist
-         ));
+         )));
          echo json_encode([
             'success'        => true,
             'linked'         => $isLinked,
@@ -162,10 +164,10 @@ try {
 
       case 'unlink':
          $callSigned(static fn(PluginNextoolDistributionClient $c) => $c->unlinkAccount());
-         Config::setConfigurationValues('plugin:nextool_account_link', array_merge(
+         Config::setConfigurationValues('plugin:nextool_account_link', PluginNextoolDbCompat::row(array_merge(
             Config::getConfigurationValues('plugin:nextool_account_link'),
             ['linked' => '0', 'email' => '']
-         ));
+         )));
          echo json_encode(['success' => true, 'message' => __('Conta desvinculada.', 'nextool')]);
          break;
    }

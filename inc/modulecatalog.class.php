@@ -60,7 +60,7 @@ class PluginNextoolModuleCatalog {
             continue;
          }
          $pending[$moduleKey] = [
-            'name'                 => (string)($row['name'] ?? $moduleKey),
+            'name'                 => self::localized($row['name_i18n'] ?? null, (string)($row['name'] ?? $moduleKey)),
             'installed'            => $installed,
             'available'            => $available,
             // Base mínima exigida pela versão disponível (PrereqCheck deriva o alerta
@@ -77,6 +77,38 @@ class PluginNextoolModuleCatalog {
     *
     * @return array
     */
+   /**
+    * Texto no idioma da sessão a partir do JSON {locale: texto} do catálogo (nextool-dev#262). Ordem: idioma exato,
+    * mesma família (es_CO usa es_ES; a variante "xx_XX" da família vem antes das outras), e por fim $fallback (o
+    * nome/descrição únicos de sempre). JSON ausente ou inválido = $fallback.
+    */
+   public static function localized($json, string $fallback): string {
+      if (!is_string($json) || $json === '') {
+         return $fallback;
+      }
+      $map = json_decode($json, true);
+      if (!is_array($map) || $map === []) {
+         return $fallback;
+      }
+      $lang = (string) ($_SESSION['glpilanguage'] ?? ($GLOBALS['CFG_GLPI']['language'] ?? ''));
+      if ($lang !== '' && isset($map[$lang]) && is_string($map[$lang]) && $map[$lang] !== '') {
+         return $map[$lang];
+      }
+      $prefix = strtolower(substr($lang, 0, 2));
+      if ($prefix !== '') {
+         $preferred = $prefix . '_' . strtoupper($prefix);
+         if (isset($map[$preferred]) && is_string($map[$preferred]) && $map[$preferred] !== '') {
+            return $map[$preferred];
+         }
+         foreach ($map as $locale => $text) {
+            if (is_string($locale) && strncmp($locale, $prefix . '_', 3) === 0 && is_string($text) && $text !== '') {
+               return $text;
+            }
+         }
+      }
+      return $fallback;
+   }
+
    public static function all(): array {
       global $DB;
 
@@ -106,8 +138,8 @@ class PluginNextoolModuleCatalog {
          }
 
          $modules[$moduleKey] = [
-            'name'         => $row['name'],
-            'description'  => $row['description'] ?? '',
+            'name'         => self::localized($row['name_i18n'] ?? null, (string) $row['name']),
+            'description'  => self::localized($row['description_i18n'] ?? null, (string) ($row['description'] ?? '')),
             'version'      => $row['available_version'] ?? $row['version'],
             'icon'         => $row['icon'] ?? self::DEFAULT_ICON,
             'billing_tier' => $row['billing_tier'] ?? 'FREE',

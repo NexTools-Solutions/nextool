@@ -124,12 +124,6 @@ $blockedModules = $manager->getBlockedModules();
 // PluginNextoolModuleCatalog::all() já lê de glpi_plugin_nextool_main_modules
 $catalogMeta = PluginNextoolModuleCatalog::all();
 
-$contactModuleOptions = [];
-foreach ($catalogMeta as $moduleKey => $meta) {
-   $contactModuleOptions[$moduleKey] = $meta['name'] ?? ucfirst($moduleKey);
-}
-ksort($contactModuleOptions);
-
 // Verifica se pelo menos um módulo foi liberado (is_available = 1)
 $modulesUnlocked = false;
 foreach ($catalogMeta as $moduleKey => $meta) {
@@ -505,9 +499,11 @@ if ($nextool_is_standalone) {
       'contato' => ['id' => 'rt-tab-contato', 'label' => __('Contato', 'nextool'), 'icon' => 'ti ti-headset', 'allowed' => $canViewAdminTabs],
       'licenca' => ['id' => 'rt-tab-licenca', 'label' => __('Licenciamento', 'nextool'), 'icon' => 'ti ti-key', 'allowed' => $canViewAdminTabs],
       'logs'    => ['id' => 'rt-tab-logs', 'label' => __('Logs', 'nextool'), 'icon' => 'ti ti-report-analytics', 'allowed' => $canViewAdminTabs],
+      'servicos'  => ['id' => 'rt-tab-servicos', 'label' => __('Serviços', 'nextool'), 'icon' => 'ti ti-briefcase', 'allowed' => $canViewAdminTabs],
+      'novidades' => ['id' => 'rt-tab-novidades', 'label' => __('Novidades', 'nextool'), 'icon' => 'ti ti-sparkles', 'allowed' => $canViewAdminTabs],
    ];
    $canShow = ($nextool_show_only_tab === 'modules' && $canViewAnyModule)
-      || (in_array($nextool_show_only_tab, ['contato', 'licenca', 'logs', 'alertas'], true) && $canViewAdminTabs);
+      || (in_array($nextool_show_only_tab, ['contato', 'licenca', 'logs', 'alertas', 'servicos', 'novidades'], true) && $canViewAdminTabs);
    echo "<div class='m-3' id='nextool-config-form'>";
    if (!$canShow) {
       echo "<div class='alert alert-warning'><i class='ti ti-lock me-2'></i>" . __('Sem permissão para acessar esta seção.', 'nextool') . "</div>";
@@ -540,6 +536,18 @@ $tabsRegistry = $tabsRegistry ?? [
       'id'      => 'rt-tab-logs',
       'label'   => __('Logs', 'nextool'),
       'icon'    => 'ti ti-report-analytics',
+      'allowed' => $canViewAdminTabs,
+   ],
+   'servicos' => [
+      'id'      => 'rt-tab-servicos',
+      'label'   => __('Serviços', 'nextool'),
+      'icon'    => 'ti ti-briefcase',
+      'allowed' => $canViewAdminTabs,
+   ],
+   'novidades' => [
+      'id'      => 'rt-tab-novidades',
+      'label'   => __('Novidades', 'nextool'),
+      'icon'    => 'ti ti-sparkles',
       'allowed' => $canViewAdminTabs,
    ],
 ];
@@ -626,6 +634,10 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
         <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.contato.tab.inc.php'; ?>
 
         <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.alertas.tab.inc.php'; ?>
+
+        <?php $nextoolVitrineTab = 'servicos'; include NEXTOOL_PHP_DIR . '/front/tabs/config.vitrine.tab.inc.php'; ?>
+
+        <?php $nextoolVitrineTab = 'novidades'; include NEXTOOL_PHP_DIR . '/front/tabs/config.vitrine.tab.inc.php'; ?>
 
       <?php if (!$nextool_is_standalone): ?></div></div><?php endif; ?>
 

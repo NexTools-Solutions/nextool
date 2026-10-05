@@ -72,6 +72,37 @@ class PluginNextoolAlertManager {
       return $clean;
    }
 
+   /**
+    * Tipos de comunicado que NÃO são aviso: são o conteúdo das guias "Serviços" e "Novidades" (nextool-dev#277).
+    * Chegam pelo mesmo canal dos comunicados, mas ficam fora do popup, do histórico da aba Alertas e do sino.
+    */
+   public const VITRINE_TYPES = ['servicos', 'novidades'];
+
+   /**
+    * Itens de uma guia de divulgação (nextool-dev#277), do mais recente para o mais antigo, sem os expirados e sem
+    * os que ainda não começaram.
+    *
+    * @return array<int, array<string, mixed>>
+    */
+   public static function getVitrineItems(string $type, int $limit = 12): array {
+      global $DB;
+      if (!in_array($type, self::VITRINE_TYPES, true) || !$DB->tableExists(self::TABLE)) {
+         return [];
+      }
+      $items = [];
+      foreach ($DB->request(['FROM' => self::TABLE, 'WHERE' => ['alert_type' => $type], 'ORDER' => 'date_received DESC', 'LIMIT' => $limit]) as $row) {
+         if (self::isExpired($row)) {
+            continue;
+         }
+         $start = $row['date_start'] ?? null;
+         if (!empty($start) && strtotime((string) $start) > time()) {
+            continue;
+         }
+         $items[] = $row;
+      }
+      return $items;
+   }
+
    public static function getUnreadAlerts(): array {
       global $DB;
       if (!$DB->tableExists(self::TABLE)) { return []; }
@@ -80,7 +111,7 @@ class PluginNextoolAlertManager {
       $reads  = self::readsForUser($userId);
       $iterator = $DB->request([
          'FROM'  => self::TABLE,
-         'WHERE' => ['is_read' => 0], // legado: dispensa GLOBAL pré-migração continua valendo
+         'WHERE' => ['is_read' => 0, ['NOT' => ['alert_type' => self::VITRINE_TYPES]]], // legado: dispensa GLOBAL pré-migração continua valendo; conteúdo das guias (#277) não é aviso
          'ORDER' => 'date_received DESC',
       ]);
       $alerts = [];
@@ -105,6 +136,7 @@ class PluginNextoolAlertManager {
       $reads  = self::readsForUser($userId);
       $iterator = $DB->request([
          'FROM'  => self::TABLE,
+         'WHERE' => [['NOT' => ['alert_type' => self::VITRINE_TYPES]]], // conteúdo das guias (#277) não é aviso
          'ORDER' => 'date_received DESC',
          'LIMIT' => $limit,
       ]);

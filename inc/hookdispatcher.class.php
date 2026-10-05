@@ -367,6 +367,12 @@ class PluginNextoolHookDispatcher {
       return self::dispatchItemAdd('ITILFollowup', $item);
    }
 
+   // Categorias ITIL (AI Assist gerenciado, fase 4): o módulo grava as palavras-chave da categoria junto com o
+   // formulário nativo (campo injetado pelo post_item_form) e as apaga com a categoria.
+   public static function dispatchItemAddITILCategory(CommonDBTM $item)    { return self::dispatchItemAdd('ITILCategory', $item); }
+   public static function dispatchItemUpdateITILCategory(CommonDBTM $item) { return self::dispatchItemUpdate('ITILCategory', $item); }
+   public static function dispatchItemPurgeITILCategory(CommonDBTM $item)  { return self::dispatchItemPurge('ITILCategory', $item); }
+
    public static function dispatchItemAddITILSolution(CommonDBTM $item) {
       return self::dispatchItemAdd('ITILSolution', $item);
    }

@@ -28,7 +28,7 @@ require_once __DIR__ . '/inc/localeresolver.class.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.30.1');
+define('PLUGIN_NEXTOOL_VERSION', '6.31.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -666,6 +666,10 @@ function plugin_init_nextool() {
                $nxInstall($PLUGIN_HOOKS, 'item_purge',      'TicketTask',       'dispatchItemPurgeTicketTask');
                $nxInstall($PLUGIN_HOOKS, 'item_add',        'ITILFollowup',     'dispatchItemAddITILFollowup');
                $nxInstall($PLUGIN_HOOKS, 'item_add',        'ITILSolution',     'dispatchItemAddITILSolution');
+               // Categorias ITIL (AI Assist gerenciado, fase 4): palavras-chave gravadas junto com o formulário nativo.
+               $nxInstall($PLUGIN_HOOKS, 'item_add',        'ITILCategory',     'dispatchItemAddITILCategory');
+               $nxInstall($PLUGIN_HOOKS, 'item_update',     'ITILCategory',     'dispatchItemUpdateITILCategory');
+               $nxInstall($PLUGIN_HOOKS, 'item_purge',      'ITILCategory',     'dispatchItemPurgeITILCategory');
                // KnowbaseItem (6.14.0): módulos com dados atrelados a artigos da KB
                // (aiassist: palavras-chave) limpam no purge. Sem lixeira no itemtype,
                // o core dispara só o item_purge; item_delete fica por completude.
