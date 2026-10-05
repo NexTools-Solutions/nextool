@@ -377,6 +377,18 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Segredos guardados FORA dos lugares que a re-cifra da base já varre (nextool-dev#269): glpi_configs
+    * `plugin:nextool%`, tabelas `glpi_plugin_nextool_%config%` e o JSON de config do módulo. Só declare aqui
+    * coluna de outra tabela que guarde valor cifrado pelo SecretVault (`NXENC1:`) ou pelo GLPIKey. O comando
+    * `plugins:nextool:secrets:rekey` regrava esses valores depois de `security:change_key`.
+    *
+    * @return array<int, array{table:string, column:string, pk?:string, where?:array}>
+    */
+   public function getSecretLocations(): array {
+      return [];
+   }
+
+   /**
     * Instalação do módulo
     * Cria tabelas, insere dados iniciais, etc.
     * 

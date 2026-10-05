@@ -23,7 +23,7 @@ if (!defined('GLPI_ROOT')) {
 class PluginNextoolSecretVault {
 
    /** Marca que identifica um valor cifrado por este vault. */
-   private const PREFIX = 'NXENC1:';
+   public const PREFIX = 'NXENC1:'; // público para a re-cifra (PluginNextoolSecretRekey) manter o formato
 
    /**
     * Cifra um segredo para persistir. Fail-secure: se o GLPIKey estiver
@@ -79,7 +79,48 @@ class PluginNextoolSecretVault {
             // chave ausente/trocada: nao vaza o ciphertext
          }
       }
+      self::reportUndecryptable();
       return '';
+   }
+
+   /**
+    * Segredo marcado como cifrado que nao abre: quase sempre a chave do GLPI foi trocada (security:change_key) sem
+    * rodar a re-cifra do NexTool (nextool-dev#269). Ate aqui o sintoma era silencioso (as integracoes paravam). Vira
+    * aviso na aba Alertas, um por chave do GLPI (a chave do aviso leva a impressao digital da chave atual: cada troca
+    * gera um aviso novo). Marca em GLPI_CACHE_DIR: depois do primeiro, nenhuma consulta nas chamadas seguintes.
+    * O `plugins:nextool:secrets:rekey --apply` expira o aviso quando nada mais falha.
+    */
+   private static function reportUndecryptable(): void {
+      static $feito = false;
+      if ($feito) {
+         return;
+      }
+      $feito = true;
+      try {
+         $atual = class_exists('GLPIKey') ? (string) ((new GLPIKey())->get() ?? '') : '';
+         $marca = substr(hash('sha256', $atual), 0, 12); // impressao digital da chave, nunca a chave
+         $flag  = defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR) ? GLPI_CACHE_DIR . '/nextool_secret_undecryptable_' . $marca : '';
+         if ($flag !== '' && is_file($flag)) {
+            return;
+         }
+         $alertas = __DIR__ . '/alertmanager.class.php';
+         if (!is_file($alertas)) {
+            return;
+         }
+         require_once $alertas;
+         PluginNextoolAlertManager::raiseLocal(
+            'secret_undecryptable:' . $marca,
+            __('Credenciais do NexTool que não abrem com a chave atual do GLPI', 'nextool'),
+            '<p>' . __('Uma ou mais credenciais guardadas pelos módulos do NexTool (chaves de API, tokens) não podem ser lidas com a chave de segurança atual do GLPI. Isso acontece quando a chave é trocada (security:change_key): as integrações desses módulos param.', 'nextool') . '</p>'
+               . '<p>' . __('Com uma cópia do arquivo glpicrypt.key de antes da troca, rode no servidor: php bin/console plugins:nextool:secrets:rekey --old-key-file=/caminho/da/copia (simula) e depois com --apply. Sem a cópia, digite de novo as credenciais na configuração de cada módulo.', 'nextool') . '</p>',
+            'warning'
+         );
+         if ($flag !== '') {
+            @touch($flag);
+         }
+      } catch (\Throwable $e) {
+         // aviso é diagnóstico: nunca derruba quem pediu o segredo
+      }
    }
 
    /** Indica se o valor ja esta cifrado por este vault (tem o prefixo). */

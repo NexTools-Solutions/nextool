@@ -30,12 +30,22 @@ class PluginNextoolCronCatalogSync {
    }
 
    /**
+    * Orçamento da execução (auditoria das crons, achado 52). O pior caso somava ~135 s (validate 15 s +
+    * auto-cura 30+15 s + manifesto do core 60 s + endpoint do cloud link 15 s), segurando o cron.php do GLPI
+    * inteiro. Passado o orçamento depois da validação, as etapas seguintes (aviso de versão, pré-requisitos,
+    * reafirmação do endpoint) ficam para o próximo ciclo: nenhuma delas perde dado por esperar 6 h.
+    */
+   public const BUDGET_SECONDS = 45;
+
+   /**
     * Cron MODE_EXTERNAL: sincroniza o catálogo de módulos com a ContainerAPI.
     *
-    * @return int >0 = sincronizou (comunicação remota); 0 = nada feito (ambiente não
-    *             provisionado, erro tratado, ou resposta sem origem remota)
+    * @return int 1 = sincronizou (comunicação remota OK); 0 = nada a fazer (ambiente não provisionado, ou
+    *             validação servida do cache local); -1 = falha (servidor fora, backoff de comunicação ou
+    *             exceção), para o GLPI registrar a execução como erro.
     */
    public static function cronCatalogSync(CronTask $task): int {
+      $inicio = microtime(true);
       if (!class_exists('PluginNextoolConfig') || !class_exists('PluginNextoolLicenseValidator')) {
          return 0;
       }
@@ -46,7 +56,7 @@ class PluginNextoolCronCatalogSync {
          $settings = PluginNextoolConfig::getDistributionSettings();
       } catch (Throwable $e) {
          $task->log('catalog_sync: falha ao ler settings de distribuição: ' . $e->getMessage());
-         return 0;
+         return -1;
       }
       $baseUrl    = trim((string) ($settings['base_url'] ?? ''));
       $identifier = trim((string) ($settings['client_identifier'] ?? ''));
@@ -65,18 +75,33 @@ class PluginNextoolCronCatalogSync {
          ]);
       } catch (Throwable $e) {
          $task->log('catalog_sync: erro na validação: ' . $e->getMessage());
-         return 0;
+         return -1;
       }
 
       $source = is_array($result) ? (string) ($result['source'] ?? '') : '';
       $valid  = is_array($result) ? (bool) ($result['valid'] ?? false) : false;
+      $falhou = self::isRemoteFailure(is_array($result) ? $result : []);
       $task->log(sprintf('catalog_sync: source=%s valid=%s', $source !== '' ? $source : 'n/d', $valid ? '1' : '0'));
+      if ($falhou) {
+         // Servidor fora ou comunicação em backoff: o aviso de versão e os pré-requisitos ficam para o próximo
+         // ciclo (sem dado fresco). A reafirmação do endpoint abaixo segue: ela fala com o cérebro, não com o
+         // ContainerAPI.
+         $task->log('catalog_sync: falha de comunicação com o servidor');
+      }
 
       // Notificação de updates (#162): só com dado FRESCO do servidor (source=remote);
       // cache/backoff/falha não devem emitir nem expirar alerta com informação velha.
-      if ($source === 'remote') {
-         self::notifyPendingUpdates($task);
-         self::runPrereqCheck($task);
+      if ($source === 'remote' && !$falhou) {
+         if (self::budgetLeft($inicio) > 0) {
+            self::notifyPendingUpdates($task);
+         }
+         if (self::budgetLeft($inicio) > 0) {
+            self::runPrereqCheck($task);
+         }
+      }
+      if (self::budgetLeft($inicio) <= 0) {
+         $task->log(sprintf('catalog_sync: orçamento de %d s esgotado; etapas restantes no próximo ciclo', self::BUDGET_SECONDS));
+         return $falhou ? -1 : ($source === 'remote' ? 1 : 0);
       }
 
       // Cloud link (§2.12 e contrato 1.1, §2.13.2): a validação acima é por onde a credencial chega,
@@ -87,7 +112,7 @@ class PluginNextoolCronCatalogSync {
       if (is_file($clientFile)) {
          try {
             require_once $clientFile;
-            if ($source === 'remote') {
+            if ($source === 'remote' && !$falhou) {
                // O /validate deste ciclo atende um pedido de ressincronização pelo kid que tenha ficado
                // para depois (servidor que não solta a resposta antes; ver PluginNextoolCloudResync).
                require_once NEXTOOL_PHP_DIR . '/inc/cloudresync.class.php';
@@ -108,7 +133,32 @@ class PluginNextoolCronCatalogSync {
       }
 
       // "Fez algo" = houve comunicação remota (o catálogo foi reavaliado/sincronizado).
-      return $source === 'remote' ? 1 : 0;
+      return $falhou ? -1 : ($source === 'remote' ? 1 : 0);
+   }
+
+   /**
+    * Falha de comunicação com o servidor: comunicação em backoff, ou resposta remota sem corpo / sem HTTP /
+    * HTTP 5xx (o mesmo critério com que o validator conta a falha de rede). 4xx não entra: é resposta do
+    * servidor (licença, assinatura), já tratada e registrada pelo validator.
+    *
+    * @param array<string,mixed> $result retorno de PluginNextoolLicenseValidator::validateLicense()
+    */
+   public static function isRemoteFailure(array $result): bool {
+      $source = (string) ($result['source'] ?? '');
+      if (in_array($source, ['network_backoff', 'auth_backoff'], true)) {
+         return true;
+      }
+      if ($source !== 'remote') {
+         return false;
+      }
+      $http = $result['http_code'] ?? null;
+
+      return $http === null || (int) $http === 0 || (int) $http >= 500;
+   }
+
+   /** Segundos que restam do orçamento desta execução. */
+   private static function budgetLeft(float $inicio): float {
+      return self::BUDGET_SECONDS - (microtime(true) - $inicio);
    }
 
    /**

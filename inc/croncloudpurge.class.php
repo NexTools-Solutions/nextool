@@ -44,31 +44,63 @@ class PluginNextoolCronCloudPurge {
     * @return int >0 = apagou alguma coisa; 0 = nada a apagar
     */
    public static function cronCloudPurge(CronTask $task): int {
-      $apagados = self::purge();
-      $total    = $apagados['requests'] + $apagados['nonces'];
-      $task->addVolume($total);
-      $task->log(sprintf('cloud_purge: requests=%d nonces=%d', $apagados['requests'], $apagados['nonces']));
+      // Cada etapa isolada (auditoria das crons, achados 53 e S2): uma exceção numa delas não impede as outras
+      // nem deixa a tarefa sem registro. Etapa com falha faz a execução terminar como erro (-1).
+      $fez    = false;
+      $falhas = 0;
+      $etapa  = static function (string $nome, callable $fn) use ($task, &$falhas): void {
+         try {
+            $fn();
+         } catch (Throwable $e) {
+            $falhas++;
+            $task->log(sprintf('%s: erro: %s', $nome, $e->getMessage()));
+         }
+      };
+
+      $etapa('cloud_purge', static function () use ($task, &$fez): void {
+         $apagados = self::purge();
+         $total    = $apagados['requests'] + $apagados['nonces'];
+         $task->addVolume($total);
+         $task->log(sprintf('cloud_purge: requests=%d nonces=%d', $apagados['requests'], $apagados['nonces']));
+         $fez = $fez || $total > 0;
+      });
       // Contato externo (6.27.0): auditoria com mais de 90 dias, ligação com chamado apagado e contato sem
       // chamado que não fala há 90 dias.
-      $contatos = NEXTOOL_PHP_DIR . '/inc/cloudcontacts.class.php';
-      if (is_file($contatos)) {
+      $etapa('cloud_contacts', static function () use ($task, &$fez): void {
+         $contatos = NEXTOOL_PHP_DIR . '/inc/cloudcontacts.class.php';
+         if (!is_file($contatos)) {
+            return;
+         }
          require_once $contatos;
          $c = PluginNextoolCloudContacts::purge();
          $task->addVolume($c['log'] + $c['links'] + $c['contacts']);
          $task->log(sprintf('cloud_contacts: auditoria=%d ligacoes=%d contatos=%d', $c['log'], $c['links'], $c['contacts']));
-      }
-      $log = self::rotateLog();
-      $task->log(sprintf('cloud_log: rodado=%s copias_apagadas=%d', $log['rotated'] ? 'sim' : 'nao', $log['deleted']));
-      $task->log('cloud_endpoint: ' . self::refreshEndpointIfAlert()); // sem_aviso | reported:<destino> | failed:<erro>
+         $fez = $fez || ($c['log'] + $c['links'] + $c['contacts']) > 0;
+      });
+      $etapa('cloud_log', static function () use ($task, &$fez): void {
+         $log = self::rotateLog();
+         $task->log(sprintf('cloud_log: rodado=%s copias_apagadas=%d', $log['rotated'] ? 'sim' : 'nao', $log['deleted']));
+         $fez = $fez || $log['rotated'] || $log['deleted'] > 0;
+      });
+      $etapa('cloud_endpoint', static function () use ($task): void {
+         $task->log('cloud_endpoint: ' . self::refreshEndpointIfAlert()); // sem_aviso | reported:<destino> | failed:<erro>
+      });
       // Ressincronização pedida por um kid desconhecido e que ficou pendente (servidor sem PHP-FPM, que
       // não solta a resposta antes): atendida aqui em até 1 h, em vez de esperar o catalogSync (6 h).
-      $resync = NEXTOOL_PHP_DIR . '/inc/cloudresync.class.php';
-      if (is_file($resync)) {
+      $etapa('cloud_resync', static function () use ($task): void {
+         $resync = NEXTOOL_PHP_DIR . '/inc/cloudresync.class.php';
+         if (!is_file($resync)) {
+            return;
+         }
          require_once $resync;
          $task->log('cloud_resync: ' . PluginNextoolCloudResync::runPending()); // none|validated|throttled|failed
+      });
+
+      if ($falhas > 0) {
+         return -1;
       }
 
-      return ($total > 0 || $log['rotated'] || $log['deleted'] > 0) ? 1 : 0;
+      return $fez ? 1 : 0;
    }
 
    /**
@@ -183,21 +215,59 @@ class PluginNextoolCronCloudPurge {
          // Mesmo relógio (PHP) com que o executor grava `created_at`.
          'requests' => [
             PluginNextoolCloudExecutor::REQUESTS_TABLE,
+            'request_id',
             'created_at',
             $now - (PluginNextoolCloudExecutor::RETENTION_HOURS * 3600),
          ],
-         'nonces'   => [PluginNextoolCloudRequestGuard::NONCE_TABLE, 'expires_at', $now],
+         'nonces'   => [PluginNextoolCloudRequestGuard::NONCE_TABLE, 'nonce', 'expires_at', $now],
       ];
 
       $apagados = ['requests' => 0, 'nonces' => 0];
-      foreach ($alvos as $chave => [$tabela, $coluna, $limite]) {
+      foreach ($alvos as $chave => [$tabela, $pk, $coluna, $limite]) {
          if (!$DB->tableExists($tabela)) {
             continue;
          }
-         $DB->delete($tabela, [$coluna => ['<', date('Y-m-d H:i:s', $limite)]]);
-         $apagados[$chave] = max(0, (int) $DB->affectedRows());
+         $apagados[$chave] = self::deleteInBatches($tabela, $pk, $coluna, date('Y-m-d H:i:s', $limite));
       }
 
       return $apagados;
+   }
+
+   /** Linhas apagadas por lote e teto de lotes por execução (o resto sai na hora seguinte). */
+   public const PURGE_BATCH       = 1000;
+   public const PURGE_MAX_BATCHES = 50;
+
+   /**
+    * DELETE em lotes pela chave primária (auditoria das crons, achado 53): um DELETE único segurava o lock da
+    * tabela que o executor grava a cada ação do cloud link. Cada lote lê até PURGE_BATCH chaves pelo índice
+    * da coluna de prazo e apaga só essas.
+    *
+    * @return int linhas apagadas (contadas pelas chaves lidas, não pelo affectedRows)
+    */
+   private static function deleteInBatches(string $tabela, string $pk, string $coluna, string $antesDe): int {
+      global $DB;
+      $total = 0;
+      for ($lote = 0; $lote < self::PURGE_MAX_BATCHES; $lote++) {
+         $chaves = [];
+         foreach ($DB->request([
+            'SELECT' => [$pk],
+            'FROM'   => $tabela,
+            'WHERE'  => [$coluna => ['<', $antesDe]],
+            'ORDER'  => [$coluna . ' ASC'],
+            'LIMIT'  => self::PURGE_BATCH,
+         ]) as $linha) {
+            $chaves[] = $linha[$pk];
+         }
+         if ($chaves === []) {
+            break;
+         }
+         $DB->delete($tabela, [$pk => $chaves]);
+         $total += count($chaves);
+         if (count($chaves) < self::PURGE_BATCH) {
+            break;
+         }
+      }
+
+      return $total;
    }
 }
