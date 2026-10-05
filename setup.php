@@ -28,7 +28,7 @@ require_once __DIR__ . '/inc/localeresolver.class.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.31.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.31.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -302,6 +302,10 @@ function plugin_init_nextool() {
          @unlink($pendingApplyFlag);
       }
    }
+
+   // Rede de segurança do schema: a flag acima é de uso único; se ela se perde ou o install
+   // falha, nada tentava de novo e o banco ficava sem a migração da versão nova.
+   _plugin_nextool_ensure_schema();
 
    // CSS global escopado a .nextool-tab-card: oculta os controles de "pesquisa salva"
    // (SavedSearch) nas grades Search::show embarcadas em abas de modulo (bugados fora de
@@ -778,6 +782,152 @@ function plugin_nextool_check_prerequisites() {
  */
 function plugin_nextool_check_config() {
    return true;
+}
+
+/**
+ * Contexto em glpi_configs do marcador de schema: `version` (versão cuja migração concluiu),
+ * `last_attempt` (timestamp da última tentativa da rede) e `last_error`.
+ */
+define('PLUGIN_NEXTOOL_SCHEMA_CONTEXT', 'plugin:nextool_schema');
+
+/** Intervalo mínimo entre duas tentativas da rede de segurança do schema (s). */
+define('PLUGIN_NEXTOOL_SCHEMA_RETRY_SECONDS', 900);
+
+/**
+ * Lê o marcador de schema direto do banco.
+ *
+ * BOOT-SAFE: nada de Config::getConfigurationValues/setConfigurationValues aqui (ver o bloco
+ * pending_apply em plugin_init_nextool: o Config no boot já derrubou o init de cliente).
+ */
+function _plugin_nextool_schema_get(): array {
+   global $DB;
+   $values = [];
+   foreach ($DB->request([
+      'SELECT' => ['name', 'value'],
+      'FROM'   => 'glpi_configs',
+      'WHERE'  => ['context' => PLUGIN_NEXTOOL_SCHEMA_CONTEXT],
+   ]) as $row) {
+      $values[(string) $row['name']] = (string) $row['value'];
+   }
+   return $values;
+}
+
+/** Grava uma chave do marcador de schema direto no banco (boot-safe, ver _plugin_nextool_schema_get). */
+function _plugin_nextool_schema_set(string $name, string $value): void {
+   global $DB;
+   // GLPI 10 não escapa no insert/update: o valor fica restrito a um conjunto sem aspas nem barra.
+   $value = mb_substr((string) preg_replace('/[^\p{L}\p{N}\s.,:;()\/_#=<>+-]/u', ' ', $value), 0, 250);
+   $where = ['context' => PLUGIN_NEXTOOL_SCHEMA_CONTEXT, 'name' => $name];
+   $exists = count($DB->request(['SELECT' => ['id'], 'FROM' => 'glpi_configs', 'WHERE' => $where, 'LIMIT' => 1])) > 0;
+   if ($exists) {
+      $DB->update('glpi_configs', ['value' => $value], $where);
+   } else {
+      $DB->insert('glpi_configs', $where + ['value' => $value]);
+   }
+}
+
+/**
+ * Marca o schema da versão atual como migrado. Chamado por plugin_nextool_install() logo após a
+ * Migration, então install pela UI, pela CLI, pelo pending_apply ou pela própria rede marcam igual.
+ */
+function _plugin_nextool_schema_mark(): void {
+   _plugin_nextool_schema_set('version', PLUGIN_NEXTOOL_VERSION);
+   _plugin_nextool_schema_set('last_error', '');
+}
+
+/**
+ * Rede de segurança do schema da base (cliente IRSSL, 2026-10-05).
+ *
+ * O update pelo botão grava a versão nova e o estado ATIVO direto em glpi_plugins e deixa a
+ * migração para a flag de uso único `nextool_pending_apply`. Se a flag se perde (cache limpo,
+ * escrita falhou) ou o install lança, a flag é apagada mesmo assim e nada tentava de novo: com a
+ * versão do banco igual à dos arquivos, o GLPI nem oferece "atualizar". O cliente ficou com a
+ * 6.31.0 sem a coluna `name_i18n` e toda validação de licença morria em 1054.
+ *
+ * Aqui o boot compara o marcador gravado pelo install com a versão dos arquivos e, se divergir,
+ * roda o install de novo (idempotente). Caminho rápido por arquivo no cache (sem SELECT por
+ * request); no máximo uma tentativa a cada PLUGIN_NEXTOOL_SCHEMA_RETRY_SECONDS, com o erro gravado
+ * em `last_error`; flock evita dois requests migrando juntos. Nunca lança.
+ */
+function _plugin_nextool_ensure_schema(): void {
+   global $DB;
+
+   $cacheDir = (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR)) ? GLPI_CACHE_DIR : null;
+   $okFlag = $cacheDir !== null ? $cacheDir . '/nextool_schema_ok_' . PLUGIN_NEXTOOL_VERSION : null;
+   if ($okFlag !== null && is_file($okFlag)) {
+      return;
+   }
+
+   $lock = null;
+   try {
+      $state = _plugin_nextool_schema_get();
+      if (($state['version'] ?? '') === PLUGIN_NEXTOOL_VERSION) {
+         if ($okFlag !== null) {
+            @touch($okFlag);
+         }
+         return;
+      }
+      $lastAttempt = (int) ($state['last_attempt'] ?? 0);
+      if ($lastAttempt > 0 && (time() - $lastAttempt) < PLUGIN_NEXTOOL_SCHEMA_RETRY_SECONDS) {
+         return;
+      }
+      if ($cacheDir !== null) {
+         $lock = @fopen($cacheDir . '/nextool_schema.lock', 'c');
+         if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
+            $lock = $lock === false ? null : $lock;
+            return; // outro request já está migrando
+         }
+      }
+      _plugin_nextool_schema_set('last_attempt', (string) time());
+
+      $from = (string) ($state['version'] ?? '');
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         "[SCHEMA] marcador=%s, arquivos=%s: rodando a migração da base\n",
+         $from !== '' ? $from : 'ausente',
+         PLUGIN_NEXTOOL_VERSION
+      ));
+
+      // Direto no install (o que o plugin_nextool_upgrade faz), não no Plugin::install: este
+      // derruba o estado para NOTACTIVATED e deixa "Plugin instalado! Deseja ativá-lo?" na tela de
+      // quem disparou o request, que pode ser um usuário do self-service. O buffer engole o eco da
+      // Migration ("Tarefa concluída"), que sairia no meio do HTML ou de uma resposta JSON.
+      if (!function_exists('plugin_nextool_install')) {
+         require_once __DIR__ . '/hook.php';
+      }
+      if (method_exists($DB, 'disableTableCaching')) {
+         $DB->disableTableCaching(); // fieldExists em cache esconderia a coluna que falta
+      }
+      ob_start();
+      try {
+         plugin_nextool_install();
+      } finally {
+         ob_end_clean();
+      }
+
+      $after = _plugin_nextool_schema_get();
+      if (($after['version'] ?? '') === PLUGIN_NEXTOOL_VERSION) {
+         Toolbox::logInFile('plugin_nextool', "[SCHEMA] migração da base concluída\n");
+         if ($okFlag !== null) {
+            @touch($okFlag);
+         }
+      } else {
+         _plugin_nextool_schema_set('last_error', 'install terminou sem marcar o schema');
+         Toolbox::logInFile('plugin_nextool', "[SCHEMA] install terminou sem marcar o schema\n");
+      }
+   } catch (\Throwable $e) {
+      error_log('[NexTool] migração de schema falhou (nova tentativa em 15 min): ' . $e->getMessage());
+      try {
+         _plugin_nextool_schema_set('last_error', $e->getMessage());
+         Toolbox::logInFile('plugin_nextool', '[SCHEMA] migração falhou: ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n");
+      } catch (\Throwable $ignored) {
+         // banco indisponível: o error_log acima já registrou
+      }
+   } finally {
+      if ($lock !== null) {
+         flock($lock, LOCK_UN);
+         fclose($lock);
+      }
+   }
 }
 
 /**

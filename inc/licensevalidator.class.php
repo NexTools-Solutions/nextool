@@ -1294,6 +1294,14 @@ class PluginNextoolLicenseValidator {
          if (array_key_exists('description_i18n', $entry)) {
             $i18nData['description_i18n'] = self::i18nMapJson($entry['description_i18n'], 2000);
          }
+         // Coluna ausente = migração da 6.31.0 não rodou (update pelo botão com a flag pending_apply
+         // perdida; cliente IRSSL, 2026-10-05). Sem esta guarda TODA validação morria em 1054 "Unknown
+         // column". A rede de segurança do boot (_plugin_nextool_ensure_schema) cria a coluna depois.
+         foreach (array_keys($i18nData) as $i18nField) {
+            if (!$DB->fieldExists($table, $i18nField)) {
+               unset($i18nData[$i18nField]);
+            }
+         }
 
          // Bloco platforms (ContainerAPI 4.0+). Quando ausente, cai no fallback
          // legado: módulo é considerado compatível apenas com a plataforma atual.

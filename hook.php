@@ -131,6 +131,10 @@ function plugin_nextool_install() {
       $migration->addKey($cloudRequestsTable, ['service', 'created_at'], 'service_window');
    }
    $migration->executeMigration();
+   // Marcador lido pela rede de segurança do boot (_plugin_nextool_ensure_schema, setup.php).
+   if (function_exists('_plugin_nextool_schema_mark')) {
+      _plugin_nextool_schema_mark();
+   }
 
    // Cloud link (ME-08): segredo local do pseudônimo do ator, gerado uma vez e guardado cifrado.
    // Não-fatal: sem ele, o executor gera no primeiro uso.
@@ -317,6 +321,7 @@ function plugin_nextool_uninstall() {
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_core_update']);
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_distribution']);
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_upgrade_state']); // backoff de upgrade (#248)
+   $DB->delete('glpi_configs', ['context' => 'plugin:nextool_schema']); // marcador de schema (setup.php)
    // Credenciais de serviços gerenciados (token da instância Evolution): APAGAR no uninstall
    // (LGPD -- credencial não fica em banco de plugin desinstalado). São re-entregues pelo
    // servidor no primeiro Sincronizar após reinstalar.
