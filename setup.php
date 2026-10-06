@@ -28,7 +28,7 @@ require_once __DIR__ . '/inc/localeresolver.class.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.32.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.33.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -981,6 +981,21 @@ function _plugin_nextool_register_crons() {
    if (class_exists('PluginNextoolCronCloudPurge')) {
       CronTask::register('PluginNextoolCronCloudPurge', 'cloudPurge', HOUR_TIMESTAMP, [
          'comment' => 'Cloud link: apaga os registros de ações com mais de 24 horas e o log com mais de 30 dias',
+         'mode'    => CronTask::MODE_EXTERNAL,
+      ]);
+   }
+
+   // Dispatcher de rotinas dos módulos (nextool-dev#281): UMA vaga na fila do GLPI para as rotinas
+   // frequentes que os módulos declaram em getScheduledJobs().
+   if (!class_exists('PluginNextoolJobDispatcher')) {
+      $jobsFile = __DIR__ . '/inc/jobdispatcher.class.php';
+      if (file_exists($jobsFile)) {
+         require_once $jobsFile;
+      }
+   }
+   if (class_exists('PluginNextoolJobDispatcher')) {
+      CronTask::register('PluginNextoolJobDispatcher', PluginNextoolJobDispatcher::TASK_NAME, MINUTE_TIMESTAMP, [
+         'comment' => 'Executa as rotinas frequentes dos módulos NexTool numa única ação automática',
          'mode'    => CronTask::MODE_EXTERNAL,
       ]);
    }

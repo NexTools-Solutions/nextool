@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS `glpi_plugin_nextool_main_license_config`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_module_audit`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_config_audit`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_core_updates`;
+-- Estado das rotinas do dispatcher (nextool-dev#281): recriado vazio na reinstalação.
+DROP TABLE IF EXISTS `glpi_plugin_nextool_main_jobs`;
 
 -- Cloud link v1: requisições (idempotência e limites) e nonces saem com o plugin, nos dois modos de
 -- desinstalação (retenção, decisão do DPO de 2026-09-24). O segredo local do pseudônimo do ator

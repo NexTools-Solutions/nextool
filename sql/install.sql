@@ -233,3 +233,21 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_cloud_nonces` (
   PRIMARY KEY (`nonce`),
   KEY `expires_at` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Dispatcher de rotinas dos módulos (nextool-dev#281): estado de cada rotina declarada em
+-- getScheduledJobs(). Uma linha por módulo/rotina; criada na primeira execução.
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_jobs` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `module_key` varchar(64) NOT NULL,
+  `job_key` varchar(64) NOT NULL,
+  `last_run` timestamp NULL DEFAULT NULL COMMENT 'início da última execução',
+  `last_result` tinyint DEFAULT NULL COMMENT '1 trabalhou, 0 nada a fazer, -1 falhou',
+  `last_duration_ms` int unsigned NOT NULL DEFAULT '0',
+  `last_overrun` tinyint NOT NULL DEFAULT '0' COMMENT '1 = passou do orçamento da rodada',
+  `last_message` varchar(255) NOT NULL DEFAULT '',
+  `fails` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'falhas seguidas',
+  `paused_until` timestamp NULL DEFAULT NULL COMMENT 'pausada por falhas até',
+  `date_mod` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `module_job` (`module_key`, `job_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

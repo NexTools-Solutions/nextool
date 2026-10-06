@@ -389,6 +389,39 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Rotinas frequentes do módulo, executadas pelo dispatcher da base (`PluginNextoolJobDispatcher`, uma
+    * única ação automática `nextoolJobs`) em vez de uma CronTask por rotina (nextool-dev#281).
+    *
+    * Cada item:
+    *  - `key`: identificador da rotina no módulo (`[a-z0-9_]`, até 64);
+    *  - `every`: intervalo em segundos (60 a 3600). É o MÍNIMO entre execuções; com a fila cheia pode
+    *    passar mais tempo;
+    *  - `run`: `callable(PluginNextoolJobContext $ctx): int`, mesmo contrato do CronTask (1 trabalhou,
+    *    0 nada a fazer, -1 falhou). Só é chamado quando `active` é verdadeiro. O orçamento é cooperativo:
+    *    conferir `$ctx->expired()` entre unidades de trabalho e usar `$ctx->remainingTimeout()` nas chamadas
+    *    externas. O `$ctx` tem `log()` e `addVolume()` como o CronTask;
+    *  - `active` (opcional): `callable(): bool`, "a funcionalidade está ligada?" (token configurado, vínculo
+    *    ativo...). Falso pula o `run` sem contar falha;
+    *  - `housekeeping` (opcional): `callable(PluginNextoolJobContext $ctx): void`, retenção e limpeza. Roda
+    *    SEMPRE que a rotina vence, mesmo com `active` falso: retenção não depende de a funcionalidade estar
+    *    ligada (LGPD);
+    *  - `replaces` (opcional): `[itemtype, nome]` da CronTask própria que a rotina substitui. O dispatcher a
+    *    desliga se ainda existir (cliente que atualizou o módulo antes da base). Só aceita CronTask do
+    *    próprio módulo (`PluginNextool<Modulo>...`).
+    *
+    * Módulo desativado não tem rotina executada. Cinco falhas seguidas pausam a rotina (recuo até 1 h);
+    * a tela "Rotinas do NexTool" (aba Logs) mostra o estado e permite executar agora ou retomar.
+    *
+    * Fica como CronTask própria: envio com espaçamento deliberado entre mensagens (anti-banimento) e
+    * tarefa diária ou pesada. Ver KB `modules/common/method-standards.md`, "Rotinas: dispatcher da base".
+    *
+    * @return array<int, array{key:string, every:int, run:callable, active?:callable, housekeeping?:callable, replaces?:array{0:string,1:string}}>
+    */
+   public function getScheduledJobs(): array {
+      return [];
+   }
+
+   /**
     * Instalação do módulo
     * Cria tabelas, insere dados iniciais, etc.
     * 

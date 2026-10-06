@@ -249,7 +249,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
 // Verificação de permissão depende da ação
 $action = $_POST['action'] ?? '';
 
-$validActions = ['', 'validate_license', 'accept_policies', 'unlink_environment', 'save_uninstall_mode'];
+$validActions = ['', 'validate_license', 'accept_policies', 'unlink_environment', 'save_uninstall_mode', 'job_run_now', 'job_resume'];
 if (!in_array($action, $validActions, true)) {
    http_response_code(400);
    die(json_encode(['success' => false, 'message' => __('Ação inválida.', 'nextool')]));
@@ -298,6 +298,35 @@ if ($action === 'unlink_environment') {
       INFO
    );
 
+   plugin_nextool_redirect_after_action();
+   exit;
+}
+
+if ($action === 'job_run_now' || $action === 'job_resume') {
+   // Rotinas do NexTool (nextool-dev#281), aba Logs: executar agora / retomar uma rotina pausada.
+   require_once NEXTOOL_PHP_DIR . '/inc/jobdispatcher.class.php';
+   $jobModule = (string) ($_POST['module_key'] ?? '');
+   $jobKey    = (string) ($_POST['job_key'] ?? '');
+   if (!preg_match('/^[a-z0-9_]{1,64}$/', $jobModule) || !preg_match('/^[a-z0-9_]{1,64}$/', $jobKey)) {
+      Session::addMessageAfterRedirect(__('Rotina inválida.', 'nextool'), false, ERROR);
+      plugin_nextool_redirect_after_action();
+      exit;
+   }
+   if ($action === 'job_resume') {
+      $ok = PluginNextoolJobDispatcher::resume($jobModule, $jobKey);
+      $msg = $ok ? __('Rotina retomada: volta a rodar na próxima rodada.', 'nextool') : __('Não foi possível retomar a rotina.', 'nextool');
+   } else {
+      $res = PluginNextoolJobDispatcher::runNow($jobModule, $jobKey);
+      $ok  = $res['ok'];
+      $msg = sprintf(__('Rotina %s executada: %s', 'nextool'), $jobModule . '/' . $jobKey, $res['message'] !== '' ? $res['message'] : ($res['result'] === 1 ? __('trabalhou', 'nextool') : __('nada a fazer', 'nextool')));
+   }
+   PluginNextoolConfigAudit::log([
+      'section' => 'general',
+      'action'  => $action,
+      'result'  => $ok ? 1 : 0,
+      'message' => $jobModule . '/' . $jobKey,
+   ]);
+   Session::addMessageAfterRedirect($msg, false, $ok ? INFO : ERROR);
    plugin_nextool_redirect_after_action();
    exit;
 }
