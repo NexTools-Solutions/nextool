@@ -28,7 +28,7 @@ require_once __DIR__ . '/inc/localeresolver.class.php';
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.33.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.34.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -687,6 +687,10 @@ function plugin_init_nextool() {
                // post_item_form: modificação de formulários nativos por módulos
                // (registrados via HookDispatcher::registerPostItemForm no onInit).
                $nxInstall($PLUGIN_HOOKS, 'post_item_form', null, 'dispatchPostItemFormHook');
+
+               // pre_itil_info_section (GLPI 11): topo do painel lateral do chamado, antes da
+               // seção de campos (registrados via HookDispatcher::registerPreItilInfoSection).
+               $nxInstall($PLUGIN_HOOKS, 'pre_itil_info_section', null, 'dispatchPreItilInfoSectionHook');
 
                // timeline_answer_actions: ações na barra da timeline do chamado
                // (registradas via HookDispatcher::registerTimelineActions no onInit).

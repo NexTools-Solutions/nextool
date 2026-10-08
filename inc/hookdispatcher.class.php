@@ -870,6 +870,53 @@ class PluginNextoolHookDispatcher {
    }
 
    // ========================================
+   // PRE ITIL INFO SECTION (topo do painel lateral de chamado/problema/mudança)
+   // ========================================
+
+   /** @var array<string, array[]> preItilInfoSection[itemType] = [ callback, ... ] */
+   private static $preItilInfoSection = [];
+
+   /**
+    * Registra callback para `pre_itil_info_section` (GLPI 11): o core o dispara no
+    * topo do painel lateral do objeto ITIL, ANTES da seção principal de campos. Lugar
+    * para faixa de estado (ex.: "fluxo de aprovação em andamento") que não pode cair no
+    * meio da lista de campos -- o `post_item_form` é disputado por outros plugins
+    * (Fields) e a ordem entre eles não é controlável. No GLPI 10 o hook não existe e o
+    * callback simplesmente não roda.
+    *
+    * @param string $itemType Ex.: 'Ticket'
+    * @param array  $callback [className, methodName] - recebe array $params do GLPI
+    */
+   public static function registerPreItilInfoSection(string $itemType, array $callback): void {
+      if (!isset(self::$preItilInfoSection[$itemType])) {
+         self::$preItilInfoSection[$itemType] = [];
+      }
+      self::$preItilInfoSection[$itemType][] = $callback;
+   }
+
+   /**
+    * Adaptador chamado pelo hook `pre_itil_info_section` do GLPI (registrado em
+    * setup.php). Resolve o item do payload e delega aos callbacks do itemtype.
+    */
+   public static function dispatchPreItilInfoSectionHook(array $params): void {
+      $item = $params['item'] ?? null;
+      if (!($item instanceof CommonGLPI)) {
+         return;
+      }
+      foreach (self::$preItilInfoSection[$item::getType()] ?? [] as $cb) {
+         try {
+            call_user_func($cb, $params);
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] pre_itil_info_section %s: %s',
+               $item::getType(),
+               $e->getMessage()
+            ));
+         }
+      }
+   }
+
+   // ========================================
    // SEARCH OPTIONS (colunas extras em itemtypes nativos)
    // ========================================
    //

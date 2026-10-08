@@ -40,9 +40,15 @@ abstract class PluginNextoolBaseAuditLog extends CommonDBTM {
       // (getItemForItemtype(null)). Primamos o cache reverso $CFG_GLPI['glpiitemtypetables']:
       // o Search faz `new static()` em searchOptions() ANTES do render, então quando o
       // giveItem chama getItemTypeForTable() já há cache-hit. Vale para todos os módulos.
-      if (function_exists('getTableForItemType')) {
-         getTableForItemType(static::class);
-      }
+      //
+      // Gravação DIRETA, não via getTableForItemType(): a partir do GLPI 11.0.11 ela só
+      // grava o cache reverso quando a tabela tem o nome "esperado" para a classe
+      // (`_<mod>_log` != `_<mod>logs`), e a grade estourava em getClassForItemtype(null)
+      // assim que tinha uma linha. As duas chaves existem também no GLPI 10.
+      global $CFG_GLPI;
+      $table = static::getTable();
+      $CFG_GLPI['glpitablesitemtype'][static::class] = $table;
+      $CFG_GLPI['glpiitemtypetables'][$table]        = static::class;
    }
 
    /**
