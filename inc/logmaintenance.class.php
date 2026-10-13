@@ -67,8 +67,8 @@ class PluginNextoolLogMaintenance {
          $result = $DB->delete($entry['table'], [
             $entry['column'] => ['<', $threshold]
          ]);
-         if ($result && method_exists($DB, 'affectedRows')) {
-            $affected += (int)$DB->affectedRows();
+         if ($result) {
+            $affected += PluginNextoolCompat::affectedRows($DB);
          }
       }
 

@@ -76,7 +76,7 @@ class PluginNextoolValidationAttempt extends PluginNextoolBaseAuditLog implement
       if (!empty($GLOBALS['nextool_validation_attempts_forcetab_url'])) {
          return $GLOBALS['nextool_validation_attempts_forcetab_url'];
       }
-      return Plugin::getWebDir('nextool')
+      return PluginNextoolCompat::webDir()
          . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$5';
    }
 

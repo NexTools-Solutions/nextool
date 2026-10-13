@@ -293,6 +293,50 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Grava o cache tabela<->classe do GLPI para classes de grade do módulo (`Search::show`,
+    * `Dropdown::getDropdownName`) cuja tabela foge do nome "esperado" pelo core.
+    *
+    * Por que o módulo precisa chamar: o `getItemTypeForTable()` não aceita classe que viva fora
+    * de GLPI_ROOT/marketplace (o caso dos módulos), e desde o GLPI 11.0.11 o
+    * `getTableForItemType()` só grava o reverso quando a tabela tem o nome esperado. A base pina
+    * as classes que o autoloader dela carrega e as declaradas no init; a que o módulo carrega por
+    * `require_once` depois disso (tipicamente no arquivo da aba, antes do `Search::show`) fica
+    * sem pin e a grade estoura em `getClassForItemtype(null)` assim que tem linha.
+    *
+    * Carrega cada classe (autoloader da base) e grava as duas chaves, sobrescrevendo: quem chama
+    * declara a dona da tabela (vale para tabela compartilhada por duas classes). Só tabelas do
+    * NexTool; classe ausente, abstrata ou fora de CommonDBTM é ignorada sem erro. As duas chaves
+    * existem também no GLPI 10, onde a chamada é inofensiva.
+    *
+    * Uso, antes do `Search::show` (ou no onInit, se a classe for usada em várias telas):
+    *    PluginNextoolBaseModule::pinItemtypeTables([PluginNextoolXyzRecord::class]);
+    *
+    * @param string[] $classes
+    * @return void
+    * @since 6.36.0
+    */
+   public static function pinItemtypeTables(array $classes): void {
+      global $CFG_GLPI;
+      foreach ($classes as $class) {
+         try {
+            if (!is_string($class) || !class_exists($class)
+                || !is_subclass_of($class, 'CommonDBTM')
+                || (new ReflectionClass($class))->isAbstract()) {
+               continue;
+            }
+            $table = $class::getTable();
+         } catch (\Throwable $e) {
+            continue;
+         }
+         if (!function_exists('plugin_nextool_is_own_table') || !plugin_nextool_is_own_table($table)) {
+            continue;
+         }
+         $CFG_GLPI['glpitablesitemtype'][$class] = $table;
+         $CFG_GLPI['glpiitemtypetables'][$table] = $class;
+      }
+   }
+
+   /**
     * Nome amigável do módulo (exibido na interface)
     * Exemplo: 'Email Tools', 'Report Tools', 'Custom Fields'
     * 
@@ -1118,7 +1162,7 @@ abstract class PluginNextoolBaseModule {
       
       // Usa roteador central para evitar problemas com Symfony
       // Formato: /plugins/nextool/front/modules.php?module=[key]&file=[filename]
-      return Plugin::getWebDir('nextool') . '/front/modules.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename);
+      return PluginNextoolCompat::webDir() . '/front/modules.php?module=' . urlencode($moduleKey) . '&file=' . urlencode($filename);
    }
 
    /**
@@ -1131,9 +1175,9 @@ abstract class PluginNextoolBaseModule {
       $modulePath = $this->getModulePath();
       // Roteador central para AJAX (funciona com módulos em files/_plugins/nextool/modules/)
       if (is_dir($modulePath . '/ajax')) {
-         return Plugin::getWebDir('nextool') . '/ajax/module_ajax.php?module=' . urlencode($this->getModuleKey()) . '&file=' . urlencode($filename);
+         return PluginNextoolCompat::webDir() . '/ajax/module_ajax.php?module=' . urlencode($this->getModuleKey()) . '&file=' . urlencode($filename);
       }
-      return Plugin::getWebDir('nextool') . '/ajax/modules/' . $filename;
+      return PluginNextoolCompat::webDir() . '/ajax/modules/' . $filename;
    }
 
    /**

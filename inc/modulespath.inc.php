@@ -27,9 +27,12 @@ if (!defined('NEXTOOL_PHP_DIR')) {
    define('NEXTOOL_PHP_DIR', $nextoolPhpDir);
 }
 
-if (!defined('GLPI_ROOT') || defined('NEXTOOL_MODULES_DIR')) {
-   return;
-}
+// nextool-dev#282: NADA de `return` antecipado aqui. Um script CLI que inclua este arquivo antes do
+// boot do kernel (sem GLPI_ROOT) deixava o processo sem as funcoes, as constantes de caminho e o
+// autoloader -- e o `require_once` do setup.php nao o rodava de novo. Agora so o bloco das
+// CONSTANTES depende de GLPI_ROOT (e e pulado se ja definidas); funcoes e autoloader, guardados
+// por function_exists/defined, sao declarados sempre e olham as constantes na hora da chamada.
+if (defined('GLPI_ROOT') && !defined('NEXTOOL_MODULES_DIR')) {
 
 // Se GLPI_PLUGIN_DOC_DIR não está definido, tenta carregar downstream.php
 // para obter os paths corretos. Isso é essencial em instalações com diretórios
@@ -106,6 +109,7 @@ if (!defined('NEXTOOL_MODULES_BASE')) {
       ? rtrim(NEXTOOL_MODULES_DIR, '/')
       : (rtrim(GLPI_ROOT, '/') . '/' . ltrim(NEXTOOL_MODULES_DIR, '/')));
 }
+}  // fim do bloco das constantes (so com GLPI_ROOT)
 
 // -------------------------------------------------------------------------
 // Manifesto de boot (nextool-dev#249, lote B): metadados de descoberta dos módulos +
@@ -191,6 +195,60 @@ if (!function_exists('plugin_nextool_is_own_table')) {
    }
 }
 
+if (!function_exists('plugin_nextool_module_loadable_on_this_glpi')) {
+   /**
+    * O código do módulo pode ser carregado neste GLPI? Lê `compat_glpi_majors` (CSV) ou
+    * `glpi_major` do module.json e compara com o major em execução; memoizado por módulo.
+    *
+    * Por que no autoloader, e não só no gate do ModuleManager: o GLPI 12 tipou propriedades
+    * do core (`$rightname`...) que dezenas de classes de módulo redeclaram sem tipo. Carregar
+    * UMA delas é erro de compilação, que nenhum try/catch segura -- e o core pede essas classes
+    * por fora do plugin (cron, display prefs, Search, Log) mesmo com o módulo bloqueado. O
+    * manifesto de boot não serve de guarda: após um upgrade de major ele ainda é o antigo
+    * (`blocked = []`) e, sem manifesto, a heurística carregava tudo.
+    *
+    * Só é avaliado no GLPI >= 12: no 10/11 o comportamento fica idêntico ao de sempre
+    * (generalizar para todos os majors é decisão pendente, junto com os módulos).
+    * Sem module.json ou sem declaração de major: permite (módulo legado), como o ModuleManager.
+    */
+   function plugin_nextool_module_loadable_on_this_glpi(string $mk): bool {
+      static $cache = [];
+      if ($mk === '' || !defined('NEXTOOL_MODULES_BASE')) {
+         return true;
+      }
+      if (isset($cache[$mk])) {
+         return $cache[$mk];
+      }
+      $major = defined('GLPI_VERSION') ? (int) explode('.', (string) GLPI_VERSION)[0] : 0;
+      if ($major < 12) {
+         return $cache[$mk] = true;
+      }
+      $ok   = true;
+      $json = @file_get_contents(NEXTOOL_MODULES_BASE . '/' . $mk . '/module.json');
+      $data = is_string($json) && $json !== '' ? json_decode($json, true) : null;
+      if (is_array($data)) {
+         $declared = [];
+         if (isset($data['compat_glpi_majors']) && is_string($data['compat_glpi_majors']) && trim($data['compat_glpi_majors']) !== '') {
+            foreach (explode(',', $data['compat_glpi_majors']) as $m) {
+               $declared[] = (int) trim($m);
+            }
+         } elseif (isset($data['glpi_major']) && is_numeric($data['glpi_major'])) {
+            $declared[] = (int) $data['glpi_major'];
+         }
+         if ($declared !== [] && !in_array($major, $declared, true)) {
+            $ok = false;
+            if (class_exists('Toolbox', false)) {
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  "[compat] módulo '%s' não declara o GLPI %d (compat: %s): classes não carregadas\n",
+                  $mk, $major, implode(',', $declared)
+               ));
+            }
+         }
+      }
+      return $cache[$mk] = $ok;
+   }
+}
+
 // -------------------------------------------------------------------------
 // Autoloader das classes dos módulos NexTool (modules/<mk>/inc/<x>.class.php).
 // Endpoints genéricos do GLPI que resolvem o itemtype via autoload do "namespace global"
@@ -221,7 +279,7 @@ if (!defined('NEXTOOL_MODULE_AUTOLOADER')) {
       $nxManifest = plugin_nextool_boot_manifest();
       if ($nxManifest !== null && isset($nxManifest['classmap'][$class]) && is_string($nxManifest['classmap'][$class])) {
          $mapped = NEXTOOL_MODULES_BASE . '/' . $nxManifest['classmap'][$class];
-         if (is_file($mapped)) {
+         if (is_file($mapped) && plugin_nextool_module_loadable_on_this_glpi(strtok($nxManifest['classmap'][$class], '/'))) {
             require_once $mapped;
             if (class_exists($class, false) || interface_exists($class, false) || trait_exists($class, false)) {
                plugin_nextool_pin_itemtype_table($class);
@@ -248,6 +306,9 @@ if (!defined('NEXTOOL_MODULE_AUTOLOADER')) {
          }
          $suffix = strtolower(substr($rest, strlen($uc)));
          if ($suffix === '') {
+            continue;
+         }
+         if (!plugin_nextool_module_loadable_on_this_glpi($mk)) {
             continue;
          }
          // Dois padrões de nome observados: <suffix>.class.php e <mk><suffix>.class.php.

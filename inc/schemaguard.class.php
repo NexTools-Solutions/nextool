@@ -384,7 +384,7 @@ class PluginNextoolSchemaGuard {
       try {
          $iterator = $DB->request([
             'FROM'  => 'information_schema.COLUMNS',
-            'WHERE' => ['TABLE_SCHEMA' => new \QueryExpression('DATABASE()'), 'TABLE_NAME' => $table],
+            'WHERE' => ['TABLE_SCHEMA' => PluginNextoolCompat::queryExpression('DATABASE()'), 'TABLE_NAME' => $table],
          ]);
       } catch (\Throwable $e) {
          return $out;
@@ -487,9 +487,9 @@ class PluginNextoolSchemaGuard {
             'SELECT' => ['TABLE_NAME'],
             'FROM'   => 'information_schema.TABLES',
             'WHERE'  => [
-               'TABLE_SCHEMA' => new \QueryExpression('DATABASE()'),
+               'TABLE_SCHEMA' => PluginNextoolCompat::queryExpression('DATABASE()'),
                'TABLE_NAME'   => ['LIKE', self::SHADOW_PREFIX . '%'],
-               new \QueryExpression('`CREATE_TIME` < NOW() - INTERVAL 1 HOUR'),
+               PluginNextoolCompat::queryExpression('`CREATE_TIME` < NOW() - INTERVAL 1 HOUR'),
             ],
          ]);
          foreach ($iterator as $row) {

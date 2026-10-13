@@ -304,8 +304,8 @@ class PluginNextoolCloudItilTools {
       $items = [];
       foreach ($DB->request($crit + [
          'SELECT'  => array_merge($cols, [
-            new \Glpi\DBAL\QueryExpression('MIN(' . $DB->quoteName('ator.type') . ') AS ' . $DB->quoteName('tmin')),
-            new \Glpi\DBAL\QueryExpression('MAX(' . $DB->quoteName('ator.type') . ') AS ' . $DB->quoteName('tmax')),
+            PluginNextoolCompat::queryExpression('MIN(' . $DB->quoteName('ator.type') . ') AS ' . $DB->quoteName('tmin')),
+            PluginNextoolCompat::queryExpression('MAX(' . $DB->quoteName('ator.type') . ') AS ' . $DB->quoteName('tmax')),
          ]),
          'GROUPBY' => $cols,
          'ORDER'   => [$ord, "$t.id DESC"],

@@ -1325,6 +1325,15 @@ class PluginNextoolModuleManager {
 
       $this->clearCache();
 
+      // Módulo NÃO instalado (o caso do "Re-baixar" do card): não há schema para migrar, então não há fase 2. Pedir
+      // pending_upgrade aqui fazia a UI chamar o finalize_update, que exige módulo instalado, e a tela mostrava
+      // "Módulo precisa estar instalado para atualizar." depois de um re-download bem-sucedido.
+      if (!(bool) ($row['is_installed'] ?? 0)) {
+         return $this->buildModuleActionResult($moduleKey, $action, true,
+            __('Arquivos do módulo baixados novamente. Instale o módulo para usá-lo.', 'nextool'),
+            $baseContext);
+      }
+
       return $this->buildModuleActionResult($moduleKey, $action, true,
          __('Arquivos do módulo substituídos. Dados do banco preservados. Concluindo a atualização...', 'nextool'),
          array_merge($baseContext, ['pending_upgrade' => true]),

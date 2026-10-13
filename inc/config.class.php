@@ -19,7 +19,13 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-class PluginNextoolConfig extends CommonDBTM {
+require_once __DIR__ . '/compat.class.php';
+
+// Declaração em 3 partes (constantes na interface, corpo na trait, classe declarada
+// condicionalmente no fim do arquivo): o GLPI 12 tipou `CommonGLPI::$rightname` e a
+// redeclaração precisa ter o tipo lá e NÃO ter no 10/11. Ver PluginNextoolCompat::typedRightname().
+
+interface PluginNextoolConfigConstants {
 
    const DEFAULT_CONTAINERAPI_BASE_URL = 'https://containerapi.nextoolsolutions.ai/';
 
@@ -42,8 +48,9 @@ class PluginNextoolConfig extends CommonDBTM {
     * getManagedService(). Limpo no uninstall (LGPD); re-entregue no próximo validate.
     */
    const MANAGED_SERVICES_CONTEXT = 'plugin:nextool_managed_services';
+}
 
-   static $rightname = 'config';
+trait PluginNextoolConfigBody {
 
    public static function getPluginVersion(): string {
       if (function_exists('plugin_version_nextool')) {
@@ -477,3 +484,17 @@ class PluginNextoolConfig extends CommonDBTM {
    }
 }
 
+// GLPI 12 tipou `$rightname` no core (fatal se a redeclaracao nao tiver o tipo); no 10/11 o tipo
+// e fatal. A unica declaracao valida nos 3 majors e condicional: mesmo corpo (trait), so a
+// propriedade muda. Trait com a propriedade NAO serve (conflito de composicao, medido em 2026-10-08).
+if (PluginNextoolCompat::typedRightname()) {
+   class PluginNextoolConfig extends CommonDBTM implements PluginNextoolConfigConstants {
+      use PluginNextoolConfigBody;
+      public static string $rightname = 'config';
+   }
+} else {
+   class PluginNextoolConfig extends CommonDBTM implements PluginNextoolConfigConstants {
+      use PluginNextoolConfigBody;
+      public static $rightname = 'config';
+   }
+}

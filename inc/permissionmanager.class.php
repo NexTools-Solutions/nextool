@@ -250,7 +250,7 @@ class PluginNextoolPermissionManager {
     *
     * Uso no topo do `front/<mod>.logs.tab.inc.php`:
     *   if (!PluginNextoolPermissionManager::canViewModuleLogs('<mod>')) {
-    *      Html::displayRightError();
+    *      PluginNextoolCompat::rightError();
     *      return;
     *   }
     */
@@ -542,7 +542,7 @@ class PluginNextoolPermissionManager {
          self::BASE_EXPORT_LOGS   => __('Exportar logs', 'nextool'),
          self::BASE_VIEW_VERSION  => __('Ver versão', 'nextool'),
          self::BASE_APPLY_UPDATE  => __('Aplicar atualização', 'nextool'),
-         self::BASE_SEND_CONTACT  => __('Enviar contato', 'nextool'),
+         self::BASE_SEND_CONTACT  => __('Abrir suporte', 'nextool'),
       ];
    }
 

@@ -26,7 +26,11 @@ declare(strict_types=1);
  * 3. SER FILTRADO EM SILÊNCIO -- quem aprova costuma ser gestor, sem direito de
  *    editar o chamado; sem bypass o core filtra os campos do update
  *    (handleTemplateFields deixa só 'id') e o status simplesmente não muda, sem
- *    erro nenhum. Daí o glpicronuserrunning, restaurado em finally.
+ *    erro nenhum. Daí o update dentro de Session::callAsSystem() (GLPI 11), que
+ *    desliga a checagem de direito só durante a chamada. O glpicronuserrunning
+ *    (restaurado em finally) fica como reserva para o GLPI 10, mas SÓ vale na linha
+ *    de comando ou no /front/cron.php (Session::isCron) -- na resposta do aprovador,
+ *    que chega pela web, ele não liberava nada e o status ficava para trás.
  *
  * Promovido do módulo `workflow` (inc/engine.class.php) para a base quando o
  * `approvalflow` passou a precisar da mesma mecânica -- fonte única, em vez de duas
@@ -168,11 +172,18 @@ class PluginNextoolTicketStatusEngine {
          '_skip_rules'             => true,
          '_no_reopen'              => true,
          '_nextool_status_engine'  => $origin,
+         // Status decidido por motor, nunca por humano: não passa pelas travas do
+         // ticketrules (técnico/categoria/duração obrigatórios ao solucionar/fechar).
+         '_nextool_system'         => 1,
       ]);
 
       self::enter($origin);
       try {
-         $ticket->update($input);
+         if (method_exists('Session', 'callAsSystem')) {
+            Session::callAsSystem(static fn() => $ticket->update($input));
+         } else {
+            $ticket->update($input);
+         }
       } finally {
          self::leave($origin);
          if ($hadCron) {

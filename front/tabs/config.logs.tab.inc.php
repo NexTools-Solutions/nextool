@@ -32,7 +32,7 @@ declare(strict_types=1);
          <hr class="my-4">
 
          <?php
-         $GLOBALS['nextool_validation_attempts_forcetab_url'] = Plugin::getWebDir('nextool')
+         $GLOBALS['nextool_validation_attempts_forcetab_url'] = PluginNextoolCompat::webDir()
             . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$5';
 
          $_GET['embedded'] = '1';
@@ -127,27 +127,27 @@ declare(strict_types=1);
                      }
                   ?>
                      <tr>
-                        <td><?php echo Html::entities_deep($modName); ?></td>
-                        <td><code><?php echo Html::entities_deep($jr['key']); ?></code></td>
+                        <td><?php echo PluginNextoolCompat::escape($modName); ?></td>
+                        <td><code><?php echo PluginNextoolCompat::escape($jr['key']); ?></code></td>
                         <td><?php echo $nextoolJobEvery((int) $jr['every']); ?></td>
                         <td><?php echo $st !== null && !empty($st['last_run']) ? Html::convDateTime((string) $st['last_run']) : '-'; ?></td>
                         <td><?php echo $st !== null && $st['last_result'] !== null ? sprintf('%.1f s', ((int) $st['last_duration_ms']) / 1000) : '-'; ?></td>
-                        <td><span class="badge text-white <?php echo $badge; ?>"><?php echo Html::entities_deep($rotulo); ?></span></td>
-                        <td class="text-muted small"><?php echo $st !== null ? Html::entities_deep((string) $st['last_message']) : ''; ?></td>
+                        <td><span class="badge text-white <?php echo $badge; ?>"><?php echo PluginNextoolCompat::escape($rotulo); ?></span></td>
+                        <td class="text-muted small"><?php echo $st !== null ? PluginNextoolCompat::escape((string) $st['last_message']) : ''; ?></td>
                         <?php if ($nextoolJobsCanManage): ?>
                         <td class="text-end text-nowrap">
-                           <form method="post" action="<?php echo Plugin::getWebDir('nextool') . '/front/config.save.php'; ?>" class="d-inline">
+                           <form method="post" action="<?php echo PluginNextoolCompat::webDir() . '/front/config.save.php'; ?>" class="d-inline">
                               <input type="hidden" name="action" value="job_run_now">
-                              <input type="hidden" name="module_key" value="<?php echo Html::entities_deep($jr['module_key']); ?>">
-                              <input type="hidden" name="job_key" value="<?php echo Html::entities_deep($jr['key']); ?>">
+                              <input type="hidden" name="module_key" value="<?php echo PluginNextoolCompat::escape($jr['module_key']); ?>">
+                              <input type="hidden" name="job_key" value="<?php echo PluginNextoolCompat::escape($jr['key']); ?>">
                               <input type="hidden" name="forcetab" value="PluginNextoolMainConfig$5">
                               <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="ti ti-player-play me-1"></i><?php echo __('Executar agora', 'nextool'); ?></button>
                            <?php Html::closeForm(); ?>
                            <?php if ($pausado || ($st !== null && (int) $st['fails'] > 0)): ?>
-                           <form method="post" action="<?php echo Plugin::getWebDir('nextool') . '/front/config.save.php'; ?>" class="d-inline">
+                           <form method="post" action="<?php echo PluginNextoolCompat::webDir() . '/front/config.save.php'; ?>" class="d-inline">
                               <input type="hidden" name="action" value="job_resume">
-                              <input type="hidden" name="module_key" value="<?php echo Html::entities_deep($jr['module_key']); ?>">
-                              <input type="hidden" name="job_key" value="<?php echo Html::entities_deep($jr['key']); ?>">
+                              <input type="hidden" name="module_key" value="<?php echo PluginNextoolCompat::escape($jr['module_key']); ?>">
+                              <input type="hidden" name="job_key" value="<?php echo PluginNextoolCompat::escape($jr['key']); ?>">
                               <input type="hidden" name="forcetab" value="PluginNextoolMainConfig$5">
                               <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="ti ti-refresh me-1"></i><?php echo __('Retomar', 'nextool'); ?></button>
                            <?php Html::closeForm(); ?>

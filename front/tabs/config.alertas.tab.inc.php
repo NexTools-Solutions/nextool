@@ -7,7 +7,7 @@ declare(strict_types=1);
 require_once NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
 
 $alertHistory = PluginNextoolAlertManager::getAlertHistory();
-$alertsEndpoint = Plugin::getWebDir('nextool') . '/ajax/alerts.php';
+$alertsEndpoint = PluginNextoolCompat::webDir() . '/ajax/alerts.php';
 ?>
 
 <?php $show_alertas = (!$nextool_is_standalone || $nextool_standalone_output_tab === 'alertas') && $canViewAdminTabs; if ($show_alertas): ?>
@@ -26,7 +26,7 @@ $alertsEndpoint = Plugin::getWebDir('nextool') . '/ajax/alerts.php';
          </h4>
          <?php if (!empty($alertHistory)): ?>
          <button type="button" class="btn btn-sm btn-outline-secondary" id="nextool-alerts-mark-all-read"
-                 data-endpoint="<?php echo Html::entities_deep($alertsEndpoint); ?>">
+                 data-endpoint="<?php echo PluginNextoolCompat::escape($alertsEndpoint); ?>">
             <i class="ti ti-checks me-1"></i><?php echo __('Marcar todos como lidos', 'nextool'); ?>
          </button>
          <?php endif; ?>
@@ -52,9 +52,9 @@ $alertsEndpoint = Plugin::getWebDir('nextool') . '/ajax/alerts.php';
                         <i class="<?php echo $typeIcon; ?> fs-3 mt-1"></i>
                         <div>
                            <div class="d-flex align-items-center gap-2 mb-1">
-                              <strong><?php echo Html::entities_deep($alert['title']); ?></strong>
+                              <strong><?php echo PluginNextoolCompat::escape($alert['title']); ?></strong>
                               <span class="badge <?php echo $typeBadge; ?>" style="font-size: 0.65rem;">
-                                 <?php echo Html::entities_deep(ucfirst($alert['alert_type'])); ?>
+                                 <?php echo PluginNextoolCompat::escape(ucfirst($alert['alert_type'])); ?>
                               </span>
                               <?php if ($isExpired): ?>
                               <span class="badge bg-secondary" style="font-size: 0.6rem;"><?php echo __('Expirado', 'nextool'); ?></span>
@@ -63,9 +63,9 @@ $alertsEndpoint = Plugin::getWebDir('nextool') . '/ajax/alerts.php';
                               <?php endif; ?>
                            </div>
                            <div class="small text-muted mb-1">
-                              <?php echo Html::entities_deep($alert['date_received']); ?>
+                              <?php echo PluginNextoolCompat::escape($alert['date_received']); ?>
                               <?php if (!$isUnread && !empty($alert['date_read_user'])): ?>
-                                 &middot; <?php echo __('Lido em', 'nextool'); ?> <?php echo Html::entities_deep($alert['date_read_user']); ?>
+                                 &middot; <?php echo __('Lido em', 'nextool'); ?> <?php echo PluginNextoolCompat::escape($alert['date_read_user']); ?>
                               <?php endif; ?>
                            </div>
                            <div class="small nextool-alert-body"><?php echo PluginNextoolAlertManager::sanitizeBody($alert['body']); ?></div>
@@ -74,7 +74,7 @@ $alertsEndpoint = Plugin::getWebDir('nextool') . '/ajax/alerts.php';
                      <?php if ($isUnread): ?>
                      <button type="button" class="btn btn-sm btn-outline-success nextool-alert-mark-read ms-2"
                              data-alert-id="<?php echo (int)$alert['id']; ?>"
-                             data-endpoint="<?php echo Html::entities_deep($alertsEndpoint); ?>">
+                             data-endpoint="<?php echo PluginNextoolCompat::escape($alertsEndpoint); ?>">
                         <i class="ti ti-check"></i>
                      </button>
                      <?php endif; ?>

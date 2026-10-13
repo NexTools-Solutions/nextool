@@ -21,12 +21,23 @@ class PluginNextoolCoreUpdateClient {
 
    private string $baseUrl;
 
+   /** Corpo da última recusa do install-request (HTTP >= 300), para mostrar o motivo real (#285). */
+   private ?array $lastManifestError = null;
+
    public function __construct(
       string $baseUrl,
       private string $clientIdentifier = '',
       private string $clientSecret = ''
    ) {
       $this->baseUrl = rtrim(trim($baseUrl), '/');
+   }
+
+   /**
+    * Corpo da última recusa do pedido de manifesto (ex.: 409 requirements_not_met), ou null quando
+    * a última chamada não chegou a ter resposta JSON de erro (rede, 5xx sem corpo) ou deu certo.
+    */
+   public function getLastManifestError(): ?array {
+      return $this->lastManifestError;
    }
 
    public static function fromDistributionSettings(): self {
@@ -82,6 +93,7 @@ class PluginNextoolCoreUpdateClient {
          $origin,
          $this->baseUrl
       ));
+      $this->lastManifestError = null;
       $this->assertSignedRequestReady();
 
       $payload = [
@@ -137,6 +149,7 @@ class PluginNextoolCoreUpdateClient {
       }
 
       if ($response['http_code'] >= 300) {
+         $this->lastManifestError = ['http_code' => $httpCode] + $data;
          $message = $data['message'] ?? $data['error'] ?? __('Erro desconhecido', 'nextool');
          $exception = new RuntimeException((string)$message, (int)$response['http_code']);
          throw $exception;

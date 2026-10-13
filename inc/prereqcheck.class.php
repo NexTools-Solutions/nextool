@@ -42,6 +42,8 @@ final class PluginNextoolPrereqCheck {
    public const FAMILY_BASE = 'prereq_base:';
    public const FAMILY_EXT  = 'prereq_ext:';
    public const FAMILY_DIR  = 'prereq_dir:';
+   /** Módulos instalados que não declaram o major do GLPI em execução (bloqueados pelo ModuleManager). */
+   public const FAMILY_MAJOR = 'prereq_major:';
 
    /** Intervalo mínimo entre execuções do boot (segundos). */
    public const CHECK_INTERVAL = 3600;
@@ -174,6 +176,28 @@ final class PluginNextoolPrereqCheck {
          }
       }
 
+      // (4) módulos bloqueados pelo MAJOR do GLPI em execução (GLPI >= 12): o ModuleManager não os
+      // carrega; aqui viram alerta, com o que o catálogo já oferece para este major.
+      $majorBlocked = [];
+      $glpiMajor    = 0;
+      if (class_exists('PluginNextoolMajorReadiness')) {
+         $glpiMajor = PluginNextoolMajorReadiness::currentMajor();
+         if ($glpiMajor >= PluginNextoolMajorReadiness::NEXT_MAJOR) {
+            try {
+               foreach (PluginNextoolMajorReadiness::report($glpiMajor)['modules'] as $key => $m) {
+                  $majorBlocked[(string)$key] = [
+                     'name'            => (string)($m['name'] ?? $key),
+                     'version'         => (string)($m['version'] ?? ''),
+                     'has_release'     => !empty($m['has_release']),
+                     'catalog_version' => $m['catalog_version'] ?? null,
+                  ];
+               }
+            } catch (Throwable $e) {
+               $majorBlocked = [];
+            }
+         }
+      }
+
       return [
          'plugin_version'      => $pluginVersion,
          'missing_ext'         => array_values($missingExt),
@@ -182,6 +206,8 @@ final class PluginNextoolPrereqCheck {
          'unwritable_dirs'     => $unwritable,
          'web_user'            => $webUser,
          'blocked_modules'     => $blocked,
+         'glpi_major'          => $glpiMajor,
+         'major_blocked'       => $majorBlocked,
       ];
    }
 
@@ -257,6 +283,23 @@ final class PluginNextoolPrereqCheck {
          }
       }
 
+      // (4) major: módulos instalados que não declaram o GLPI em execução. A variante leva o major
+      // e a assinatura da lista: lista diferente = alerta novo (o irmão expira); lista vazia = família expirada.
+      $majorBlocked = (array)($facts['major_blocked'] ?? []);
+      if ($majorBlocked !== []) {
+         $glpiMajor = (int)($facts['glpi_major'] ?? 0);
+         ksort($majorBlocked, SORT_STRING);
+         // `dated`: raiseLocal() faz dedup pela chave mesmo EXPIRADA; com a data no sufixo
+         // (como ext/dir) a mesma lista volta a alertar noutro dia depois de ter sido resolvida.
+         $out[self::FAMILY_MAJOR] = [
+            'variant' => $glpiMajor . ':' . substr(md5(implode(',', array_keys($majorBlocked))), 0, 8),
+            'dated'   => true,
+            'title'   => self::majorTitle(count($majorBlocked), $glpiMajor),
+            'body'    => self::majorBody($majorBlocked, $glpiMajor),
+            'type'    => 'warning',
+         ];
+      }
+
       return $out;
    }
 
@@ -271,7 +314,7 @@ final class PluginNextoolPrereqCheck {
       if (!class_exists('PluginNextoolAlertManager')) {
          return;
       }
-      foreach ([self::FAMILY_EXT, self::FAMILY_DIR] as $family) {
+      foreach ([self::FAMILY_EXT, self::FAMILY_DIR, self::FAMILY_MAJOR] as $family) {
          if (isset($conditions[$family])) {
             $c = $conditions[$family];
             self::raiseIfNotActive($family, $c['variant'], !empty($c['dated']), $c['title'], $c['body'], $c['type'] ?? 'warning');
@@ -417,10 +460,53 @@ final class PluginNextoolPrereqCheck {
       return $html;
    }
 
+   private static function majorTitle(int $n, int $major): string {
+      return sprintf(
+         _n(
+            '%1$d módulo instalado não é compatível com o GLPI %2$d e está bloqueado',
+            '%1$d módulos instalados não são compatíveis com o GLPI %2$d e estão bloqueados',
+            $n,
+            'nextool'
+         ),
+         $n,
+         $major
+      );
+   }
+
+   /**
+    * @param array<string, array{name:string, version:string, has_release:bool, catalog_version:?string}> $blocked
+    */
+   private static function majorBody(array $blocked, int $major): string {
+      $ready   = [];
+      $waiting = [];
+      foreach ($blocked as $m) {
+         if (!empty($m['has_release'])) {
+            $ready[] = trim((string)$m['name'] . ' ' . (string)($m['catalog_version'] ?? ''));
+         } else {
+            $waiting[] = (string)$m['name'];
+         }
+      }
+      $html = '<p>' . htmlspecialchars(sprintf(
+         __('Este GLPI é a versão %d. Os módulos abaixo foram construídos para versões anteriores e ficam desligados (sem menus, abas, hooks e rotinas) até receberem uma versão compatível. As configurações e os dados deles estão preservados.', 'nextool'),
+         $major
+      )) . '</p>';
+      if ($ready !== []) {
+         $html .= '<p><strong>' . htmlspecialchars(__('Com versão compatível no catálogo (atualize na guia Módulos):', 'nextool')) . '</strong> '
+            . htmlspecialchars(implode(', ', $ready)) . '</p>';
+      }
+      if ($waiting !== []) {
+         $html .= '<p><strong>' . htmlspecialchars(__('Aguardando versão compatível:', 'nextool')) . '</strong> '
+            . htmlspecialchars(implode(', ', $waiting)) . '</p>';
+      }
+      $html .= '<p><a href="' . htmlspecialchars(self::modulesTabUrl()) . '">' . htmlspecialchars(__('Abrir a guia Módulos', 'nextool')) . '</a>. '
+         . htmlspecialchars(__('Este aviso some sozinho quando todos os módulos estiverem compatíveis.', 'nextool')) . '</p>';
+      return $html;
+   }
+
    // --------------------------------------------------------------- suporte
 
    private static function modulesTabUrl(): string {
-      $web = class_exists('Plugin') ? (string)Plugin::getWebDir('nextool') : '/plugins/nextool';
+      $web = PluginNextoolCompat::webDir();
       return $web . '/front/nextoolconfig.form.php?id=1&forcetab=' . rawurlencode('PluginNextoolMainConfig$1');
    }
 
@@ -476,7 +562,7 @@ final class PluginNextoolPrereqCheck {
       }
       $loaded = true;
       $base = defined('NEXTOOL_PHP_DIR') ? NEXTOOL_PHP_DIR : dirname(__DIR__);
-      foreach (['modulespath.inc.php', 'alertmanager.class.php', 'coreupdater.class.php', 'modulecatalog.class.php'] as $inc) {
+      foreach (['modulespath.inc.php', 'alertmanager.class.php', 'coreupdater.class.php', 'modulecatalog.class.php', 'majorreadiness.class.php'] as $inc) {
          $f = $base . '/inc/' . $inc;
          if (is_file($f)) {
             require_once $f;

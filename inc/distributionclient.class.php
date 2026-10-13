@@ -605,6 +605,60 @@ class PluginNextoolDistributionClient {
       return $this->decodeJsonResponse($response, __('Falha ao desvincular a conta.', 'nextool'));
    }
 
+   /**
+    * Abre um atendimento de suporte no portal, em nome da conta vinculada ao ambiente (2026-10-09).
+    * O servidor decide o nível de SLA pelas licenças reais, grava na fila que o portal importa e devolve o link
+    * (`/painel/solicitacoes/plugin/<uuid>`), que leva à solicitação já criada.
+    * Desenho: /data/relatorios/suporte-no-plugin-2026-10-09/desenho.md
+    *
+    * @param array<string, mixed> $payload subject, description, type, item, item_name, opened_by, locale, report
+    * @return array{success:bool,request_id:string,url:string,tier:string,type:string,prazo_resposta_em:?string}
+    */
+   public function openSupportRequest(array $payload): array {
+      if (!$this->supportsSignedRequests()) {
+         throw new RuntimeException(__('Ambiente ainda não provisionado. Sincronize a licença antes de abrir o suporte.', 'nextool'));
+      }
+      $body = (string) json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+      $response = $this->performRequest($this->baseUrl . '/api/support/request', [
+         'method' => 'POST',
+         'body' => $body,
+         'headers' => array_merge(
+            ['Content-Type: application/json'],
+            self::buildHmacHeadersV2($this->clientIdentifier, '/api/support/request', $body, $this->clientSecret)
+         ),
+         'timeout' => 40,
+      ]);
+      return $this->decodeJsonResponse($response, __('Falha ao abrir o atendimento.', 'nextool'));
+   }
+
+   /**
+    * Imagem do anúncio antes do download de módulo gratuito (nextool-dev#283), por sha256. O servidor só entrega a de
+    * anúncio vigente para este ambiente; quem chama confere o sha256 dos bytes antes de gravar.
+    *
+    * @return array{mime:string, data:string} bytes crus em `data`
+    */
+   public function downloadAdImage(string $sha256): array {
+      if (!$this->supportsSignedRequests()) {
+         throw new RuntimeException(__('Ambiente não provisionado.', 'nextool'));
+      }
+      $body = (string) json_encode(['sha256' => $sha256]);
+      $response = $this->performRequest($this->baseUrl . '/api/distribution/download-ad-image', [
+         'method' => 'POST',
+         'body' => $body,
+         'headers' => array_merge(
+            ['Content-Type: application/json'],
+            self::buildHmacHeadersV2($this->clientIdentifier, '/api/distribution/download-ad-image', $body, $this->clientSecret)
+         ),
+         'timeout' => 20,
+      ]);
+      $data = $this->decodeJsonResponse($response, 'download-ad-image:');
+      $bytes = base64_decode((string) ($data['data'] ?? ''), true);
+      if ($bytes === false || $bytes === '') {
+         throw new RuntimeException('download-ad-image: resposta sem imagem');
+      }
+      return ['mime' => (string) ($data['mime'] ?? ''), 'data' => $bytes];
+   }
+
    private function decodeJsonResponse(array $response, string $errorPrefix): array {
       $data = json_decode($response['body'], true);
       $this->registerCommOutcome($response, is_array($data) ? $data : null);

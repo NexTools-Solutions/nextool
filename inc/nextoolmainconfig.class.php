@@ -20,10 +20,12 @@ if (!defined('GLPI_ROOT')) {
 
 require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+require_once __DIR__ . '/compat.class.php';
 
-class PluginNextoolMainConfig extends CommonDBTM {
+// Declaração em 3 partes (constantes na interface, corpo na trait, classe declarada
+// condicionalmente no fim do arquivo): ver inc/config.class.php e PluginNextoolCompat::typedRightname().
 
-   static $rightname = 'config';
+interface PluginNextoolMainConfigConstants {
 
    const CONFIG_ID = 1;
 
@@ -32,8 +34,13 @@ class PluginNextoolMainConfig extends CommonDBTM {
    /** Guias de divulgação (nextool-dev#277): números altos, fora da faixa das guias de módulo. */
    const TAB_SERVICOS  = 90;
    const TAB_NOVIDADES = 91;
+   /** Guia "Sobre" da base (ficha do plugin + como funciona o licenciamento), antes de Logs. */
+   const TAB_SOBRE     = 92;
+}
 
-   // O $rightname='config' acima cobre o bypass de admin global (config UPDATE).
+trait PluginNextoolMainConfigBody {
+
+   // O $rightname='config' (declarado no fim do arquivo) cobre o bypass de admin global (config UPDATE).
    // Para perfis customizados com permissões granulares do plugin, os métodos
    // can*() abaixo delegam ao PermissionManager - caso contrário CommonDBTM::can()
    // exigiria config/READ e bloquearia qualquer perfil não-admin no display().
@@ -71,7 +78,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
     * URL usada pelo botão "lista/pesquisa" do cabeçalho: redireciona para a configuração na aba Módulos.
     */
    public static function getSearchURL($full = true) {
-      return Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$1';
+      return PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$1';
    }
 
    /**
@@ -105,7 +112,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
    }
 
    public static function getFormURL($full = true) {
-      return Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php';
+      return PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php';
    }
 
    /**
@@ -200,12 +207,12 @@ class PluginNextoolMainConfig extends CommonDBTM {
    public static function getValidTabIds(): array {
       $ids = [
          'PluginNextoolMainConfig$1',
-         'PluginNextoolMainConfig$2',
          'PluginNextoolMainConfig$3',
          'PluginNextoolMainConfig$4',
          'PluginNextoolMainConfig$5',
          'PluginNextoolMainConfig$' . self::TAB_SERVICOS,
          'PluginNextoolMainConfig$' . self::TAB_NOVIDADES,
+         'PluginNextoolMainConfig$' . self::TAB_SOBRE,
       ];
       $moduleTabs = self::getModuleConfigTabs();
       foreach (array_keys($moduleTabs) as $tabNum) {
@@ -219,12 +226,15 @@ class PluginNextoolMainConfig extends CommonDBTM {
          return '';
       }
 
+      // A ordem de exibição é a ordem deste array (o core preserva a inserção), não o número da
+      // guia. Os números são fixos (links com forcetab): Logs continua sendo a 5, mas entra por
+      // ÚLTIMO, depois das guias de divulgação e das guias de configuração dos módulos.
       $tabs = [
          1 => self::createTabEntry(__('Módulos', 'nextool'), 0, $item::getType(), 'ti ti-puzzle'),
-         2 => self::createTabEntry(__('Contato', 'nextool'), 0, $item::getType(), 'ti ti-headset'),
+         // 2 (Contato) saiu em 2026-10-09: o suporte é aberto pelo botão Suporte do hero. O número fica vago
+         // (não renumerar: links com forcetab apontam para as demais).
          3 => self::createTabEntry(__('Licenciamento', 'nextool'), 0, $item::getType(), 'ti ti-key'),
          4 => self::createTabEntry(__('Alertas', 'nextool'), 0, $item::getType(), 'ti ti-bell'),
-         5 => self::createTabEntry(__('Logs', 'nextool'), 0, $item::getType(), 'ti ti-report-analytics'),
          // nextool-dev#277: números fixos FORA da faixa das guias de módulo (que começam em FIXED_TAB_COUNT + 1):
          // aumentar o FIXED_TAB_COUNT renumeraria as guias de módulo e quebraria links com forcetab.
          self::TAB_SERVICOS  => self::createTabEntry(__('Serviços', 'nextool'), 0, $item::getType(), 'ti ti-briefcase'),
@@ -241,6 +251,9 @@ class PluginNextoolMainConfig extends CommonDBTM {
          );
       }
 
+      $tabs[self::TAB_SOBRE] = self::createTabEntry(__('Sobre', 'nextool'), 0, $item::getType(), 'ti ti-info-circle');
+      $tabs[5] = self::createTabEntry(__('Logs', 'nextool'), 0, $item::getType(), 'ti ti-report-analytics');
+
       return $tabs;
    }
 
@@ -249,8 +262,8 @@ class PluginNextoolMainConfig extends CommonDBTM {
          return false;
       }
 
-      $tabMap = [1 => 'modules', 2 => 'contato', 3 => 'licenca', 4 => 'alertas', 5 => 'logs',
-                 self::TAB_SERVICOS => 'servicos', self::TAB_NOVIDADES => 'novidades'];
+      $tabMap = [1 => 'modules', 3 => 'licenca', 4 => 'alertas', 5 => 'logs',
+                 self::TAB_SERVICOS => 'servicos', self::TAB_NOVIDADES => 'novidades', self::TAB_SOBRE => 'sobre'];
       $moduleTabs = self::getModuleConfigTabs();
 
       if (isset($tabMap[$tabnum])) {
@@ -293,7 +306,7 @@ class PluginNextoolMainConfig extends CommonDBTM {
 
          echo '<div class="m-3">';
          $_GET['embedded'] = '1';
-         $nextool_redirect_after_save = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=' . self::CONFIG_ID . '&forcetab=' . urlencode('PluginNextoolMainConfig$' . $tabnum);
+         $nextool_redirect_after_save = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=' . self::CONFIG_ID . '&forcetab=' . urlencode('PluginNextoolMainConfig$' . $tabnum);
          // Página de teste incluída na config central: sem abas, redirecionar de volta para esta URL
          if (str_ends_with($filename, '.test.php')) {
             $_GET['in_config_form'] = '1';
@@ -317,5 +330,20 @@ class PluginNextoolMainConfig extends CommonDBTM {
       }
 
       return false;
+   }
+}
+
+// GLPI 12 tipou `$rightname` no core (fatal se a redeclaracao nao tiver o tipo); no 10/11 o tipo
+// e fatal. A unica declaracao valida nos 3 majors e condicional: mesmo corpo (trait), so a
+// propriedade muda. Trait com a propriedade NAO serve (conflito de composicao, medido em 2026-10-08).
+if (PluginNextoolCompat::typedRightname()) {
+   class PluginNextoolMainConfig extends CommonDBTM implements PluginNextoolMainConfigConstants {
+      use PluginNextoolMainConfigBody;
+      public static string $rightname = 'config';
+   }
+} else {
+   class PluginNextoolMainConfig extends CommonDBTM implements PluginNextoolMainConfigConstants {
+      use PluginNextoolMainConfigBody;
+      public static $rightname = 'config';
    }
 }

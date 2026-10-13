@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# NexTool Solutions - instalador do plugin base para GLPI 10/11 (Linux)
+# NexTool Solutions - instalador do plugin base para GLPI 10/11/12 (Linux)
 #
 # O QUE ESTE SCRIPT FAZ, EM RESUMO:
 #   1. Confirma que esta rodando dentro (ou aponta pra) uma instalacao real do GLPI.
@@ -47,7 +47,7 @@ die()  { printf '[nextool-install] ERRO: %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-Instalador do plugin base NexTool para GLPI 10/11.
+Instalador do plugin base NexTool para GLPI 10/11/12.
 
 Opcoes:
   --glpi-root=CAMINHO        Raiz do GLPI (default: detecta automaticamente -- pasta atual

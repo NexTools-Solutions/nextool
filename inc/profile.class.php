@@ -24,10 +24,11 @@ if (!defined('GLPI_ROOT')) {
 }
 
 require_once __DIR__ . '/permissionmanager.class.php';
+require_once __DIR__ . '/compat.class.php';
 
-class PluginNextoolProfile extends Profile {
-
-   public static $rightname = 'profile';
+// Corpo na trait, classe declarada condicionalmente no fim do arquivo: ver inc/config.class.php.
+// `Profile::$rightname` também ganhou tipo no GLPI 12.
+trait PluginNextoolProfileBody {
 
    /** @var array<string,array<int,string>> field => [bit => familia 'use'|'admin'|'global'] */
    private array $ntFamilies = [];
@@ -223,5 +224,20 @@ class PluginNextoolProfile extends Profile {
          . 'document.querySelectorAll(".nextool-perms input[type=checkbox]").forEach(function(cb){'
          . 'if(cb!==gcb&&cb.checked!==on){cb.checked=on;}});});}}'
          . '})();</script>';
+   }
+}
+
+// GLPI 12 tipou `$rightname` no core (fatal se a redeclaracao nao tiver o tipo); no 10/11 o tipo
+// e fatal. A unica declaracao valida nos 3 majors e condicional: mesmo corpo (trait), so a
+// propriedade muda. Trait com a propriedade NAO serve (conflito de composicao, medido em 2026-10-08).
+if (PluginNextoolCompat::typedRightname()) {
+   class PluginNextoolProfile extends Profile {
+      use PluginNextoolProfileBody;
+      public static string $rightname = 'profile';
+   }
+} else {
+   class PluginNextoolProfile extends Profile {
+      use PluginNextoolProfileBody;
+      public static $rightname = 'profile';
    }
 }

@@ -139,7 +139,7 @@ class PluginNextoolModuleCardHelper {
                $primary = self::renderBadge(sprintf(__('Pré-requisito: extensão PHP ausente (%s)', 'nextool'), implode(', ', (array) $state['missing_package_extensions'])), 'badge bg-danger text-white me-1');
             } elseif ($dlBlocked) {
                $msg = sprintf(__('Nextool %s necessário para baixar', 'nextool'), $dlMinVer);
-               $primary = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . '</span>';
+               $primary = '<span class="badge bg-warning text-dark me-1">' . PluginNextoolCompat::escape($msg) . '</span>';
             } else {
                $primary = self::renderActionForm(
                   $state, 'download', __('Download', 'nextool'),
@@ -188,7 +188,7 @@ class PluginNextoolModuleCardHelper {
                $blocked = $minVerNextool !== null && ($pluginVersion === '' || version_compare($pluginVersion, $minVerNextool, '<'));
                if ($blocked) {
                   $msg = sprintf(__('Nextool %s necessário para atualizar', 'nextool'), $minVerNextool);
-                  $primary = '<span class="badge bg-warning text-dark me-1">' . Html::entities_deep($msg) . '</span>';
+                  $primary = '<span class="badge bg-warning text-dark me-1">' . PluginNextoolCompat::escape($msg) . '</span>';
                } else {
                   $canDl = !empty($state['can_download_module'] ?? $state['can_use_module']) && $canUpdateMod;
                   $primary = self::renderActionForm(
@@ -382,7 +382,7 @@ class PluginNextoolModuleCardHelper {
       array $state, string $action, string $label, string $icon,
       bool $disabled = false, ?string $confirmMessage = null, string $confirmType = 'simple'
    ): string {
-      $moduleKey = Html::entities_deep($state['module_key']);
+      $moduleKey = PluginNextoolCompat::escape($state['module_key']);
       $disabledClass = $disabled ? ' disabled' : '';
       $confirmAttr = '';
       if (!empty($confirmMessage)) {
@@ -392,25 +392,25 @@ class PluginNextoolModuleCardHelper {
          }
       }
       return '<li><a class="dropdown-item nextool-module-action' . $disabledClass . '" href="#"'
-         . ' data-module="' . $moduleKey . '" data-action="' . Html::entities_deep($action) . '"'
+         . ' data-module="' . $moduleKey . '" data-action="' . PluginNextoolCompat::escape($action) . '"'
          . $confirmAttr . '>'
-         . '<i class="' . $icon . ' me-2"></i>' . Html::entities_deep($label) . '</a></li>';
+         . '<i class="' . $icon . ' me-2"></i>' . PluginNextoolCompat::escape($label) . '</a></li>';
    }
 
    private static function renderDropdownItem(string $label, string $icon, string $url, bool $newTab = false): string {
       $target = $newTab ? ' target="_blank" rel="noopener"' : '';
-      return '<li><a class="dropdown-item" href="' . Html::entities_deep($url) . '"' . $target . '>'
-         . '<i class="' . $icon . ' me-2"></i>' . Html::entities_deep($label) . '</a></li>';
+      return '<li><a class="dropdown-item" href="' . PluginNextoolCompat::escape($url) . '"' . $target . '>'
+         . '<i class="' . $icon . ' me-2"></i>' . PluginNextoolCompat::escape($label) . '</a></li>';
    }
 
    private static function renderLicensingButton(array $state): string {
       // O licenciamento migrou para o portal: o botao "Licenciar" deep-linka para
       // app.nextoolsolutions.com/painel/plugin-nextool (mesma base do account-link). A compra,
       // o preco e o checkout NAO acontecem mais dentro do plugin.
-      $label = Html::entities_deep(__('Licenciar', 'nextool'));
+      $label = PluginNextoolCompat::escape(__('Licenciar', 'nextool'));
       $url = 'https://app.nextoolsolutions.com/painel/plugin-nextool?module='
          . rawurlencode((string) $state['module_key']);
-      return "<a href='" . Html::entities_deep($url) . "' target='_blank' rel='noopener'"
+      return "<a href='" . PluginNextoolCompat::escape($url) . "' target='_blank' rel='noopener'"
          . " class='btn btn-sm btn-outline-licensing me-1'>"
          . "<i class='ti ti-certificate me-1'></i>{$label}</a>";
    }
@@ -423,7 +423,7 @@ class PluginNextoolModuleCardHelper {
     * Download (não há artefato deste major). Substitui a antiga tarja "não compatível".
     */
    private static function renderInterestButton(array $state): string {
-      $label = Html::entities_deep(__('Tenho interesse', 'nextool'));
+      $label = PluginNextoolCompat::escape(__('Tenho interesse', 'nextool'));
       $moduleName = (string) ($state['name'] ?? $state['module_key']);
       $assunto = sprintf(__('Interesse no módulo %s', 'nextool'), $moduleName);
       $corpo = sprintf(
@@ -438,7 +438,7 @@ class PluginNextoolModuleCardHelper {
          'assunto'   => $assunto,
          'corpo'     => $corpo,
       ]);
-      return "<a href='" . Html::entities_deep($url) . "' target='_blank' rel='noopener'"
+      return "<a href='" . PluginNextoolCompat::escape($url) . "' target='_blank' rel='noopener'"
          . " class='btn btn-sm btn-interest me-1'>"
          . "<i class='ti ti-bulb me-1'></i>{$label}</a>";
    }
@@ -447,7 +447,7 @@ class PluginNextoolModuleCardHelper {
       $target = $newTab ? " target='_blank' rel='noopener'" : '';
       return sprintf(
          "<a href='%s' class='%s me-1'%s><i class='%s me-1'></i>%s</a>",
-         Html::entities_deep($url), $classes, $target, $icon, $label
+         PluginNextoolCompat::escape($url), $classes, $target, $icon, $label
       );
    }
 
@@ -479,10 +479,10 @@ class PluginNextoolModuleCardHelper {
             $confirmAttr .= ' data-confirm-type="' . htmlspecialchars($confirmType, ENT_QUOTES, 'UTF-8') . '"';
          }
       }
-      $moduleKey = Html::entities_deep($state['module_key']);
-      $actionEsc = Html::entities_deep($action);
-      $labelEsc  = Html::entities_deep($label);
-      $classes   = Html::entities_deep(trim($buttonClass . ' me-1 nextool-module-action'));
+      $moduleKey = PluginNextoolCompat::escape($state['module_key']);
+      $actionEsc = PluginNextoolCompat::escape($action);
+      $labelEsc  = PluginNextoolCompat::escape($label);
+      $classes   = PluginNextoolCompat::escape(trim($buttonClass . ' me-1 nextool-module-action'));
       return "<button type='button' class='{$classes}' data-module='{$moduleKey}' data-action='{$actionEsc}'{$confirmAttr}{$disabledAttr}><i class='{$iconClass} me-1'></i>{$labelEsc}</button>";
    }
 }

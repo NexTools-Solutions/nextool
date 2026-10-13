@@ -32,7 +32,7 @@ if ($nextoolConfigFormDirect) {
    Session::checkLoginUser();
    require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
    if (!PluginNextoolPermissionManager::canViewAnyModule() && !PluginNextoolPermissionManager::canAccessAdminTabs()) {
-      Html::displayRightError();
+      PluginNextoolCompat::rightError();
    }
 }
 
@@ -55,6 +55,14 @@ if ($canViewAdminTabs) {
    $coreUpdateAvailable = !empty($coreUpdateState['update_available'])
       || trim((string) ($coreUpdateState['staged_target_version'] ?? '')) !== ''
       || trim((string) ($coreUpdateState['latest_available_version'] ?? '')) !== '';
+}
+// Versão nova que este servidor não pode instalar (#285): o hero diz o requisito que falta.
+$coreUpdateBlockedText = '';
+if ($canViewAdminTabs && $canManageAdminTabs && !$coreUpdateAvailable) {
+   $coreUpdateBlocked = PluginNextoolCoreUpdater::getBlocked($coreUpdateState);
+   if ($coreUpdateBlocked !== null) {
+      $coreUpdateBlockedText = PluginNextoolCoreUpdater::describeBlocked($coreUpdateBlocked);
+   }
 }
 
 // Obtém configuração atual
@@ -136,27 +144,18 @@ foreach ($catalogMeta as $moduleKey => $meta) {
 // Usar "catálogo liberado" como proxy fazia o botão Sincronizar pedir confirmação
 // repetidamente (ex.: após falhas temporárias ou alterações locais).
 
+// Hero sem "Plano atual" (decisão do owner, 2026-10-08): com licenciamento por módulo, o rótulo de
+// plano induzia a erro (um módulo licenciado avulso já o contradiz). O hero mostra a versão do
+// NexTool e do GLPI; a situação das licenças fica na guia Licenciamento. Só sobrevivem aqui os
+// avisos OPERACIONAIS: catálogo pendente de sincronização e licença suspensa.
 if ($requiresPolicyAcceptance) {
-   $heroPlanLabel = __('Não validado', 'nextool');
-   $heroPlanBadgeClass = 'bg-secondary';
-   $heroPlanDescription = '';
+   $heroNotice = '';
 } elseif (!$modulesUnlocked) {
-   $heroPlanLabel = __('Catálogo pendente', 'nextool');
-   $heroPlanBadgeClass = 'bg-secondary';
-   $heroPlanDescription = __('As Políticas de Uso já foram aceitas. Clique em Sincronizar para atualizar o catálogo oficial de módulos.', 'nextool');
+   $heroNotice = __('As Políticas de Uso já foram aceitas. Clique em Sincronizar para atualizar o catálogo oficial de módulos.', 'nextool');
+} elseif ($licenseStatusCode === 'SUSPENDED' && !$isFreeTier) {
+   $heroNotice = __('Licença suspensa: renove seu contrato para continuar com acesso a suporte e atualizações.', 'nextool');
 } else {
-   $isSuspendedView = ($licenseStatusCode === 'SUSPENDED');
-   if ($isLicenseActive || ($isSuspendedView && !$isFreeTier)) {
-      $heroPlanLabel = $licensePlanLabel;
-      $heroPlanBadgeClass = $isSuspendedView ? 'bg-warning text-dark' : $licensePlanBadgeClass;
-      $heroPlanDescription = $isSuspendedView
-         ? __('Licença suspensa: renove seu contrato para continuar com acesso a suporte e atualizações.', 'nextool')
-         : $licensePlanDescription;
-   } else {
-      $heroPlanLabel = __('Gratuito', 'nextool');
-      $heroPlanBadgeClass = 'bg-teal';
-      $heroPlanDescription = __('Nenhuma licença ativa detectada.', 'nextool');
-   }
+   $heroNotice = '';
 }
 
 $modulesState = [];
@@ -174,7 +173,7 @@ if (class_exists('PluginNextoolMainConfig')) {
       $moduleConfigTabMap[$tabMeta['module_key'] ?? ''] = $tabNum;
    }
 }
-$nextoolConfigBaseUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1';
+$nextoolConfigBaseUrl = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1';
 
 // Catálogo já contém todos os módulos do banco
 $allModuleKeys = array_keys($catalogMeta);
@@ -433,7 +432,7 @@ foreach ($allModuleKeys as $moduleKey) {
          'plugin_version'          => $currentPluginVersion,
          'min_version_nextools'    => $meta['min_version_nextools'] ?? null,
          'upgrade_url'             => NEXTOOL_SITE_URL,
-         'data_url'                => Plugin::getWebDir('nextool') . '/front/module_data.php?module=' . urlencode($moduleKey),
+         'data_url'                => PluginNextoolCompat::webDir() . '/front/module_data.php?module=' . urlencode($moduleKey),
          'config_url'              => $configUrl,
          'show_config_button'      => $isInstalled && $moduleHasConfig && $moduleCanView,
          'can_manage_admin_tabs'   => $canManageAdminTabs,
@@ -496,14 +495,14 @@ $nextool_is_standalone = ($nextool_show_only_tab !== null);
 if ($nextool_is_standalone) {
    $tabsRegistry = [
       'modules' => ['id' => 'rt-tab-modulos', 'label' => __('Módulos', 'nextool'), 'icon' => 'ti ti-puzzle', 'allowed' => $canViewAnyModule],
-      'contato' => ['id' => 'rt-tab-contato', 'label' => __('Contato', 'nextool'), 'icon' => 'ti ti-headset', 'allowed' => $canViewAdminTabs],
       'licenca' => ['id' => 'rt-tab-licenca', 'label' => __('Licenciamento', 'nextool'), 'icon' => 'ti ti-key', 'allowed' => $canViewAdminTabs],
       'logs'    => ['id' => 'rt-tab-logs', 'label' => __('Logs', 'nextool'), 'icon' => 'ti ti-report-analytics', 'allowed' => $canViewAdminTabs],
       'servicos'  => ['id' => 'rt-tab-servicos', 'label' => __('Serviços', 'nextool'), 'icon' => 'ti ti-briefcase', 'allowed' => $canViewAdminTabs],
       'novidades' => ['id' => 'rt-tab-novidades', 'label' => __('Novidades', 'nextool'), 'icon' => 'ti ti-sparkles', 'allowed' => $canViewAdminTabs],
+      'sobre'     => ['id' => 'rt-tab-sobre', 'label' => __('Sobre', 'nextool'), 'icon' => 'ti ti-info-circle', 'allowed' => $canViewAdminTabs],
    ];
    $canShow = ($nextool_show_only_tab === 'modules' && $canViewAnyModule)
-      || (in_array($nextool_show_only_tab, ['contato', 'licenca', 'logs', 'alertas', 'servicos', 'novidades'], true) && $canViewAdminTabs);
+      || (in_array($nextool_show_only_tab, ['licenca', 'logs', 'alertas', 'servicos', 'novidades', 'sobre'], true) && $canViewAdminTabs);
    echo "<div class='m-3' id='nextool-config-form'>";
    if (!$canShow) {
       echo "<div class='alert alert-warning'><i class='ti ti-lock me-2'></i>" . __('Sem permissão para acessar esta seção.', 'nextool') . "</div>";
@@ -520,22 +519,10 @@ $tabsRegistry = $tabsRegistry ?? [
       'icon'    => 'ti ti-puzzle',
       'allowed' => $canViewAnyModule,
    ],
-   'contato' => [
-      'id'      => 'rt-tab-contato',
-      'label'   => __('Contato', 'nextool'),
-      'icon'    => 'ti ti-headset',
-      'allowed' => $canViewAdminTabs,
-   ],
    'licenca' => [
       'id'      => 'rt-tab-licenca',
       'label'   => __('Licenciamento', 'nextool'),
       'icon'    => 'ti ti-key',
-      'allowed' => $canViewAdminTabs,
-   ],
-   'logs' => [
-      'id'      => 'rt-tab-logs',
-      'label'   => __('Logs', 'nextool'),
-      'icon'    => 'ti ti-report-analytics',
       'allowed' => $canViewAdminTabs,
    ],
    'servicos' => [
@@ -548,6 +535,19 @@ $tabsRegistry = $tabsRegistry ?? [
       'id'      => 'rt-tab-novidades',
       'label'   => __('Novidades', 'nextool'),
       'icon'    => 'ti ti-sparkles',
+      'allowed' => $canViewAdminTabs,
+   ],
+   'sobre' => [
+      'id'      => 'rt-tab-sobre',
+      'label'   => __('Sobre', 'nextool'),
+      'icon'    => 'ti ti-info-circle',
+      'allowed' => $canViewAdminTabs,
+   ],
+   // Logs por último (ordem de exibição = ordem deste array).
+   'logs' => [
+      'id'      => 'rt-tab-logs',
+      'label'   => __('Logs', 'nextool'),
+      'icon'    => 'ti ti-report-analytics',
       'allowed' => $canViewAdminTabs,
    ],
 ];
@@ -563,18 +563,19 @@ foreach ($tabsRegistry as $key => $meta) {
 // Exibido para qualquer perfil que enxergue a tela (informativo). Botões Sincronizar
 // e "Atualização Disponível" são ocultados para perfis sem canManageAdminTabs.
 $nextool_hero_standalone = '';
-if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'contato', 'logs', 'alertas'], true)) {
+if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'logs', 'alertas', 'sobre'], true)) {
    ob_start();
    $nextoolHeroWithMarginTop = false;
    $nextoolHeroDisableSync = false;
    $nextoolHeroHideSync = $requiresPolicyAcceptance || !$canManageAdminTabs;
    $nextoolHeroShowCoreUpdate = $coreUpdateAvailable && $canManageAdminTabs;
+   $nextoolHeroCoreUpdateBlocked = $coreUpdateBlockedText;
    $nextoolHeroForcetabMap = [
       'modules' => 'PluginNextoolMainConfig$1',
-      'contato' => 'PluginNextoolMainConfig$2',
       'licenca' => 'PluginNextoolMainConfig$3',
       'alertas' => 'PluginNextoolMainConfig$4',
       'logs'    => 'PluginNextoolMainConfig$5',
+      'sobre'   => 'PluginNextoolMainConfig$' . PluginNextoolMainConfig::TAB_SOBRE,
    ];
    $nextoolHeroForcetab = $nextoolHeroForcetabMap[$nextool_standalone_output_tab] ?? 'PluginNextoolMainConfig$1';
    include NEXTOOL_PHP_DIR . '/front/tabs/config.hero.inc.php';
@@ -604,7 +605,7 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
                    data-bs-toggle="tab"
                    data-bs-target="#<?php echo $tabMeta['id']; ?>"
                    role="tab">
-              <i class="<?php echo $tabMeta['icon']; ?> me-1"></i><?php echo Html::entities_deep($tabMeta['label']); ?>
+              <i class="<?php echo $tabMeta['icon']; ?> me-1"></i><?php echo PluginNextoolCompat::escape($tabMeta['label']); ?>
            </button>
         </li>
         <?php endforeach; ?>
@@ -617,6 +618,7 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
          $nextoolHeroDisableSync = false;
          $nextoolHeroHideSync = $requiresPolicyAcceptance || !$canManageAdminTabs;
          $nextoolHeroShowCoreUpdate = $coreUpdateAvailable && $canManageAdminTabs;
+         $nextoolHeroCoreUpdateBlocked = $coreUpdateBlockedText;
          // Em modo não-standalone, o JS resolve a aba ativa dinamicamente.
          $nextoolHeroForcetab = '';
          include NEXTOOL_PHP_DIR . '/front/tabs/config.hero.inc.php';
@@ -629,9 +631,8 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
 
         <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.licenca.tab.inc.php'; ?>
 
+        <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.sobre.tab.inc.php'; ?>
         <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.logs.tab.inc.php'; ?>
-
-        <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.contato.tab.inc.php'; ?>
 
         <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.alertas.tab.inc.php'; ?>
 

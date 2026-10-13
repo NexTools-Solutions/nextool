@@ -66,6 +66,13 @@ class PluginNextoolLicenseValidator {
    public const AI_CREDITS_CONTEXT = 'plugin:nextool_ai_credits';
 
    /**
+    * Contexto GLPI do bloco `ecosystem_stats` do /validate: os números públicos do ecossistema (ambientes,
+    * países, downloads, artigos), os mesmos da home do site. O portal os calcula uma vez por dia e a
+    * ContainerAPI os repassa; a guia Sobre mostra o que tiver (`persistEcosystemStats()`/`getEcosystemStats()`).
+    */
+   public const ECOSYSTEM_STATS_CONTEXT = 'plugin:nextool_ecosystem_stats';
+
+   /**
     * `X-Nextool-Caps` completo: as da base + as que os módulos ATIVOS anunciam (`extraCapabilities()`), sem repetir.
     * Falha de um módulo não derruba o /validate: vai só a lista da base.
     */
@@ -200,6 +207,52 @@ class PluginNextoolLicenseValidator {
    public static function getAiCredits(): ?array {
       $values = Config::getConfigurationValues(self::AI_CREDITS_CONTEXT, ['ai_credits', 'synced_at']);
       $raw = (string) ($values['ai_credits'] ?? '');
+      if ($raw === '') {
+         return null;
+      }
+      $decoded = json_decode($raw, true);
+      if (!is_array($decoded)) {
+         return null;
+      }
+      $decoded['synced_at'] = (int) ($values['synced_at'] ?? 0);
+      return $decoded;
+   }
+
+   /**
+    * Guarda o bloco `ecosystem_stats` do /validate: só contadores inteiros não negativos das chaves
+    * conhecidas e a data de cálculo (texto curto). Bloco sem nada aproveitável não apaga o anterior.
+    *
+    * @param array<string,mixed> $block
+    */
+   public static function persistEcosystemStats(array $block): void {
+      $limpo = [];
+      foreach (['ambientes', 'paises', 'downloads', 'artigos'] as $k) {
+         if (isset($block[$k]) && is_numeric($block[$k]) && (int) $block[$k] >= 0) {
+            $limpo[$k] = (int) $block[$k];
+         }
+      }
+      if (isset($block['atualizado_em']) && is_string($block['atualizado_em']) && trim($block['atualizado_em']) !== '') {
+         $limpo['atualizado_em'] = mb_substr(trim($block['atualizado_em']), 0, 40);
+      }
+      if ($limpo === []) {
+         return;
+      }
+      $json = json_encode($limpo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+      if ($json === false) {
+         return;
+      }
+      self::persistConfig(self::ECOSYSTEM_STATS_CONTEXT, ['ecosystem_stats' => $json, 'synced_at' => (string) time()], 'ecosystem_stats');
+   }
+
+   /**
+    * Último bloco `ecosystem_stats` recebido (`ambientes`, `paises`, `downloads`, `artigos`, `atualizado_em`),
+    * com `synced_at` (epoch). null = nunca recebido (servidor antigo ou ambiente que ainda não validou).
+    *
+    * @return array<string,mixed>|null
+    */
+   public static function getEcosystemStats(): ?array {
+      $values = Config::getConfigurationValues(self::ECOSYSTEM_STATS_CONTEXT, ['ecosystem_stats', 'synced_at']);
+      $raw = (string) ($values['ecosystem_stats'] ?? '');
       if ($raw === '') {
          return null;
       }
@@ -654,6 +707,13 @@ class PluginNextoolLicenseValidator {
          'client_info' => $clientInfo,
       ];
 
+      // Métricas agregadas do anúncio antes do download (nextool-dev#283): o servidor soma por (AD, módulo, dia), sem
+      // o ambiente, e devolve download_ad_metrics_ack; só então o que foi enviado é descontado.
+      $sentDownloadAdMetrics = PluginNextoolDownloadAds::pendingMetrics();
+      if ($sentDownloadAdMetrics !== []) {
+         $payload['download_ad_metrics'] = $sentDownloadAdMetrics;
+      }
+
       // Anexa estado local dos módulos (para futura sincronização de catálogo)
       if ($DB->tableExists('glpi_plugin_nextool_main_modules')) {
          $localModules = [];
@@ -1036,6 +1096,27 @@ class PluginNextoolLicenseValidator {
             self::persistAiCredits($responseData['ai_credits']);
          }
 
+         // Números públicos do ecossistema (ambientes, países, downloads, artigos) para a guia Sobre. Bloco
+         // ADITIVO, sem dado pessoal; a ausência não apaga (servidor antigo).
+         if (isset($responseData['ecosystem_stats']) && is_array($responseData['ecosystem_stats'])) {
+            self::persistEcosystemStats($responseData['ecosystem_stats']);
+         }
+
+         // Anúncio antes do download de módulo gratuito (nextool-dev#283). O servidor só manda o bloco com anúncio
+         // vigente, então numa validação REAL (HTTP 200 com `valid`) a ausência quer dizer "nenhum": limpa. Em 401, 429
+         // ou 5xx com corpo nada muda. O ack só vem quando o servidor gravou as métricas enviadas.
+         if ($httpCode === 200 && array_key_exists('valid', $responseData)) {
+            PluginNextoolDownloadAds::persist(
+               isset($responseData['download_ads']) && is_array($responseData['download_ads']) ? $responseData['download_ads'] : null,
+               (string) $distributionBaseUrl,
+               (string) $distributionClientIdentifier,
+               (string) $distributionClientSecret
+            );
+            if (!empty($responseData['download_ad_metrics_ack'])) {
+               PluginNextoolDownloadAds::acknowledgeMetrics($sentDownloadAdMetrics);
+            }
+         }
+
          // Persistir alertas recebidos + apagar os REVOGADOS na origem (#239). A lista de
          // revogados é aditiva (servidor antigo não manda; plugin antigo ignora).
          $alertsIn  = (!empty($responseData['alerts']) && is_array($responseData['alerts'])) ? $responseData['alerts'] : [];
@@ -1307,9 +1388,15 @@ class PluginNextoolLicenseValidator {
          // legado: módulo é considerado compatível apenas com a plataforma atual.
          $compatMajors = null;
          if (isset($entry['platforms']) && is_array($entry['platforms'])) {
+            // Uma chave por major (`glpi_10`, `glpi_11`, `glpi_12`...): o laço aceita qualquer
+            // major que a ContainerAPI passe a publicar, sem lista fixa aqui.
             $list = [];
-            if (!empty($entry['platforms']['glpi_10']['available'])) { $list[] = '10'; }
-            if (!empty($entry['platforms']['glpi_11']['available'])) { $list[] = '11'; }
+            foreach ($entry['platforms'] as $platformKey => $platform) {
+               if (preg_match('/^glpi_(\d+)$/', (string) $platformKey, $pm) && !empty($platform['available'])) {
+                  $list[] = $pm[1];
+               }
+            }
+            sort($list, SORT_NUMERIC);
             $compatMajors = $list ? implode(',', $list) : null;
          }
 
@@ -2382,9 +2469,16 @@ class PluginNextoolLicenseValidator {
     */
    private static function persistCoreUpdateHint(array $hint): void {
       $available = !empty($hint['available']);
+      // core_update.blocked (#285): versão nova que este servidor não pode instalar (PHP/GLPI fora da faixa).
+      $blocked = '';
+      if (!$available && !empty($hint['blocked']) && is_array($hint['blocked'])) {
+         require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
+         $blocked = (string) json_encode(PluginNextoolCoreUpdater::normalizeBlocked($hint['blocked']), JSON_UNESCAPED_UNICODE);
+      }
       self::persistConfig('plugin:nextool_core_update', [
          'update_available'         => $available ? '1' : '0',
          'latest_available_version' => $available ? (string)($hint['latest_version'] ?? '') : '',
+         'blocked'                  => $blocked,
       ], 'core_update hint');
    }
 

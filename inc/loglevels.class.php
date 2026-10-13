@@ -44,7 +44,7 @@ class PluginNextoolLogLevels {
    /** Badge HTML pronto (rótulo + cor). */
    public static function badge(string $level): string {
       return "<span class='badge " . self::badgeClass($level) . "'>"
-         . Html::entities_deep(self::label($level)) . "</span>";
+         . PluginNextoolCompat::escape(self::label($level)) . "</span>";
    }
 
    /**

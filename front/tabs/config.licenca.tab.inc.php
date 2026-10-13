@@ -16,8 +16,8 @@ declare(strict_types=1);
 <!-- TAB 2: Licenciamento -->
 <?php $show_licenca = (!$nextool_is_standalone || $nextool_standalone_output_tab === 'licenca') && $canViewAdminTabs; if ($show_licenca): ?>
 <?php if (!$nextool_is_standalone): ?><div class="tab-pane fade" id="rt-tab-licenca" role="tabpanel" aria-labelledby="rt-tab-licenca-link"><?php endif; ?>
-   <form method="post" action="<?php echo Plugin::getWebDir('nextool') . '/front/config.save.php'; ?>" id="configForm">
-      <?php echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); ?>
+   <form method="post" action="<?php echo PluginNextoolCompat::webDir() . '/front/config.save.php'; ?>" id="configForm">
+      <?php if (!PluginNextoolCompat::csrfTokenless()) { echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); } ?>
       <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$3' : 'PluginNextoolSetup$1']); ?>
       <div class="d-flex flex-column gap-3">
 
@@ -108,16 +108,16 @@ declare(strict_types=1);
                                        }
                                     ?>
                                     <tr>
-                                       <td><code><?php echo Html::entities_deep($rowKey); ?></code></td>
-                                       <td><span class="badge text-white <?php echo $planBadge; ?>"><?php echo Html::entities_deep(ucfirst(strtolower($rowPlan))); ?></span></td>
-                                       <td><span class="badge text-white <?php echo $statusBadge; ?>"><?php echo Html::entities_deep($statusLabel); ?></span></td>
-                                       <td><?php echo Html::entities_deep($validityDisplay); ?></td>
+                                       <td><code><?php echo PluginNextoolCompat::escape($rowKey); ?></code></td>
+                                       <td><span class="badge text-white <?php echo $planBadge; ?>"><?php echo PluginNextoolCompat::escape(ucfirst(strtolower($rowPlan))); ?></span></td>
+                                       <td><span class="badge text-white <?php echo $statusBadge; ?>"><?php echo PluginNextoolCompat::escape($statusLabel); ?></span></td>
+                                       <td><?php echo PluginNextoolCompat::escape($validityDisplay); ?></td>
                                        <td>
                                           <?php if (empty($rowModules) || in_array('*', $rowModules, true)): ?>
                                              <span class="badge text-white bg-purple"><?php echo __('Todos os módulos', 'nextool'); ?></span>
                                           <?php else: ?>
                                              <?php foreach ($rowModules as $moduleKey): ?>
-                                                <span class="badge text-white bg-teal me-1 mb-1"><?php echo Html::entities_deep($moduleKey); ?></span>
+                                                <span class="badge text-white bg-teal me-1 mb-1"><?php echo PluginNextoolCompat::escape($moduleKey); ?></span>
                                              <?php endforeach; ?>
                                           <?php endif; ?>
                                        </td>
@@ -142,7 +142,7 @@ declare(strict_types=1);
                                        <input type="text"
                                               class="form-control"
                                               id="rt-client-identifier"
-                                              value="<?php echo Html::entities_deep($config['client_identifier']); ?>"
+                                              value="<?php echo PluginNextoolCompat::escape($config['client_identifier']); ?>"
                                               readonly>
                                        <button type="button"
                                                class="btn btn-outline-secondary"
@@ -162,8 +162,8 @@ declare(strict_types=1);
                                            class="form-control bg-light"
                                            id="rt-endpoint-url"
                                            name="endpoint_url"
-                                           value="<?php echo Html::entities_deep($distributionBaseUrl); ?>"
-                                           placeholder="<?php echo Html::entities_deep(PluginNextoolConfig::DEFAULT_CONTAINERAPI_BASE_URL); ?>"
+                                           value="<?php echo PluginNextoolCompat::escape($distributionBaseUrl); ?>"
+                                           placeholder="<?php echo PluginNextoolCompat::escape(PluginNextoolConfig::DEFAULT_CONTAINERAPI_BASE_URL); ?>"
                                            readonly>
                                     <button type="button"
                                             class="btn btn-outline-secondary"
@@ -180,7 +180,7 @@ declare(strict_types=1);
                                  <div class="text-muted fw-semibold mb-1"><?php echo __('Conta NexTool vinculada', 'nextool'); ?></div>
                                  <?php if (!empty($accountLinked)): ?>
                                     <span class="badge text-white bg-success me-2"><i class="ti ti-user-check me-1"></i><?php echo __('Vinculada', 'nextool'); ?></span>
-                                    <?php if (($accountEmail ?? '') !== ''): ?><span class="fw-semibold"><?php echo Html::entities_deep($accountEmail); ?></span><?php endif; ?>
+                                    <?php if (($accountEmail ?? '') !== ''): ?><span class="fw-semibold"><?php echo PluginNextoolCompat::escape($accountEmail); ?></span><?php endif; ?>
                                     <div class="form-text"><?php echo __('Este ambiente está vinculado a uma conta do portal NexTool. Abra "Gerenciar conta" no topo para ver detalhes ou desvincular.', 'nextool'); ?></div>
                                  <?php else: ?>
                                     <span class="badge bg-secondary me-2"><i class="ti ti-user-off me-1"></i><?php echo __('Não vinculada', 'nextool'); ?></span>
@@ -227,7 +227,7 @@ declare(strict_types=1);
                                  <?php else: ?>
                                     <p class="mb-0">
                                        <?php foreach ($allowedModules as $allowedKey): ?>
-                                          <span class="badge text-white bg-teal me-1 mb-1"><?php echo Html::entities_deep($allowedKey); ?></span>
+                                          <span class="badge text-white bg-teal me-1 mb-1"><?php echo PluginNextoolCompat::escape($allowedKey); ?></span>
                                        <?php endforeach; ?>
                                     </p>
                                  <?php endif; ?>
@@ -238,7 +238,7 @@ declare(strict_types=1);
                                     <div class="text-muted fw-semibold mb-1"><?php echo __('Observações', 'nextool'); ?></div>
                                     <ul class="list-unstyled mb-0">
                                        <?php foreach ($licenseWarnings as $warning): ?>
-                                          <li><i class="ti ti-alert-triangle text-warning me-1"></i><?php echo Html::entities_deep($warning); ?></li>
+                                          <li><i class="ti ti-alert-triangle text-warning me-1"></i><?php echo PluginNextoolCompat::escape($warning); ?></li>
                                        <?php endforeach; ?>
                                     </ul>
                                  </div>
@@ -276,9 +276,9 @@ declare(strict_types=1);
          <p class="text-muted mb-2">
             <?php echo __('Remove o segredo de comunicação LOCAL deste ambiente (a identidade é preservada). Use quando o suporte NexTool resetar o provisionamento no servidor, ou ao descomissionar este GLPI. A próxima Sincronização gera um segredo novo automaticamente.', 'nextool'); ?>
          </p>
-         <form method="post" action="<?php echo Plugin::getWebDir('nextool') . '/front/config.save.php'; ?>"
-               onsubmit="return confirm('<?php echo Html::entities_deep(__('Remover o vínculo de provisionamento local? A próxima Sincronização irá reprovisionar este ambiente.', 'nextool')); ?>');">
-            <?php echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); ?>
+         <form method="post" action="<?php echo PluginNextoolCompat::webDir() . '/front/config.save.php'; ?>"
+               onsubmit="return confirm('<?php echo PluginNextoolCompat::escape(__('Remover o vínculo de provisionamento local? A próxima Sincronização irá reprovisionar este ambiente.', 'nextool')); ?>');">
+            <?php if (!PluginNextoolCompat::csrfTokenless()) { echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); } ?>
             <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$3' : 'PluginNextoolSetup$1']); ?>
             <?php echo Html::hidden('action', ['value' => 'unlink_environment']); ?>
             <button type="submit" class="btn btn-sm btn-outline-danger">
@@ -304,8 +304,8 @@ declare(strict_types=1);
          <p class="text-muted mb-2">
             <?php echo __('Define o que acontece com os dados dos módulos quando o plugin base for desinstalado pela tela de plugins do GLPI.', 'nextool'); ?>
          </p>
-         <form method="post" action="<?php echo Plugin::getWebDir('nextool') . '/front/config.save.php'; ?>">
-            <?php echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); ?>
+         <form method="post" action="<?php echo PluginNextoolCompat::webDir() . '/front/config.save.php'; ?>">
+            <?php if (!PluginNextoolCompat::csrfTokenless()) { echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); } ?>
             <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$3' : 'PluginNextoolSetup$1']); ?>
             <?php echo Html::hidden('action', ['value' => 'save_uninstall_mode']); ?>
             <div class="form-check mb-1">

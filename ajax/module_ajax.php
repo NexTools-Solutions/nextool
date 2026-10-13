@@ -253,7 +253,11 @@ if (!in_array($method, $bodylessMethods, true)) {
    $isXhr = !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
       && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 
-   if ($isXhr) {
+   if (PluginNextoolCompat::csrfTokenless()) {
+      // GLPI 12: não há token (Session::checkCSRF virou no-op) e o core valida pelos cabeçalhos
+      // Sec-Fetch-Site/Origin -- mas pula este caminho por ser stateless. Mesma regra, aqui.
+      PluginNextoolCompat::assertRequestSafeFromCsrf();
+   } elseif ($isXhr) {
       // Para AJAX, prioriza header (padrão GLPI 11), mas aceita fallback do body.
       $csrfToken = (string) ($_SERVER['HTTP_X_GLPI_CSRF_TOKEN'] ?? ($_POST['_glpi_csrf_token'] ?? ''));
       Session::checkCSRF(['_glpi_csrf_token' => $csrfToken], true);

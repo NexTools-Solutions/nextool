@@ -19,7 +19,11 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once __DIR__ . '/inc/modulespath.inc.php';
+// `require` (nao `require_once`) de proposito (nextool-dev#282): um script CLI que toque um arquivo
+// do plugin ANTES de bootar o kernel inclui este arquivo sem GLPI_ROOT, e as constantes de caminho
+// dos modulos ficam por definir; o arquivo e idempotente (guardas por defined/function_exists),
+// entao reincluir aqui, com GLPI_ROOT garantido, completa o que faltou.
+require __DIR__ . '/inc/modulespath.inc.php';
 require_once __DIR__ . '/inc/localeresolver.class.php';
 
 // Compat de versao: shim da interface de Search do GLPI 11 (no-op no GLPI 11,
@@ -27,19 +31,28 @@ require_once __DIR__ . '/inc/localeresolver.class.php';
 // faca `implements \Glpi\Search\DefaultSearchRequestInterface` (base e modulos).
 require_once __DIR__ . '/inc/compat/searchcompat.php';
 
+// Helper das APIs que mudaram entre as majors (GLPI 10/11/12). O autoloader do core o
+// resolve pelo nome; o require aqui so garante a ordem. Guardado por is_file() porque o
+// self-update grava arquivo a arquivo: este setup.php pode chegar ao disco antes do helper.
+if (is_file(__DIR__ . '/inc/compat.class.php')) {
+   require_once __DIR__ . '/inc/compat.class.php';
+}
+
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.34.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.36.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
-define('PLUGIN_NEXTOOL_MAX_GLPI_VERSION', '11.0.99');
+define('PLUGIN_NEXTOOL_MAX_GLPI_VERSION', '12.0.99');
 
 /** URLs e metadados do projeto (centralizados para evitar hardcoding) */
 define('NEXTOOL_AUTHOR_NAME', 'Richard Loureiro');
 define('NEXTOOL_AUTHOR_URL', 'https://linkedin.com/in/richard-ti/');
 define('NEXTOOL_SITE_URL', 'https://nextoolsolutions.com');
 define('NEXTOOL_WHATSAPP_URL', 'https://api.whatsapp.com/send?phone=5532984692962&text=Ol%C3%A1%2C%20gostaria%20de%20falar%20sobre%20os%20produtos%20da%20Nextools.');
-define('NEXTOOL_BOOKING_URL', 'https://outlook.office.com/bookwithme/user/e52b9e3c38254d21b172fd4f08c18d8e%40jmbasolucoes.com.br?anonymous&ismsaljsauthenabled');
+define('NEXTOOL_BOOKING_URL', 'https://nextoolsolutions.com/agenda');
+// Solicitações do cliente no portal: o atendimento é aberto pelo popup Suporte e acompanhado aqui.
+define('NEXTOOL_PORTAL_SUPPORT_URL', 'https://app.nextoolsolutions.com/painel/solicitacoes');
 define('NEXTOOL_RELEASES_URL', 'https://github.com/RPGMais/nextool/releases');
 define('NEXTOOL_TERMS_URL', 'https://nextoolsolutions.com/termos-de-uso');
 

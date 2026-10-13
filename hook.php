@@ -19,7 +19,7 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-require_once __DIR__ . '/inc/modulespath.inc.php';
+require __DIR__ . '/inc/modulespath.inc.php'; // `require`: ver nextool-dev#282 no setup.php
 require_once __DIR__ . '/inc/modulemanager.class.php';
 require_once __DIR__ . '/inc/basemodule.class.php';
 require_once __DIR__ . '/inc/permissionmanager.class.php';
@@ -471,7 +471,7 @@ function plugin_nextool_pre_show_tab($params) {
  *
  * O core renderiza cada entrada de menu com `path(page)` -> `Html::getPrefixedUrl()`,
  * que SEMPRE concatena `$CFG_GLPI['root_doc']` na frente (GLPI 10 e 11). Por isso as
- * entradas nativas passam `getFormURL(false)`. `Plugin::getWebDir('nextool')` e
+ * entradas nativas passam `getFormURL(false)`. `PluginNextoolCompat::webDir()` e
  * `getConfigPage()` ja vem com o `root_doc`: em instalacao servida sob subcaminho
  * (`/public`, `/glpi`) o menu saia `/public/public/plugins/nextool/...` (relato de
  * cliente, 2026-09-07). No homolog `root_doc` e vazio e o defeito era invisivel.
@@ -598,7 +598,7 @@ function _plugin_nextool_build_menus($menu) {
       'content' => [],
    ];
 
-   $configBase = plugin_nextool_menu_page(Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1');
+   $configBase = plugin_nextool_menu_page(PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1');
 
    // Subitem "Módulos": requer permissão global de módulos OU acesso a algum módulo
    if ($canViewModulesGlobal || $canViewAnyMod || $hasGlobalAdmin) {

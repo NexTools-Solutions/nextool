@@ -24,9 +24,10 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-class PluginNextoolLicenseConfig extends CommonDBTM {
+require_once __DIR__ . '/compat.class.php';
 
-   public static $rightname = 'config';
+// Corpo na trait, classe declarada condicionalmente no fim do arquivo: ver inc/config.class.php.
+trait PluginNextoolLicenseConfigBody {
 
    /**
     * Nome da tabela
@@ -252,4 +253,17 @@ class PluginNextoolLicenseConfig extends CommonDBTM {
    }
 }
 
-
+// GLPI 12 tipou `$rightname` no core (fatal se a redeclaracao nao tiver o tipo); no 10/11 o tipo
+// e fatal. A unica declaracao valida nos 3 majors e condicional: mesmo corpo (trait), so a
+// propriedade muda. Trait com a propriedade NAO serve (conflito de composicao, medido em 2026-10-08).
+if (PluginNextoolCompat::typedRightname()) {
+   class PluginNextoolLicenseConfig extends CommonDBTM {
+      use PluginNextoolLicenseConfigBody;
+      public static string $rightname = 'config';
+   }
+} else {
+   class PluginNextoolLicenseConfig extends CommonDBTM {
+      use PluginNextoolLicenseConfigBody;
+      public static $rightname = 'config';
+   }
+}

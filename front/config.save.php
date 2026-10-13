@@ -29,7 +29,7 @@ function plugin_nextool_redirect_after_action(): void
    $forcetab = trim((string) ($_POST['forcetab'] ?? ''));
    if ($forcetab !== '' && preg_match('/^PluginNextoolMainConfig\$\d+$/', $forcetab) === 1) {
       Html::redirect(
-         Plugin::getWebDir('nextool')
+         PluginNextoolCompat::webDir()
          . '/front/nextoolconfig.form.php?id=1&forcetab='
          . rawurlencode($forcetab)
       );
@@ -725,7 +725,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
             WARNING
          );
       } elseif ($licenseStatus === 'SUSPENDED') {
-         $contactUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?forcetab=PluginNextoolMainConfig%242';
+         $contactUrl = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?nextool_support=1'; // abre o popup de suporte
          Session::addMessageAfterRedirect(
             sprintf(__('Sincronização concluída: a licença do plano %s está suspensa. Os módulos já instalados continuam funcionando. Regularize sua situação para restaurar o acesso a suporte técnico, atualizações e novos downloads.', 'nextool'), $planLabel)
             . ' <a href="' . htmlspecialchars($contactUrl) . '">' . __('Entre em contato com o suporte.', 'nextool') . '</a>',
@@ -733,7 +733,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
             WARNING
          );
       } elseif ($licenseStatus === 'CANCELLED') {
-         $contactUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?forcetab=PluginNextoolMainConfig%242';
+         $contactUrl = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?nextool_support=1'; // abre o popup de suporte
          Session::addMessageAfterRedirect(
             sprintf(__('Sincronização concluída: a licença do plano %s foi cancelada. Os módulos licenciados ficarão bloqueados.', 'nextool'), $planLabel)
             . ' <a href="' . htmlspecialchars($contactUrl) . '">' . __('Entre em contato com o suporte para reativar.', 'nextool') . '</a>',

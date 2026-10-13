@@ -65,18 +65,18 @@ if ($show_vitrine):
             <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-purple s-1">
                <i class="fs-2x <?php echo $nextoolVitrineIcon; ?>"></i>
             </div>
-            <span><?php echo Html::entities_deep($nextoolVitrineTitle); ?></span>
+            <span><?php echo PluginNextoolCompat::escape($nextoolVitrineTitle); ?></span>
          </h4>
       </div>
       <div class="card-body">
-         <p class="mb-3"><?php echo Html::entities_deep($nextoolVitrineIntro); ?></p>
+         <p class="mb-3"><?php echo PluginNextoolCompat::escape($nextoolVitrineIntro); ?></p>
          <?php if (!empty($nextoolVitrineItems)): ?>
             <div class="row g-3" data-nextool-vitrine="remoto">
                <?php foreach ($nextoolVitrineItems as $item): ?>
                   <div class="col-12 col-lg-6">
                      <div class="card h-100">
                         <div class="card-body">
-                           <h5 class="card-title mb-2"><?php echo Html::entities_deep((string) $item['title']); ?></h5>
+                           <h5 class="card-title mb-2"><?php echo PluginNextoolCompat::escape((string) $item['title']); ?></h5>
                            <div class="small"><?php echo PluginNextoolAlertManager::sanitizeBody((string) $item['body']); ?></div>
                         </div>
                      </div>
@@ -89,10 +89,10 @@ if ($show_vitrine):
                   <div class="col-12 col-md-6 col-xl-4">
                      <div class="card h-100">
                         <div class="card-body d-flex flex-column">
-                           <h5 class="card-title mb-2"><i class="<?php echo $icon; ?> me-2 text-purple"></i><?php echo Html::entities_deep($title); ?></h5>
-                           <p class="small text-muted flex-grow-1"><?php echo Html::entities_deep($text); ?></p>
+                           <h5 class="card-title mb-2"><i class="<?php echo $icon; ?> me-2 text-purple"></i><?php echo PluginNextoolCompat::escape($title); ?></h5>
+                           <p class="small text-muted flex-grow-1"><?php echo PluginNextoolCompat::escape($text); ?></p>
                            <a class="btn btn-outline-primary btn-sm align-self-start" target="_blank" rel="noopener"
-                              href="<?php echo Html::entities_deep($url); ?>"><?php echo Html::entities_deep($cta); ?></a>
+                              href="<?php echo PluginNextoolCompat::escape($url); ?>"><?php echo PluginNextoolCompat::escape($cta); ?></a>
                         </div>
                      </div>
                   </div>

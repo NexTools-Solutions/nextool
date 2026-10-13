@@ -121,9 +121,9 @@ class PluginNextoolModuleAudit extends PluginNextoolBaseAuditLog {
             }
 
             echo "<tr>";
-            echo "<td>" . (!empty($when) ? Html::entities_deep($when) : '-') . "</td>";
-            echo "<td><span class='fw-semibold'>" . Html::entities_deep($moduleKey) . "</span></td>";
-            echo "<td><span class='badge bg-gray-lt'>" . Html::entities_deep($action) . "</span></td>";
+            echo "<td>" . (!empty($when) ? PluginNextoolCompat::escape($when) : '-') . "</td>";
+            echo "<td><span class='fw-semibold'>" . PluginNextoolCompat::escape($moduleKey) . "</span></td>";
+            echo "<td><span class='badge bg-gray-lt'>" . PluginNextoolCompat::escape($action) . "</span></td>";
             echo "<td>";
             if ($result === 1) {
                echo "<span class='badge bg-green text-white'>" . __('Sucesso', 'nextool') . "</span>";
@@ -140,27 +140,27 @@ class PluginNextoolModuleAudit extends PluginNextoolBaseAuditLog {
                if (class_exists('User')) {
                   $username = User::getFriendlyNameById($userId);
                }
-               echo Html::entities_deep($username ?: sprintf('#%d', $userId));
+               echo PluginNextoolCompat::escape($username ?: sprintf('#%d', $userId));
             } else {
                echo "-";
             }
             if ($origin !== '') {
-               echo "<br><small class='text-muted'>" . Html::entities_deep($origin) . "</small>";
+               echo "<br><small class='text-muted'>" . PluginNextoolCompat::escape($origin) . "</small>";
             }
             if ($sourceIp !== '') {
-               echo "<br><small class='text-muted'>" . Html::entities_deep($sourceIp) . "</small>";
+               echo "<br><small class='text-muted'>" . PluginNextoolCompat::escape($sourceIp) . "</small>";
             }
             echo "</td>";
 
             echo "<td>";
-            echo Html::entities_deep($message);
+            echo PluginNextoolCompat::escape($message);
 
             $extraLines = [];
             if (!empty($row['allowed_modules'])) {
                $allowed = json_decode($row['allowed_modules'], true);
                if (is_array($allowed) && count($allowed)) {
                   $allowedLabels = array_map(function ($value) {
-                     return Html::entities_deep($value);
+                     return PluginNextoolCompat::escape($value);
                   }, $allowed);
                   $extraLines[] = __('Módulos permitidos:', 'nextool') . ' ' . implode(', ', $allowedLabels);
                }
@@ -169,7 +169,7 @@ class PluginNextoolModuleAudit extends PluginNextoolBaseAuditLog {
                $req = json_decode($row['requested_modules'], true);
                if (is_array($req) && count($req)) {
                   $reqLabels = array_map(function ($value) {
-                     return Html::entities_deep($value);
+                     return PluginNextoolCompat::escape($value);
                   }, $req);
                   $extraLines[] = __('Módulos solicitados:', 'nextool') . ' ' . implode(', ', $reqLabels);
                }

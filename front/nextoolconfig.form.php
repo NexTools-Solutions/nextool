@@ -95,17 +95,21 @@ echo '<script>window._nextoolCurrentVersion=' . json_encode($_nxCurrentVersion) 
 echo 'window._nextoolTargetVersion=' . json_encode($_nxTargetVersion) . ';</script>';
 
 include NEXTOOL_PHP_DIR . '/front/config.form.scripts.inc.php';
+// Popup de suporte: renderizado uma vez aqui (o hero chega por AJAX e só tem o botão que o abre).
+include NEXTOOL_PHP_DIR . '/front/support.modal.inc.php';
 
 // Formulário fallback para o botão Sincronizar na aba Módulos (onde o hero não está dentro de form).
-$configSaveUrl = Plugin::getWebDir('nextool') . '/front/config.save.php';
+$configSaveUrl = PluginNextoolCompat::webDir() . '/front/config.save.php';
 echo '<form id="nextoolSyncForm" method="post" action="' . htmlspecialchars($configSaveUrl) . '" style="display:none;">';
-echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]);
+if (!PluginNextoolCompat::csrfTokenless()) { // GLPI 12: sem token (e getNewCSRFToken() esta depreciado)
+   echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]);
+}
 echo Html::hidden('forcetab', ['value' => $forcetab]);
 echo '</form>';
 
 $options = [
    'id'       => $id,
-   'target'   => Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php',
+   'target'   => PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php',
    'forcetab' => $forcetab,
    // Sem o cabeçalho de navegação nativo ("NexTool Solutions - N/A - ID 1" do registro
    // técnico de config); opção do core no GLPI 10 e no 11.

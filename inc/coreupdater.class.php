@@ -50,9 +50,44 @@ class PluginNextoolCoreUpdater {
          $manifest = $this->client->requestManifest($channel, 'core_update_check_' . $source);
       } catch (RuntimeException $e) {
          $code = (int)$e->getCode();
+         $serverError = $this->client->getLastManifestError();
+         if ($code === 409 && is_array($serverError) && ($serverError['error'] ?? '') === 'requirements_not_met') {
+            // Há versão nova, mas este servidor não atende aos requisitos dela (#285): guarda o motivo
+            // para o hero e o relatório de bloqueio, em vez de virar "assinatura inválida".
+            $blocked = self::normalizeBlocked($serverError);
+            $message = self::describeBlocked($blocked);
+            $state = $this->persistState([
+               'update_available' => 0,
+               'blocked' => json_encode($blocked, JSON_UNESCAPED_UNICODE),
+            ]);
+
+            $this->logAction('check', true, [
+               'source' => $source,
+               'current_version' => $currentVersion,
+               'target_version' => $blocked['latest_version'],
+               'message' => $message,
+               'duration_ms' => (int)round((microtime(true) - $started) * 1000),
+               'details' => ['channel' => $channel, 'http_code' => $code, 'blocked' => $blocked],
+            ]);
+
+            return [
+               'success' => true,
+               'message' => $message,
+               'data' => [
+                  'channel' => $channel,
+                  'current_version' => $currentVersion,
+                  'target_version' => $blocked['latest_version'] !== '' ? $blocked['latest_version'] : null,
+                  'update_available' => false,
+                  'blocked' => $blocked,
+                  'state' => $state,
+               ],
+            ];
+         }
+
          if ($code === 404) {
             $state = $this->persistState([
                'update_available' => 0,
+               'blocked' => '',
             ]);
 
             $this->logAction('check', true, [
@@ -112,6 +147,7 @@ class PluginNextoolCoreUpdater {
 
       $state = $this->persistState([
          'update_available' => $updateAvailable ? 1 : 0,
+         'blocked' => '',
       ]);
 
       $this->logAction('check', true, [
@@ -274,7 +310,21 @@ class PluginNextoolCoreUpdater {
       }
       $this->appendCheck($checks, $blocking, 'disk_space', 'blocker', $diskOk, $diskMessage);
 
-      if (is_array($manifestToCheck) && isset($manifestToCheck['signature']) && isset($manifestToCheck['signature_key_id'])) {
+      if (!is_array($manifestToCheck)) {
+         // Sem manifesto não há assinatura a conferir (#285): antes caía no "sem assinatura" abaixo e o
+         // relatório dizia "pacote corrompido ou não oficial" quando o servidor só recusou o pedido.
+         $unavailableMessage = trim((string)($options['manifest_unavailable_message'] ?? ''));
+         $this->appendCheck(
+            $checks,
+            $blocking,
+            'manifest_available',
+            'blocker',
+            false,
+            $unavailableMessage !== ''
+               ? $unavailableMessage
+               : __('Não foi possível obter a atualização no servidor da NexTool.', 'nextool')
+         );
+      } elseif (isset($manifestToCheck['signature']) && isset($manifestToCheck['signature_key_id'])) {
          $signatureOk = true;
          $signatureMessage = __('Assinatura Ed25519 do manifesto validada.', 'nextool');
          try {
@@ -364,6 +414,17 @@ class PluginNextoolCoreUpdater {
          );
       }
 
+      // Prontidão para a próxima major do GLPI: quando a base nova já a suporta e este GLPI ainda é
+      // anterior, lista os módulos instalados que ficariam bloqueados numa migração. Aviso com
+      // confirmação explícita no modal, não bloqueio: atualizar a base não desliga módulo nenhum.
+      $majorReadiness = is_array($manifestToCheck) ? $this->majorReadinessForManifest($manifestToCheck) : null;
+      if ($majorReadiness !== null) {
+         $this->appendCheck($checks, $warnings, 'major_readiness', 'warning', false, $majorReadiness['message'], [
+            'target' => $majorReadiness['target'],
+            'count'  => $majorReadiness['count'],
+         ]);
+      }
+
       $ok = count($blocking) === 0;
 
       Toolbox::logInFile('plugin_nextool', sprintf(
@@ -402,6 +463,53 @@ class PluginNextoolCoreUpdater {
          'checks' => $checks,
          'blocking_errors' => $blocking,
          'warnings' => $warnings,
+         'major_readiness' => $majorReadiness,
+      ];
+   }
+
+   /**
+    * Módulos instalados que ficariam bloqueados se este GLPI migrasse para a próxima major, quando a
+    * release a atualizar já a suporta (`max_glpi`). Null quando não se aplica (GLPI já na major, release
+    * sem suporte a ela, ou nenhum módulo em falta).
+    *
+    * @return array{target:int, count:int, ready:string[], waiting:string[], message:string}|null
+    */
+   private function majorReadinessForManifest(array $manifest): ?array {
+      if (!class_exists('PluginNextoolMajorReadiness')) {
+         return null;
+      }
+      $next    = PluginNextoolMajorReadiness::NEXT_MAJOR;
+      $maxGlpi = trim((string)($manifest['max_glpi'] ?? ''));
+      if ($maxGlpi === '' || version_compare($maxGlpi, $next . '.0.0', '<') || PluginNextoolMajorReadiness::currentMajor() >= $next) {
+         return null;
+      }
+      try {
+         $report = PluginNextoolMajorReadiness::report($next);
+      } catch (Throwable $e) {
+         return null;
+      }
+      if ((int)($report['count'] ?? 0) === 0) {
+         return null;
+      }
+      $ready = [];
+      foreach ($report['ready'] as $key) {
+         $ready[] = trim($report['modules'][$key]['name'] . ' ' . (string)$report['modules'][$key]['catalog_version']);
+      }
+      $waiting = [];
+      foreach ($report['waiting'] as $key) {
+         $waiting[] = (string)$report['modules'][$key]['name'];
+      }
+      return [
+         'target'  => $next,
+         'count'   => (int)$report['count'],
+         'ready'   => $ready,
+         'waiting' => $waiting,
+         'message' => sprintf(
+            __('A versão %1$s já suporta o GLPI %2$d. Isso não afeta esta atualização. Se este GLPI for migrado para a versão %2$d, %3$d módulo(s) instalado(s) ficarão bloqueados até receberem versão compatível.', 'nextool'),
+            (string)($manifest['version'] ?? ''),
+            $next,
+            (int)$report['count']
+         ),
       ];
    }
 
@@ -838,6 +946,7 @@ class PluginNextoolCoreUpdater {
          'staged_at' => null,
          'pending_apply_version' => null,
          'latest_available_version' => null,
+         'blocked' => '',
       ];
 
       $state = array_merge($defaults, is_array($values) ? $values : []);
@@ -850,6 +959,73 @@ class PluginNextoolCoreUpdater {
       }
 
       return $state;
+   }
+
+   /**
+    * Versão nova que existe mas este servidor não pode instalar (409 requirements_not_met do
+    * install-request, ou core_update.blocked do validate). Null quando não há bloqueio guardado.
+    *
+    * @return array{reason:string, latest_version:string, current_php:string, required_php:string, max_php:string, current_glpi:string, min_glpi:string, max_glpi:string, message:string}|null
+    */
+   public static function getBlocked(?array $state = null): ?array {
+      $state = $state ?? self::getState();
+      $raw = trim((string)($state['blocked'] ?? ''));
+      if ($raw === '') {
+         return null;
+      }
+      $decoded = json_decode($raw, true);
+      return is_array($decoded) ? self::normalizeBlocked($decoded) : null;
+   }
+
+   /**
+    * Só os campos conhecidos, como texto curto e sem marcação: o conteúdo vem do servidor e vai para a tela.
+    */
+   public static function normalizeBlocked(array $data): array {
+      $out = [];
+      foreach (['reason', 'latest_version', 'current_php', 'required_php', 'max_php', 'current_glpi', 'min_glpi', 'max_glpi'] as $key) {
+         $out[$key] = mb_substr(trim(strip_tags((string)($data[$key] ?? ''))), 0, 40);
+      }
+      $out['message'] = mb_substr(trim(strip_tags((string)($data['message'] ?? ''))), 0, 300);
+      return $out;
+   }
+
+   /**
+    * Motivo do bloqueio no idioma do usuário; a mensagem pronta do servidor (pt-BR) fica de reserva.
+    */
+   public static function describeBlocked(array $blocked): string {
+      $version = $blocked['latest_version'] ?? '';
+      switch ($blocked['reason'] ?? '') {
+         case 'php_below_minimum':
+            if ($version !== '' && ($blocked['required_php'] ?? '') !== '' && ($blocked['current_php'] ?? '') !== '') {
+               return sprintf(
+                  __('A versão %1$s do NexTool exige PHP %2$s ou superior; este servidor usa PHP %3$s. Atualize o PHP para receber a atualização.', 'nextool'),
+                  $version, $blocked['required_php'], $blocked['current_php']
+               );
+            }
+            break;
+         case 'php_above_maximum':
+            if ($version !== '' && ($blocked['max_php'] ?? '') !== '' && ($blocked['current_php'] ?? '') !== '') {
+               return sprintf(
+                  __('A versão %1$s do NexTool suporta PHP até %2$s; este servidor usa PHP %3$s.', 'nextool'),
+                  $version, $blocked['max_php'], $blocked['current_php']
+               );
+            }
+            break;
+         case 'glpi_out_of_range':
+            if ($version !== '' && ($blocked['current_glpi'] ?? '') !== '') {
+               return sprintf(
+                  __('A versão %1$s do NexTool é compatível com GLPI %2$s a %3$s; este servidor usa GLPI %4$s.', 'nextool'),
+                  $version, $blocked['min_glpi'] ?: '-', $blocked['max_glpi'] ?: '-', $blocked['current_glpi']
+               );
+            }
+            break;
+      }
+      if (($blocked['message'] ?? '') !== '') {
+         return $blocked['message'];
+      }
+      return $version !== ''
+         ? sprintf(__('A versão %s do NexTool não atende aos requisitos deste servidor.', 'nextool'), $version)
+         : __('A versão nova do NexTool não atende aos requisitos deste servidor.', 'nextool');
    }
 
    private function persistState(array $updates): array {

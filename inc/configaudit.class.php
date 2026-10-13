@@ -108,9 +108,9 @@ class PluginNextoolConfigAudit extends PluginNextoolBaseAuditLog {
             }
 
             echo "<tr>";
-            echo "<td>" . (!empty($when) ? Html::entities_deep($when) : '-') . "</td>";
-            echo "<td><span class='badge bg-indigo-lt'>" . Html::entities_deep($section) . "</span></td>";
-            echo "<td>" . ($action !== '' ? Html::entities_deep($action) : '-') . "</td>";
+            echo "<td>" . (!empty($when) ? PluginNextoolCompat::escape($when) : '-') . "</td>";
+            echo "<td><span class='badge bg-indigo-lt'>" . PluginNextoolCompat::escape($section) . "</span></td>";
+            echo "<td>" . ($action !== '' ? PluginNextoolCompat::escape($action) : '-') . "</td>";
             echo "<td>";
             if ($result === 1) {
                echo "<span class='badge bg-green text-white'>" . __('Sucesso', 'nextool') . "</span>";
@@ -127,14 +127,14 @@ class PluginNextoolConfigAudit extends PluginNextoolBaseAuditLog {
                if (class_exists('User')) {
                   $username = User::getFriendlyNameById($userId);
                }
-               echo Html::entities_deep($username ?: sprintf('#%d', $userId));
+               echo PluginNextoolCompat::escape($username ?: sprintf('#%d', $userId));
             } else {
                echo "-";
             }
             echo "</td>";
 
             echo "<td>";
-            echo Html::entities_deep($message);
+            echo PluginNextoolCompat::escape($message);
             if (!empty($details)) {
                $decoded = json_decode($details, true);
                if (is_array($decoded) && count($decoded)) {
@@ -158,9 +158,9 @@ class PluginNextoolConfigAudit extends PluginNextoolBaseAuditLog {
       $chunks = [];
       foreach ($details as $key => $value) {
          if (is_array($value)) {
-            $chunks[] = Html::entities_deep($key) . ': ' . Html::entities_deep(json_encode($value));
+            $chunks[] = PluginNextoolCompat::escape($key) . ': ' . PluginNextoolCompat::escape(json_encode($value));
          } else {
-            $chunks[] = Html::entities_deep($key) . ': ' . Html::entities_deep($value);
+            $chunks[] = PluginNextoolCompat::escape($key) . ': ' . PluginNextoolCompat::escape($value);
          }
       }
       return implode(' • ', $chunks);

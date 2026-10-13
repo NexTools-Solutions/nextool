@@ -27,9 +27,11 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-abstract class PluginNextoolBaseAuditLog extends CommonDBTM {
+require_once __DIR__ . '/compat.class.php';
 
-   public static $rightname = 'config';
+// Corpo na trait, classe abstrata declarada condicionalmente no fim do arquivo: ver
+// inc/config.class.php. As subclasses (base e módulos) continuam `extends PluginNextoolBaseAuditLog`.
+trait PluginNextoolBaseAuditLogBody {
 
    public function __construct() {
       parent::__construct();
@@ -118,5 +120,20 @@ abstract class PluginNextoolBaseAuditLog extends CommonDBTM {
          '',
          Log::HISTORY_LOG_SIMPLE_MESSAGE
       );
+   }
+}
+
+// GLPI 12 tipou `$rightname` no core (fatal se a redeclaracao nao tiver o tipo); no 10/11 o tipo
+// e fatal. A unica declaracao valida nos 3 majors e condicional: mesmo corpo (trait), so a
+// propriedade muda. Trait com a propriedade NAO serve (conflito de composicao, medido em 2026-10-08).
+if (PluginNextoolCompat::typedRightname()) {
+   abstract class PluginNextoolBaseAuditLog extends CommonDBTM {
+      use PluginNextoolBaseAuditLogBody;
+      public static string $rightname = 'config';
+   }
+} else {
+   abstract class PluginNextoolBaseAuditLog extends CommonDBTM {
+      use PluginNextoolBaseAuditLogBody;
+      public static $rightname = 'config';
    }
 }

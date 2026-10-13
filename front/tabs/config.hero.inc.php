@@ -1,12 +1,12 @@
 <?php
 declare(strict_types=1);
 /**
- * Hero "Plano atual" compartilhado entre contextos da configuração.
+ * Hero da configuração (versão do NexTool e do GLPI, ações do ambiente e faixa de contato),
+ * compartilhado entre contextos. Sem "Plano atual" desde 2026-10-08: a situação das licenças é
+ * da guia Licenciamento. Releases e Termos de uso ficam no rodapé da guia Sobre.
  *
  * Contexto/variáveis esperadas:
- * - $heroPlanBadgeClass
- * - $heroPlanLabel
- * - $heroPlanDescription
+ * - $heroNotice (string) aviso operacional (catálogo pendente, licença suspensa) ou ''
  * - $licenseStatusCode
  * - $isFreeTier
  *
@@ -33,26 +33,23 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
    <div class="card-body text-white">
       <div class="row g-3 align-items-start">
          <div class="col-12 col-lg-8">
-            <h4 class="mb-1">
-               <i class="ti ti-crown"></i>
-               <span><?php echo __('Plano atual:', 'nextool'); ?></span>
-               <span class="badge <?php echo $heroPlanBadgeClass; ?> text-white">
-                  <?php echo Html::entities_deep($heroPlanLabel); ?>
-               </span>
+            <h4 class="mb-1 d-flex align-items-baseline flex-wrap">
+               <span><i class="ti ti-tool me-1"></i>NexTool Solutions</span>
+               <span class="small fw-normal text-white-50 ms-2">v<?php echo PluginNextoolCompat::escape(PLUGIN_NEXTOOL_VERSION); ?> · GLPI <?php echo PluginNextoolCompat::escape(defined('GLPI_VERSION') ? (string) GLPI_VERSION : '-'); ?></span>
             </h4>
             <p class="mb-2">
-               <?php if (trim((string) $heroPlanDescription) !== ''): ?>
+               <?php if (trim((string) ($heroNotice ?? '')) !== ''): ?>
                   <?php if ($licenseStatusCode === 'SUSPENDED'): ?>
-                     <strong style="color: #ff6b6b;"><?php echo Html::entities_deep($heroPlanDescription); ?></strong>
+                     <strong style="color: #ff6b6b;"><?php echo PluginNextoolCompat::escape($heroNotice); ?></strong>
                   <?php else: ?>
-                     <?php echo Html::entities_deep($heroPlanDescription); ?>
+                     <?php echo PluginNextoolCompat::escape($heroNotice); ?>
                   <?php endif; ?>
                   <br>
                <?php endif; ?>
                <?php if (!empty($nextoolCommLineText)): ?>
                   <span class="small <?php echo isset($nextoolCommLineClass) ? $nextoolCommLineClass : 'text-white-50'; ?>" id="nextool-comm-state-line">
                      <i class="ti <?php echo isset($nextoolCommLineIcon) ? $nextoolCommLineIcon : 'ti-plug'; ?>"></i>
-                     <?php echo Html::entities_deep($nextoolCommLineText); ?>
+                     <?php echo PluginNextoolCompat::escape($nextoolCommLineText); ?>
                   </span>
                   <br>
                <?php endif; ?>
@@ -79,8 +76,7 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
             <?php endif; ?>
          </div>
          <div class="col-12 col-lg-4">
-            <div class="nextool-hero-actions">
-            <div class="d-flex flex-wrap justify-content-lg-end gap-2 mb-2">
+            <div class="nextool-hero-actions d-flex flex-wrap justify-content-lg-end gap-2">
             <?php if ($nextoolHeroShowCoreUpdate): ?>
                <button type="button" class="btn btn-light fw-semibold"
                   data-bs-toggle="modal" data-bs-target="#nextool-core-update-modal">
@@ -92,7 +88,7 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                <button type="button"
                        class="btn btn-hero-validate fw-semibold"
                        onclick="nextoolValidateLicense(this);"
-                       data-nextool-forcetab="<?php echo Html::entities_deep($nextoolHeroForcetab); ?>"
+                       data-nextool-forcetab="<?php echo PluginNextoolCompat::escape($nextoolHeroForcetab); ?>"
                        <?php echo $nextoolHeroDisableSync ? ' disabled' : ''; ?>>
                   <i class="ti ti-refresh me-1"></i>
                   <?php echo __('Sincronizar', 'nextool'); ?>
@@ -108,19 +104,29 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                </button>
             <?php endif; ?>
             </div>
-            <div class="small text-white-50">
-               <a href="<?= NEXTOOL_WHATSAPP_URL ?>" target="_blank" class="text-white text-decoration-underline">
-                  <?php echo __('Atendimento Whatsapp', 'nextool'); ?>
-               </a>
-            </div>
-            <div class="small mt-2">
-               <a href="<?= NEXTOOL_SITE_URL ?>" target="_blank" rel="noopener noreferrer" class="text-white text-decoration-underline"><?php echo __('Site', 'nextool'); ?></a>
-               <span class="text-white-50 mx-1">/</span>
-               <a href="<?= NEXTOOL_RELEASES_URL ?>" target="_blank" rel="noopener noreferrer" class="text-white text-decoration-underline">Releases</a>
-               <span class="text-white-50 mx-1">/</span>
-               <a href="<?= NEXTOOL_TERMS_URL ?>" target="_blank" class="text-white text-decoration-underline"><?php echo __('Termos de uso', 'nextool'); ?></a>
-            </div>
-            </div>
+            <?php // Versão nova bloqueada por requisito do servidor (#285): informa em vez de silenciar. ?>
+            <?php if (!empty($nextoolHeroCoreUpdateBlocked)): ?>
+               <div class="small mt-2 text-lg-end" id="nextool-hero-core-update-blocked">
+                  <i class="ti ti-alert-triangle me-1"></i><?php echo PluginNextoolCompat::escape($nextoolHeroCoreUpdateBlocked); ?>
+               </div>
+            <?php endif; ?>
+         </div>
+      </div>
+      <?php // Faixa de contato (2026-10-09): os botões da guia Sobre subiram para o hero, visível em todas as guias. ?>
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mt-3 pt-3" style="border-top: 1px solid rgba(255, 255, 255, .25);">
+         <div>
+            <div class="fw-semibold"><i class="ti ti-message-circle me-1"></i><?php echo __('Fale com a NexTool', 'nextool'); ?></div>
+            <div class="small text-white-50"><?php echo __('Descreva o seu cenário e retornamos com próximos passos.', 'nextool'); ?></div>
+         </div>
+         <div class="d-flex flex-wrap gap-2">
+            <?php // Suporte (2026-10-09): abre o popup renderizado na página principal (front/support.modal.inc.php). ?>
+            <?php if (PluginNextoolPermissionManager::canBase(PluginNextoolPermissionManager::BASE_SEND_CONTACT)): ?>
+            <button type="button" class="btn btn-light btn-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#nextool-support-modal"><i class="ti ti-lifebuoy me-1"></i><?php echo __('Suporte', 'nextool'); ?></button>
+            <?php endif; ?>
+            <a href="<?php echo PluginNextoolCompat::escape(NEXTOOL_WHATSAPP_URL); ?>" target="_blank" rel="noopener" class="btn btn-light btn-sm"><i class="ti ti-brand-whatsapp me-1"></i><?php echo __('WhatsApp', 'nextool'); ?></a>
+            <a href="<?php echo PluginNextoolCompat::escape(NEXTOOL_BOOKING_URL); ?>" target="_blank" rel="noopener" class="btn btn-light btn-sm"><i class="ti ti-calendar-event me-1"></i><?php echo __('Agendar uma conversa', 'nextool'); ?></a>
+            <a href="<?php echo PluginNextoolCompat::escape(NEXTOOL_SITE_URL); ?>" target="_blank" rel="noopener" class="btn btn-light btn-sm"><i class="ti ti-world me-1"></i><?php echo __('Site', 'nextool'); ?></a>
+            <a href="<?php echo PluginNextoolCompat::escape(NEXTOOL_AUTHOR_URL); ?>" target="_blank" rel="noopener" class="btn btn-light btn-sm"><i class="ti ti-brand-linkedin me-1"></i>LinkedIn</a>
          </div>
       </div>
    </div>
@@ -164,14 +170,23 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                <p class="fw-semibold mb-0"><?php echo __('Ajuste as permissões do host e tente novamente.', 'nextool'); ?></p>
                <p class="text-danger small mb-0"><?php echo __('Conceder permissão de escrita para o usuário do servidor web (Apache/Nginx/IIS) na pasta de plugins do GLPI, incluindo o diretório nextool.', 'nextool'); ?></p>
             </div>
-            <div class="d-none mb-2" id="nextool-modal-confirm-apply" data-confirm-word="<?php echo Html::entities_deep(__('confirmo', 'nextool')); ?>">
+            <div class="d-none mb-2" id="nextool-modal-confirm-apply" data-confirm-word="<?php echo PluginNextoolCompat::escape(__('confirmo', 'nextool')); ?>">
                <label for="nextool-modal-confirm-apply-input" class="form-label">
                   <?php echo sprintf(__('Para continuar, digite %s', 'nextool'), '<strong>' . __('confirmo', 'nextool') . '</strong>'); ?>
                </label>
-               <input type="text" class="form-control" id="nextool-modal-confirm-apply-input" autocomplete="off" spellcheck="false" placeholder="<?php echo Html::entities_deep(__('confirmo', 'nextool')); ?>">
+               <input type="text" class="form-control" id="nextool-modal-confirm-apply-input" autocomplete="off" spellcheck="false" placeholder="<?php echo PluginNextoolCompat::escape(__('confirmo', 'nextool')); ?>">
                <div class="form-text">
                   <?php echo sprintf(__('Digite exatamente "%s" para habilitar a aplicação da atualização.', 'nextool'), __('confirmo', 'nextool')); ?>
                </div>
+            </div>
+            <div class="d-none mb-2" id="nextool-modal-confirm-major">
+               <div class="alert alert-warning mb-2" id="nextool-modal-confirm-major-text"></div>
+               <label class="form-check mb-0">
+                  <input class="form-check-input" type="checkbox" id="nextool-modal-confirm-major-input">
+                  <span class="form-check-label">
+                     <?php echo __('Entendi: esses módulos ficarão bloqueados se este GLPI for migrado para a nova versão. Quero continuar com a atualização do NexTool.', 'nextool'); ?>
+                  </span>
+               </label>
             </div>
          </div>
          <div class="modal-footer">

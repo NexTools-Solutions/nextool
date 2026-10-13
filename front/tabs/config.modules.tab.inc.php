@@ -123,6 +123,14 @@ declare(strict_types=1);
                      <button type="button" class="btn btn-sm <?php echo $chip['btn']; ?> nextool-filter-chip rounded-pill" data-filter="<?php echo $chip['key']; ?>">
                         <i class="<?php echo $chip['icon']; ?> me-1"></i><?php echo $chip['label']; ?> <span class="badge <?php echo $chip['badge']; ?> ms-1"><?php echo $chip['count']; ?></span>
                      </button>
+                     <?php if ($chip['key'] === 'update'): ?>
+                     <!-- "Atualizar todos" (#284): nasce oculto; o JS conta os cards com o botão
+                          Atualizar HABILITADO (mesmas regras de permissão, licença e versão
+                          mínima do card) e só mostra com 2 ou mais. -->
+                     <button type="button" class="btn btn-sm btn-info rounded-pill d-none" id="nextool-update-all-btn">
+                        <i class="ti ti-refresh me-1"></i><?php echo __('Atualizar todos', 'nextool'); ?> <span class="badge bg-white text-dark ms-1" id="nextool-update-all-count">0</span>
+                     </button>
+                     <?php endif; ?>
                      <?php endforeach; ?>
 
                      <span class="border-start mx-1 d-none d-md-block" style="height:24px"></span>
@@ -136,13 +144,64 @@ declare(strict_types=1);
                      <?php if (!empty($categoryCounters)): ?>
                      <span class="border-start mx-1 d-none d-md-block" style="height:24px"></span>
                      <?php foreach ($categoryCounters as $catName => $catCount): if ($catCount <= 0) continue; ?>
-                     <button type="button" class="btn btn-sm nextool-filter-chip nextool-chip-category rounded-pill" data-filter="category" data-category="<?php echo Html::entities_deep($catName); ?>">
-                        <?php echo Html::entities_deep($catName); ?> <span class="badge nextool-chip-category-badge ms-1"><?php echo $catCount; ?></span>
+                     <button type="button" class="btn btn-sm nextool-filter-chip nextool-chip-category rounded-pill" data-filter="category" data-category="<?php echo PluginNextoolCompat::escape($catName); ?>">
+                        <?php echo PluginNextoolCompat::escape($catName); ?> <span class="badge nextool-chip-category-badge ms-1"><?php echo $catCount; ?></span>
                      </button>
                      <?php endforeach; ?>
                      <?php endif; ?>
                   </div>
                </div>
+               <?php
+                  // Prontidão para a próxima major do GLPI (12): só aparece quando há módulo instalado que
+                  // não a declara. Abaixo do 12 é preparação ("se migrar..."); no 12 são os bloqueados agora.
+                  require_once NEXTOOL_PHP_DIR . '/inc/majorreadiness.class.php';
+                  $nextoolReadiness = PluginNextoolMajorReadiness::report();
+                  if ((int)($nextoolReadiness['count'] ?? 0) > 0):
+                     $rdTarget    = (int)$nextoolReadiness['target'];
+                     $rdPreparing = (int)$nextoolReadiness['current'] < $rdTarget;
+               ?>
+               <div class="mb-3" id="nextool-major-readiness">
+                  <a class="d-inline-flex align-items-center gap-2 text-decoration-none text-reset" data-bs-toggle="collapse"
+                     href="#nextool-major-readiness-body" role="button" aria-expanded="false" aria-controls="nextool-major-readiness-body">
+                     <i class="ti ti-chevron-down nextool-collapse-indicator"></i>
+                     <strong><?php echo PluginNextoolCompat::escape(sprintf(__('Compatibilidade com o GLPI %d', 'nextool'), $rdTarget)); ?></strong>
+                     <span class="badge bg-warning text-dark"><?php echo PluginNextoolCompat::escape(PluginNextoolMajorReadiness::summaryLabel($nextoolReadiness)); ?></span>
+                  </a>
+                  <div class="collapse mt-2" id="nextool-major-readiness-body">
+                     <div class="alert alert-warning mb-0">
+                        <?php if (!empty($nextoolReadiness['ready'])): ?>
+                           <p class="mb-1">
+                              <strong><?php echo PluginNextoolCompat::escape($rdPreparing
+                                 ? sprintf(__('Já têm versão para o GLPI %d no catálogo (atualize antes de migrar):', 'nextool'), $rdTarget)
+                                 : __('Com versão compatível no catálogo (clique em Atualizar no card):', 'nextool')); ?></strong>
+                              <?php echo PluginNextoolCompat::escape(implode(', ', array_map(
+                                 static fn(string $rk): string => $nextoolReadiness['modules'][$rk]['name'] . ' ' . $nextoolReadiness['modules'][$rk]['catalog_version'],
+                                 $nextoolReadiness['ready']
+                              ))); ?>
+                           </p>
+                        <?php endif; ?>
+                        <?php if (!empty($nextoolReadiness['waiting'])): ?>
+                           <p class="mb-0">
+                              <strong><?php echo PluginNextoolCompat::escape(sprintf(__('Ainda sem versão para o GLPI %d:', 'nextool'), $rdTarget)); ?></strong>
+                              <?php echo PluginNextoolCompat::escape(implode(', ', array_map(
+                                 static fn(string $wk): string => $nextoolReadiness['modules'][$wk]['name'],
+                                 $nextoolReadiness['waiting']
+                              ))); ?>
+                           </p>
+                        <?php endif; ?>
+                     </div>
+                  </div>
+               </div>
+               <?php endif; ?>
+               <?php
+                  // Anúncio antes do download de módulo gratuito (#283): dados para o popup, como JSON (sem JS inline).
+                  $nextoolDownloadAds = PluginNextoolDownloadAds::payloadForPage();
+                  if ($nextoolDownloadAds !== []):
+               ?>
+               <script type="application/json" id="nextool-download-ads-data"><?php
+                  echo json_encode($nextoolDownloadAds, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+               ?></script>
+               <?php endif; ?>
                <div class="row g-3">
                   <?php foreach ($modulesState as $module):
                      $tier = strtoupper($module['billing_tier'] ?? 'FREE');
@@ -176,8 +235,8 @@ declare(strict_types=1);
                      $moduleCategory = $module['category'] ?? '';
                   ?>
                   <div class="col-md-6 nextool-module-card"
-                       data-module-name="<?php echo strtolower(Html::entities_deep($module['name'])); ?>"
-                       data-module-desc="<?php echo strtolower(Html::entities_deep($module['description'])); ?>"
+                       data-module-name="<?php echo strtolower(PluginNextoolCompat::escape($module['name'])); ?>"
+                       data-module-desc="<?php echo strtolower(PluginNextoolCompat::escape($module['description'])); ?>"
                        data-module-enabled="<?php echo $module['is_enabled'] ? '1' : '0'; ?>"
                        data-module-installed="<?php echo $module['is_installed'] ? '1' : '0'; ?>"
                        data-module-downloaded="<?php echo $module['module_downloaded'] ? '1' : '0'; ?>"
@@ -186,9 +245,9 @@ declare(strict_types=1);
                        data-module-update="<?php echo $module['update_available'] ? '1' : '0'; ?>"
                        data-module-tier="<?php echo $tier; ?>"
                        data-module-blocked="<?php echo !empty($module['blocked_reason']) ? '1' : '0'; ?>"
-                       data-module-category="<?php echo Html::entities_deep($moduleCategory); ?>"
+                       data-module-category="<?php echo PluginNextoolCompat::escape($moduleCategory); ?>"
                        data-module-downloads="<?php echo $dlCount; ?>"
-                       <?php if ($screenshotUrl !== ''): ?>data-screenshot-url="<?php echo Html::entities_deep($screenshotUrl); ?>"<?php endif; ?>>
+                       <?php if ($screenshotUrl !== ''): ?>data-screenshot-url="<?php echo PluginNextoolCompat::escape($screenshotUrl); ?>"<?php endif; ?>>
                      <div class="card border <?php echo $borderClass; ?> h-100 position-relative">
                         <span class="nextool-badge-ribbon <?php echo $ribbonClass; ?>"><?php echo $ribbonLabel; ?></span>
                         <div class="card-body d-flex flex-column">
@@ -198,11 +257,11 @@ declare(strict_types=1);
                                  <div class="d-flex align-items-baseline justify-content-between">
                                     <h5 class="card-title mb-0 <?php echo $tierColor; ?>"><?php
                                        if (!empty($module['website_url'])) {
-                                          echo '<a href="' . Html::entities_deep($module['website_url']) . '" target="_blank" rel="noopener" class="text-decoration-none ' . $tierColor . '">'
-                                             . Html::entities_deep($module['name']) . '</a>'
+                                          echo '<a href="' . PluginNextoolCompat::escape($module['website_url']) . '" target="_blank" rel="noopener" class="text-decoration-none ' . $tierColor . '">'
+                                             . PluginNextoolCompat::escape($module['name']) . '</a>'
                                              . ' <i class="ti ti-external-link nextool-ext-icon"></i>';
                                        } else {
-                                          echo Html::entities_deep($module['name']);
+                                          echo PluginNextoolCompat::escape($module['name']);
                                        }
                                     ?></h5>
                                  </div>
@@ -223,11 +282,11 @@ declare(strict_types=1);
                                     }
                                  ?>
                                  <small class="text-muted">
-                                    <?php if ($versionLabel !== ''): ?><?php echo Html::entities_deep($versionLabel); ?> · <?php endif; ?>
+                                    <?php if ($versionLabel !== ''): ?><?php echo PluginNextoolCompat::escape($versionLabel); ?> · <?php endif; ?>
                                     <?php if (is_array($module['author']) && !empty($module['author']['url'])): ?>
-                                       <a href="<?php echo Html::entities_deep($module['author']['url']); ?>" target="_blank" rel="noopener" class="text-decoration-underline"><?php echo Html::entities_deep($module['author']['name'] ?? ''); ?></a>
+                                       <a href="<?php echo PluginNextoolCompat::escape($module['author']['url']); ?>" target="_blank" rel="noopener" class="text-decoration-underline"><?php echo PluginNextoolCompat::escape($module['author']['name'] ?? ''); ?></a>
                                     <?php else: ?>
-                                       <?php echo Html::entities_deep(is_array($module['author']) ? ($module['author']['name'] ?? '') : $module['author']); ?>
+                                       <?php echo PluginNextoolCompat::escape(is_array($module['author']) ? ($module['author']['name'] ?? '') : $module['author']); ?>
                                     <?php endif; ?>
                                     <?php if ($dlCount > 0): ?>
                                        · <i class="ti ti-download" style="font-size: 0.85em;"></i> <?php echo number_format($dlCount, 0, '', '.'); ?>
@@ -241,11 +300,11 @@ declare(strict_types=1);
                            <?php if (!empty($features)): ?>
                            <ul class="nextool-features list-unstyled small mb-2">
                               <?php foreach (array_slice($features, 0, 3) as $feat): ?>
-                              <li><i class="ti ti-check text-success me-1"></i><?php echo Html::entities_deep($feat); ?></li>
+                              <li><i class="ti ti-check text-success me-1"></i><?php echo PluginNextoolCompat::escape($feat); ?></li>
                               <?php endforeach; ?>
                            </ul>
                            <?php else: ?>
-                           <p class="card-text text-muted small mb-2"><?php echo Html::entities_deep($module['description']); ?></p>
+                           <p class="card-text text-muted small mb-2"><?php echo PluginNextoolCompat::escape($module['description']); ?></p>
                            <?php endif; ?>
 
                            <?php if (!empty($module['blocked_reason'])): ?>
@@ -254,7 +313,7 @@ declare(strict_types=1);
                                 para o admin era idêntico a "perdi as permissões". -->
                            <div class="alert alert-danger small p-2 mb-2">
                               <span class="badge bg-danger text-white me-1"><?php echo __('Bloqueado', 'nextool'); ?></span>
-                              <?php echo Html::entities_deep($module['blocked_reason']); ?>
+                              <?php echo PluginNextoolCompat::escape($module['blocked_reason']); ?>
                            </div>
                            <?php endif; ?>
 

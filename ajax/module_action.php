@@ -61,6 +61,10 @@ $allowedModuleFilters = ['enabled', 'disabled', 'download', 'install', 'update',
 $moduleFilterRaw = isset($_POST['module_filter']) ? trim((string) $_POST['module_filter']) : '';
 $moduleFilter = in_array($moduleFilterRaw, $allowedModuleFilters, true) ? $moduleFilterRaw : '';
 
+// quiet=1: a fila do "Atualizar todos" (#284) mostra o resultado de cada módulo no próprio
+// painel; sem isto o reload do fim despejaria uma mensagem de sessão por módulo.
+$quiet = isset($_POST['quiet']) && (string) $_POST['quiet'] === '1';
+
 function nextoolBuildModuleRedirectUrl(string $returnTab, string $moduleFilter = ''): string {
    $params = [
       'id'       => 1,
@@ -69,7 +73,7 @@ function nextoolBuildModuleRedirectUrl(string $returnTab, string $moduleFilter =
    if ($moduleFilter !== '') {
       $params['module_filter'] = $moduleFilter;
    }
-   return Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?' . http_build_query($params);
+   return PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?' . http_build_query($params);
 }
 
 // Autorizacao POR ACAO (2026-07-28): install/download -> base "Instalar modulo";
@@ -146,7 +150,9 @@ if ($action === 'update') {
                $minVer,
                __('Atualize o plugin em:', 'nextool') . ' ' . NEXTOOL_SITE_URL
             );
-            Session::addMessageAfterRedirect($msg, false, ERROR);
+            if (!$quiet) {
+               Session::addMessageAfterRedirect($msg, false, ERROR);
+            }
             echo json_encode([
                'success'      => false,
                'message'      => $msg,
@@ -197,7 +203,7 @@ $msgType = $result['message_type'] ?? (!empty($result['success']) ? INFO : ERROR
 // resultado REAL da migração. Sem isso o cliente veria "atualizado com sucesso" antes de
 // a migração sequer ter rodado (e um segundo aviso depois).
 $pendingUpgrade = !empty($result['pending_upgrade']);
-if (!$pendingUpgrade) {
+if (!$pendingUpgrade && !$quiet) {
    Session::addMessageAfterRedirect($result['message'], false, $msgType);
 }
 

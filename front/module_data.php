@@ -20,7 +20,7 @@ include ('../../../inc/includes.php');
 require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 $moduleKey = isset($_GET['module']) ? preg_replace('/[^a-z0-9_-]/', '', (string)$_GET['module']) : '';
 if ($moduleKey === '') {
-   Html::displayErrorAndDie(__('Módulo não informado.', 'nextool'));
+   PluginNextoolCompat::errorAndDie(__('Módulo não informado.', 'nextool'));
 }
 
 PluginNextoolPermissionManager::assertCanViewModule($moduleKey);
@@ -30,7 +30,7 @@ require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
 
 $catalog = PluginNextoolModuleCatalog::find($moduleKey);
 if ($catalog === null) {
-   Html::displayErrorAndDie(__('Módulo desconhecido.', 'nextool'));
+   PluginNextoolCompat::errorAndDie(__('Módulo desconhecido.', 'nextool'));
 }
 
 $manager = PluginNextoolModuleManager::getInstance();
@@ -49,8 +49,8 @@ Html::header(
 
 echo "<div class='card m-3'>";
 echo "<div class='card-header d-flex justify-content-between align-items-center'>";
-echo "<h3 class='mb-0'>" . Html::entities_deep($catalog['name']) . "</h3>";
-echo "<span class='badge bg-secondary'>" . Html::entities_deep($moduleKey) . "</span>";
+echo "<h3 class='mb-0'>" . PluginNextoolCompat::escape($catalog['name']) . "</h3>";
+echo "<span class='badge bg-secondary'>" . PluginNextoolCompat::escape($moduleKey) . "</span>";
 echo "</div>";
 
 echo "<div class='card-body'>";
@@ -70,7 +70,7 @@ if (empty($tables)) {
 
    foreach ($tables as $table) {
       echo "<tr>";
-      echo "<td><code>" . Html::entities_deep($table) . "</code></td>";
+      echo "<td><code>" . PluginNextoolCompat::escape($table) . "</code></td>";
       if ($DB->tableExists($table)) {
          $count = countElementsInTable($table);
          echo "<td class='text-end'><span class='badge bg-primary'>" . (int)$count . "</span></td>";
@@ -85,8 +85,8 @@ if (empty($tables)) {
 }
 
 // Volta para a tela de configuração padrão do GLPI com a aba de módulos selecionada
-$configUrl = Plugin::getWebDir('nextool') . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$1';
-echo "<a href='" . Html::entities_deep($configUrl) . "' class='btn btn-secondary'>";
+$configUrl = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$1';
+echo "<a href='" . PluginNextoolCompat::escape($configUrl) . "' class='btn btn-secondary'>";
 echo "<i class='ti ti-arrow-left me-1'></i>" . __('Voltar para configuração', 'nextool');
 echo "</a>";
 

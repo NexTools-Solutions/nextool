@@ -29,13 +29,12 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-abstract class PluginNextoolModuleSettings extends CommonDBTM {
+require_once __DIR__ . '/compat.class.php';
 
-   /** Direito tratado pelo PermissionManager do modulo, nao pelo core. */
-   public static $rightname = '';
-
-   /** A subclasse DECLARA a chave do modulo (pasta = chave). */
-   protected const MODULE_KEY = '';
+// Corpo na trait, classe abstrata declarada condicionalmente no fim do arquivo (ver
+// inc/config.class.php). `$rightname` e `MODULE_KEY` ficam na declaracao da classe:
+// a constante e `protected` (interface nao aceita) e a subclasse a redeclara.
+trait PluginNextoolModuleSettingsBody {
 
    /** Cache por request, POR MODULO (propriedade estatica e compartilhada entre subclasses). */
    private static array $cache = [];
@@ -178,5 +177,24 @@ abstract class PluginNextoolModuleSettings extends CommonDBTM {
          Toolbox::logInFile('plugin_nextool_' . static::moduleKey(),
             sprintf("Erro ao criar tabela %s (ModuleSettings): %s\n", $table, $error));
       }
+   }
+}
+
+// GLPI 12 tipou `$rightname` no core (fatal se a redeclaracao nao tiver o tipo); no 10/11 o tipo
+// e fatal. A unica declaracao valida nos 3 majors e condicional: mesmo corpo (trait), so a
+// propriedade muda. Trait com a propriedade NAO serve (conflito de composicao, medido em 2026-10-08).
+if (PluginNextoolCompat::typedRightname()) {
+   abstract class PluginNextoolModuleSettings extends CommonDBTM {
+      use PluginNextoolModuleSettingsBody;
+      public static string $rightname = '';
+      /** A subclasse DECLARA a chave do modulo (pasta = chave). */
+      protected const MODULE_KEY = '';
+   }
+} else {
+   abstract class PluginNextoolModuleSettings extends CommonDBTM {
+      use PluginNextoolModuleSettingsBody;
+      public static $rightname = '';
+      /** A subclasse DECLARA a chave do modulo (pasta = chave). */
+      protected const MODULE_KEY = '';
    }
 }

@@ -32,8 +32,78 @@ declare(strict_types=1);
    </div>
 </div>
 
+<!-- Anúncio antes do download de módulo gratuito (#283): Continuar só no fim do contador; fechar cancela o download -->
+<div class="modal fade" id="nextool-download-ad-modal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+   <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+         <div class="modal-header">
+            <h5 class="modal-title" id="nextool-download-ad-title"></h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo PluginNextoolCompat::escape(__('Cancelar download', 'nextool')); ?>"></button>
+         </div>
+         <div class="modal-body">
+            <!-- Card no formato do portfólio do site da NexSuite: capa (thumb do vídeo), play redondo no meio, título e
+                 visualizações embaixo. O play troca a capa pelo player do youtube-nocookie (nada vai ao Google antes). -->
+            <div class="d-none card mb-3 overflow-hidden" id="nextool-download-ad-media">
+               <div class="position-relative bg-dark" id="nextool-download-ad-stage" style="aspect-ratio: 16 / 9;">
+                  <img class="w-100 h-100 d-block" id="nextool-download-ad-image" alt="" style="object-fit: cover;">
+                  <button type="button" class="nextool-download-ad-play position-absolute top-50 start-50 translate-middle rounded-circle border-0 d-none align-items-center justify-content-center"
+                          id="nextool-download-ad-play" aria-label="<?php echo PluginNextoolCompat::escape(__('Assistir ao vídeo', 'nextool')); ?>">
+                     <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff" aria-hidden="true" style="margin-left: 3px;"><path d="M8 5v14l11-7z"/></svg>
+                  </button>
+               </div>
+               <div class="p-3 d-none" id="nextool-download-ad-videoinfo">
+                  <div class="fw-bold text-truncate" id="nextool-download-ad-vtitle"></div>
+                  <div class="small text-muted mt-1 d-none" id="nextool-download-ad-vviews"></div>
+                  <a class="small d-none mt-1" id="nextool-download-ad-youtube" target="_blank" rel="noopener noreferrer"><i class="ti ti-brand-youtube me-1"></i><?php echo __('O vídeo não carregou? Abrir no YouTube', 'nextool'); ?></a>
+               </div>
+            </div>
+            <p class="mb-0" id="nextool-download-ad-body" style="white-space: pre-line;"></p>
+         </div>
+         <div class="modal-footer justify-content-end">
+            <div class="d-flex gap-2">
+               <a class="btn btn-outline-primary d-none" id="nextool-download-ad-cta" target="_blank" rel="noopener noreferrer">
+                  <i class="ti ti-external-link me-1"></i><span></span>
+               </a>
+               <button type="button" class="btn btn-success" id="nextool-download-ad-continue" disabled>
+                  <i class="ti ti-cloud-download me-1" id="nextool-download-ad-continue-icon"></i><span id="nextool-download-ad-continue-label"><?php echo __('Continuar download', 'nextool'); ?></span>
+               </button>
+            </div>
+         </div>
+      </div>
+   </div>
+</div>
+<style>
+   #nextool-download-ad-media .nextool-download-ad-play { width: 56px; height: 56px; background: rgba(var(--tblr-primary-rgb, 32, 107, 196), .9); box-shadow: 0 0 18px rgba(var(--tblr-primary-rgb, 32, 107, 196), .55); transition: transform .2s; }
+   #nextool-download-ad-media .nextool-download-ad-play:hover { transform: translate(-50%, -50%) scale(1.1); }
+   #nextool-download-ad-media.nextool-has-video #nextool-download-ad-image { opacity: .75; transition: opacity .3s; }
+   #nextool-download-ad-media.nextool-has-video #nextool-download-ad-stage:hover #nextool-download-ad-image { opacity: .9; }
+   #nextool-download-ad-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+</style>
+
+<!-- Fila do "Atualizar todos" (#284): progresso por módulo; fecha (e recarrega) só no fim -->
+<div class="modal fade" id="nextool-update-all-modal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+         <div class="modal-header">
+            <h5 class="modal-title">
+               <i class="ti ti-refresh me-2 text-info"></i>
+               <?php echo __('Atualizar todos os módulos', 'nextool'); ?>
+            </h5>
+            <button type="button" class="btn-close d-none" id="nextool-update-all-close" aria-label="Close"></button>
+         </div>
+         <div class="modal-body">
+            <p class="text-muted small mb-2" id="nextool-update-all-status"></p>
+            <ul class="list-group list-group-flush" id="nextool-update-all-list"></ul>
+         </div>
+         <div class="modal-footer">
+            <button type="button" class="btn btn-primary" id="nextool-update-all-done" disabled><?php echo __('Concluir', 'nextool'); ?></button>
+         </div>
+      </div>
+   </div>
+</div>
+
 <!-- Modal de confirmação com digitação (apagar dados do módulo) -->
-<div class="modal fade" id="nextool-typed-confirm-modal" tabindex="-1" aria-hidden="true" data-confirm-word="<?php echo Html::entities_deep(__('excluir', 'nextool')); ?>">
+<div class="modal fade" id="nextool-typed-confirm-modal" tabindex="-1" aria-hidden="true" data-confirm-word="<?php echo PluginNextoolCompat::escape(__('excluir', 'nextool')); ?>">
    <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
          <div class="modal-header">
@@ -50,7 +120,7 @@ declare(strict_types=1);
                <?php echo __('Esta operação não pode ser desfeita.', 'nextool'); ?>
             </p>
             <label for="nextool-typed-confirm-input" class="form-label"><?php echo __('Digite a palavra de confirmação', 'nextool'); ?></label>
-            <input type="text" class="form-control" id="nextool-typed-confirm-input" autocomplete="off" spellcheck="false" placeholder="<?php echo Html::entities_deep(__('excluir', 'nextool')); ?>">
+            <input type="text" class="form-control" id="nextool-typed-confirm-input" autocomplete="off" spellcheck="false" placeholder="<?php echo PluginNextoolCompat::escape(__('excluir', 'nextool')); ?>">
             <div class="form-text">
                <?php echo sprintf(__('Para confirmar, digite a palavra "%s".', 'nextool'), __('excluir', 'nextool')); ?>
             </div>
@@ -132,7 +202,15 @@ document.addEventListener('glpi.load', nextoolActivateDefaultTab);
    });
 })();
 
+// GLPI 12 valida CSRF pelos cabeçalhos Sec-Fetch-Site/Origin, sem token: getAjaxCsrfToken()
+// devolve '' (com console.warn) e a meta glpi:csrf_token não existe. Nesse modo o token vazio
+// é esperado, e os fluxos abaixo não podem tratá-lo como sessão perdida.
+var NEXTOOL_CSRF_TOKENLESS = <?php echo json_encode(PluginNextoolCompat::csrfTokenless()); ?>;
+
 function nextoolGetAjaxCsrfToken() {
+   if (NEXTOOL_CSRF_TOKENLESS) {
+      return '';
+   }
    // GLPI 10 expõe getAjaxCsrfToken() via common.js; manter fallback por segurança.
    if (typeof window.getAjaxCsrfToken === 'function') {
       return window.getAjaxCsrfToken();
@@ -277,7 +355,7 @@ function nextoolShowTypedConfirm(message, onConfirm) {
 // --- Executa ação de módulo via AJAX ---
 function nextoolExecuteModuleAction(btn, action, moduleKey, endpoint) {
    var csrfToken = nextoolGetAjaxCsrfToken();
-   if (!csrfToken) {
+   if (!csrfToken && !NEXTOOL_CSRF_TOKENLESS) {
       window.location.reload();
       return;
    }
@@ -287,7 +365,7 @@ function nextoolExecuteModuleAction(btn, action, moduleKey, endpoint) {
 
    var originalHtml = btn.innerHTML;
    btn.disabled = true;
-   btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i><?php echo Html::entities_deep(__('Processando...', 'nextool')); ?>';
+   btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i><?php echo PluginNextoolCompat::escape(__('Processando...', 'nextool')); ?>';
 
    nextoolPostJson(endpoint, {
       action: action,
@@ -318,7 +396,7 @@ function nextoolExecuteModuleAction(btn, action, moduleKey, endpoint) {
          // NOVA, que já carrega o código novo. Só depois dela recarregamos a página, e a
          // mensagem exibida é o resultado REAL da migração (não um "sucesso" otimista).
          if (data && data.pending_upgrade) {
-            btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i><?php echo Html::entities_deep(__('Concluindo atualização...', 'nextool')); ?>';
+            btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i><?php echo PluginNextoolCompat::escape(__('Concluindo atualização...', 'nextool')); ?>';
             nextoolPostJson(endpoint, {
                action: 'finalize_update',
                module: moduleKey,
@@ -363,7 +441,7 @@ function nextoolInitModuleActions() {
    if (document.documentElement.dataset.nextoolModuleActionsBound === '1') return;
    document.documentElement.dataset.nextoolModuleActionsBound = '1';
 
-   var endpoint = <?php echo json_encode(Plugin::getWebDir('nextool') . '/ajax/module_action.php'); ?>;
+   var endpoint = <?php echo json_encode(PluginNextoolCompat::webDir() . '/ajax/module_action.php'); ?>;
 
    document.addEventListener('click', function (event) {
       var btn = event.target && typeof event.target.closest === 'function'
@@ -378,6 +456,16 @@ function nextoolInitModuleActions() {
       var action = (btn.dataset && btn.dataset.action) ? String(btn.dataset.action) : '';
       var moduleKey = (btn.dataset && btn.dataset.module) ? String(btn.dataset.module) : '';
       if (action === '' || moduleKey === '') return;
+
+      // Download de módulo gratuito com anúncio vigente: o popup (#283) segura o download até o fim do contador.
+      if (action === 'download') {
+         var adCard = typeof btn.closest === 'function' ? btn.closest('.nextool-module-card') : null;
+         if (adCard && adCard.dataset.moduleTier === 'FREE' && nextoolShowDownloadAd(moduleKey, function () {
+            nextoolExecuteModuleAction(btn, action, moduleKey, endpoint);
+         })) {
+            return;
+         }
+      }
 
       var confirmMsg = (btn.dataset && btn.dataset.confirm) ? String(btn.dataset.confirm) : '';
       var confirmType = (btn.dataset && btn.dataset.confirmType) ? String(btn.dataset.confirmType) : '';
@@ -405,17 +493,388 @@ if (document.readyState === 'loading') {
 }
 document.addEventListener('glpi.load', nextoolInitModuleActions);
 
+// --- Anúncio antes do download de módulo gratuito (#283) ---
+// Os anúncios vêm do /validate (guardados pela base) num <script type="application/json"> da guia Módulos. Vale o do
+// próprio módulo, senão o geral. Sem anúncio, sem dados ou com qualquer falha, o download segue normal (devolve false).
+var NEXTOOL_DOWNLOAD_AD_I18N = <?php echo json_encode([
+   'button'    => __('Continuar download', 'nextool'),
+   'buttonIn'  => __('Continuar download (%s s)', 'nextool'),
+   'watch'     => __('Assistir e baixar', 'nextool'),
+   'views'     => __('%s visualizações', 'nextool'),
+]); ?>;
+
+function nextoolDownloadAdFor(moduleKey) {
+   var dataEl = document.getElementById('nextool-download-ads-data');
+   if (!dataEl) return null;
+   var ads;
+   try { ads = JSON.parse(dataEl.textContent || '[]'); } catch (e) { return null; }
+   if (!Array.isArray(ads)) return null;
+   var fallback = null;
+   for (var i = 0; i < ads.length; i++) {
+      var ad = ads[i] || {};
+      if (Array.isArray(ad.modules) && ad.modules.indexOf(moduleKey) !== -1) return ad;
+      if (!fallback && ad['default']) fallback = ad;
+   }
+   return fallback;
+}
+
+function nextoolDownloadAdEvent(event, ad, moduleKey) {
+   var endpoint = <?php echo json_encode(PluginNextoolCompat::webDir() . '/ajax/download_ad_event.php'); ?>;
+   nextoolPostJson(endpoint, { event: event, ad_id: String(ad.id), module: moduleKey }).catch(function () {});
+}
+
+function nextoolShowDownloadAd(moduleKey, proceed) {
+   var ad = nextoolDownloadAdFor(moduleKey);
+   var modalEl = document.getElementById('nextool-download-ad-modal');
+   if (!ad || !modalEl || typeof bootstrap === 'undefined') return false;
+
+   var el = function (id) { return document.getElementById(id); };
+   var safeUrl = function (u) { return (typeof u === 'string' && /^https:\/\//i.test(u)) ? u : null; };
+   el('nextool-download-ad-title').textContent = String(ad.title || '');
+   el('nextool-download-ad-body').textContent = String(ad.body || '');
+
+   // Card no formato do portfólio do site da NexSuite: capa local (thumb do vídeo, servida pela base), play redondo no
+   // meio e, embaixo, título e visualizações. O play troca a capa pelo player do youtube-nocookie DENTRO do card: antes
+   // do clique o navegador não fala com o Google. "Abrir no YouTube" fica como saída para firewall que bloqueie o
+   // player. O contador não depende do vídeo. Sem vídeo, só a imagem, no tamanho natural.
+   var media = el('nextool-download-ad-media');
+   var stage = el('nextool-download-ad-stage');
+   var img = el('nextool-download-ad-image');
+   var playBtn = el('nextool-download-ad-play');
+   var info = el('nextool-download-ad-videoinfo');
+   var ytLink = el('nextool-download-ad-youtube');
+   var video = safeUrl(ad.video_url);
+   var videoId = (typeof ad.video_id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(ad.video_id)) ? ad.video_id : null;
+   var imageUrl = (typeof ad.image_url === 'string' && ad.image_url !== '') ? ad.image_url : null;
+   var oldPlayer = stage.querySelector('iframe');
+   if (oldPlayer) oldPlayer.remove();
+   media.classList.toggle('d-none', !imageUrl && !videoId);
+   media.classList.toggle('nextool-has-video', !!videoId);
+   stage.style.aspectRatio = videoId ? '16 / 9' : '';
+   img.style.height = videoId ? '100%' : 'auto';
+   img.classList.toggle('d-none', !imageUrl);
+   if (imageUrl) { img.src = imageUrl; } else { img.removeAttribute('src'); }
+   playBtn.classList.toggle('d-none', !videoId);
+   playBtn.classList.toggle('d-flex', !!videoId);
+   info.classList.toggle('d-none', !videoId);
+   el('nextool-download-ad-vtitle').textContent = String(ad.video_title || ad.title || '');
+   var viewsEl = el('nextool-download-ad-vviews');
+   var views = parseInt(ad.video_views, 10);
+   viewsEl.classList.toggle('d-none', !(views >= 0));
+   if (views >= 0) {
+      var lang = (document.documentElement.lang || 'pt-BR').replace('_', '-');
+      var num;
+      try { num = new Intl.NumberFormat(lang).format(views); } catch (e) { num = String(views); }
+      viewsEl.textContent = NEXTOOL_DOWNLOAD_AD_I18N.views.replace('%s', num);
+   }
+   ytLink.classList.toggle('d-none', !(videoId && video));
+   if (video) ytLink.href = video;
+   ytLink.onclick = function () { nextoolDownloadAdEvent('click', ad, moduleKey); startCountdown(); };
+   var startPlayer = function () {
+      if (!videoId || stage.querySelector('iframe')) return;
+      nextoolDownloadAdEvent('click', ad, moduleKey);
+      var frame = document.createElement('iframe');
+      frame.src = 'https://www.youtube-nocookie.com/embed/' + videoId + '?autoplay=1&rel=0&playsinline=1';
+      frame.title = String(ad.video_title || ad.title || 'YouTube');
+      frame.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+      frame.setAttribute('allowfullscreen', '');
+      frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+      img.classList.add('d-none');
+      playBtn.classList.add('d-none');
+      playBtn.classList.remove('d-flex');
+      stage.appendChild(frame);
+      startCountdown();
+   };
+   playBtn.onclick = startPlayer;
+   // Como no portfólio: clicar em qualquer ponto da capa também abre o vídeo.
+   stage.style.cursor = videoId ? 'pointer' : '';
+   stage.onclick = function (e) { if (videoId && e.target !== playBtn && !playBtn.contains(e.target)) startPlayer(); };
+
+   var cta = el('nextool-download-ad-cta');
+   var ctaUrl = safeUrl(ad.cta_url);
+   cta.classList.toggle('d-none', !ctaUrl || !ad.cta_label);
+   if (ctaUrl) {
+      cta.href = ctaUrl;
+      cta.querySelector('span').textContent = String(ad.cta_label || '');
+   }
+   cta.onclick = function () { nextoolDownloadAdEvent('click', ad, moduleKey); };
+
+   var continueBtn = el('nextool-download-ad-continue');
+   var continueLabel = el('nextool-download-ad-continue-label');
+   var continueIcon = el('nextool-download-ad-continue-icon');
+   var total = Math.max(3, Math.min(30, parseInt(ad.countdown, 10) || 10));
+   var remaining = total;
+   var timer = null;
+   // Com vídeo, o botão nasce como "Assistir e baixar" (play): o clique toca o vídeo no card e vira o contador
+   // "Continuar download (N s)". Sem vídeo, o contador começa ao abrir. O contador fica DENTRO do botão.
+   var setButton = function (label, icon, enabled) {
+      continueLabel.textContent = label;
+      continueIcon.className = icon + ' me-1';
+      continueBtn.disabled = !enabled;
+   };
+   var tick = function () {
+      if (remaining <= 0) {
+         clearInterval(timer);
+         timer = null;
+         setButton(NEXTOOL_DOWNLOAD_AD_I18N.button, 'ti ti-cloud-download', true);
+         nextoolDownloadAdEvent('complete', ad, moduleKey);
+         return;
+      }
+      setButton(NEXTOOL_DOWNLOAD_AD_I18N.buttonIn.replace('%s', String(remaining)), 'ti ti-clock', false);
+      remaining--;
+   };
+   var startCountdown = function () {
+      if (timer || remaining !== total) return;
+      tick();
+      timer = setInterval(tick, 1000);
+   };
+   continueBtn.onclick = function () {
+      if (continueBtn.disabled) return;
+      if (videoId && remaining === total && !timer) {
+         startPlayer();
+         return;
+      }
+      if (remaining > 0) return;
+      bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+      proceed();
+   };
+   // Fechar antes (ou depois) sem continuar = download cancelado; o contador para.
+   modalEl.addEventListener('hidden.bs.modal', function stopTimer() {
+      if (timer) { clearInterval(timer); timer = null; }
+      // Tirar o iframe para o vídeo parar junto com o popup.
+      var player = stage.querySelector('iframe');
+      if (player) player.remove();
+      modalEl.removeEventListener('hidden.bs.modal', stopTimer);
+   });
+
+   if (videoId) {
+      setButton(NEXTOOL_DOWNLOAD_AD_I18N.watch, 'ti ti-player-play-filled', true);
+   } else {
+      setButton(NEXTOOL_DOWNLOAD_AD_I18N.buttonIn.replace('%s', String(total)), 'ti ti-clock', false);
+   }
+   bootstrap.Modal.getOrCreateInstance(modalEl).show();
+   nextoolDownloadAdEvent('impression', ad, moduleKey);
+   if (!videoId) startCountdown();
+   return true;
+}
+
+// --- "Atualizar todos" (#284) ---
+// Elegível = card com o botão Atualizar HABILITADO: o card já aplica permissão, licença,
+// vínculo, versão mínima da base e major, então a fila não reavalia regra nenhuma.
+// UM módulo por vez (em paralelo as duas fases correm contra o OPcache e contra o limite de
+// taxa da ContainerAPI), cada um com as mesmas duas chamadas do botão individual, e um
+// único reload no fim.
+var NEXTOOL_UPDATE_ALL_I18N = <?php echo json_encode([
+   'waiting'      => __('Aguardando', 'nextool'),
+   'downloading'  => __('Baixando', 'nextool'),
+   'migrating'    => __('Migrando', 'nextool'),
+   'ok'           => __('Atualizado', 'nextool'),
+   'failed'       => __('Falhou', 'nextool'),
+   'skipped'      => __('Ignorado', 'nextool'),
+   'progress'     => __('Atualizando %1$s de %2$s. Não feche esta página.', 'nextool'),
+   'summary'      => __('Concluído: %1$s atualizado(s), %2$s com falha, %3$s ignorado(s).', 'nextool'),
+   'noPermission' => __('Sem permissão ou licença para atualizar este módulo.', 'nextool'),
+   'needsAction'  => __('Requer ação no card: %s', 'nextool'),
+   'unexpected'   => __('Erro inesperado ao processar a ação.', 'nextool'),
+   'network'      => __('Falha na comunicação com o servidor.', 'nextool'),
+   'leave'        => __('A atualização dos módulos ainda está em andamento.', 'nextool'),
+]); ?>;
+
+function nextoolUpdateAllCards() {
+   var eligible = [];
+   var skipped = [];
+   document.querySelectorAll('.nextool-module-card').forEach(function (card) {
+      var nameEl = card.querySelector('.card-title');
+      var name = nameEl ? nameEl.textContent.trim() : '';
+      var btn = card.querySelector('.nextool-module-action[data-action="update"]');
+      if (btn && !btn.disabled && btn.dataset.module) {
+         eligible.push({ key: String(btn.dataset.module), name: name || String(btn.dataset.module) });
+         return;
+      }
+      if (card.dataset.moduleUpdate !== '1') return;
+      // Tem atualização, mas o card não oferece o botão: o motivo é o que o card mostra.
+      var actions = card.querySelector('.mt-auto');
+      var badge = actions ? actions.querySelector('.badge') : null;
+      var reason;
+      if (badge) {
+         reason = badge.textContent.trim();
+      } else if (btn) {
+         reason = NEXTOOL_UPDATE_ALL_I18N.noPermission;
+      } else {
+         var other = actions ? actions.querySelector('button, a.btn') : null;
+         var label = other ? other.textContent.trim() : '';
+         reason = label ? NEXTOOL_UPDATE_ALL_I18N.needsAction.replace('%s', label) : NEXTOOL_UPDATE_ALL_I18N.noPermission;
+      }
+      skipped.push({ name: name, reason: reason });
+   });
+   return { eligible: eligible, skipped: skipped };
+}
+
+function nextoolSyncUpdateAllButton() {
+   var btn = document.getElementById('nextool-update-all-btn');
+   if (!btn) return;
+   var count = nextoolUpdateAllCards().eligible.length;
+   var countEl = document.getElementById('nextool-update-all-count');
+   if (countEl) countEl.textContent = String(count);
+   btn.classList.toggle('d-none', count < 2 || window._nextoolUpdateAllRunning === true);
+}
+window.nextoolSyncUpdateAllButton = nextoolSyncUpdateAllButton;
+
+function nextoolUpdateAllSetRow(row, state, message) {
+   var styles = {
+      waiting:     ['bg-secondary', 'ti ti-clock'],
+      downloading: ['bg-info', 'ti ti-loader-2'],
+      migrating:   ['bg-info', 'ti ti-loader-2'],
+      ok:          ['bg-success', 'ti ti-check'],
+      failed:      ['bg-danger', 'ti ti-x'],
+      skipped:     ['bg-warning text-dark', 'ti ti-player-skip-forward']
+   };
+   var st = styles[state] || styles.waiting;
+   var badge = row.querySelector('.nextool-update-all-state');
+   badge.className = 'badge ' + st[0] + ' nextool-update-all-state';
+   badge.innerHTML = '<i class="' + st[1] + ' me-1"></i>';
+   badge.appendChild(document.createTextNode(NEXTOOL_UPDATE_ALL_I18N[state] || state));
+   var msg = row.querySelector('.nextool-update-all-msg');
+   msg.textContent = message ? String(message).replace(/[<>]/g, '') : '';
+   msg.classList.toggle('d-none', !message);
+}
+
+function nextoolUpdateAllRow(listEl, name) {
+   var li = document.createElement('li');
+   li.className = 'list-group-item px-0';
+   li.innerHTML = '<div class="d-flex justify-content-between align-items-center gap-2">'
+      + '<span class="fw-medium nextool-update-all-name"></span>'
+      + '<span class="badge bg-secondary nextool-update-all-state"></span></div>'
+      + '<div class="small text-muted mt-1 d-none nextool-update-all-msg"></div>';
+   li.querySelector('.nextool-update-all-name').textContent = name;
+   listEl.appendChild(li);
+   return li;
+}
+
+function nextoolUpdateOneModule(endpoint, key, row) {
+   var base = { module: key, quiet: '1', forcetab: window._nextoolCurrentTab || 'PluginNextoolMainConfig$1' };
+   var failMsg = function (data) {
+      return (data && data.message) ? String(data.message) : NEXTOOL_UPDATE_ALL_I18N.unexpected;
+   };
+   nextoolUpdateAllSetRow(row, 'downloading');
+   return nextoolPostJson(endpoint, Object.assign({ action: 'update' }, base))
+      .then(function (r1) {
+         if (!r1.ok || !r1.data || !r1.data.success) {
+            nextoolUpdateAllSetRow(row, 'failed', failMsg(r1.data));
+            return false;
+         }
+         if (!r1.data.pending_upgrade) {
+            nextoolUpdateAllSetRow(row, 'ok', r1.data.message || '');
+            return true;
+         }
+         // Fase 2 numa requisição NOVA, que já carrega o código novo (issue #158).
+         nextoolUpdateAllSetRow(row, 'migrating');
+         return nextoolPostJson(endpoint, Object.assign({ action: 'finalize_update' }, base))
+            .then(function (r2) {
+               if (!r2.ok || !r2.data || !r2.data.success) {
+                  nextoolUpdateAllSetRow(row, 'failed', failMsg(r2.data));
+                  return false;
+               }
+               nextoolUpdateAllSetRow(row, 'ok', r2.data.message || '');
+               return true;
+            });
+      })
+      .catch(function () {
+         // Se a fase 2 não chegou, o sync do próximo carregamento conclui a migração.
+         nextoolUpdateAllSetRow(row, 'failed', NEXTOOL_UPDATE_ALL_I18N.network);
+         return false;
+      });
+}
+
+function nextoolRunUpdateAll() {
+   if (window._nextoolUpdateAllRunning === true) return;
+   var modalEl = document.getElementById('nextool-update-all-modal');
+   var listEl = document.getElementById('nextool-update-all-list');
+   var statusEl = document.getElementById('nextool-update-all-status');
+   var doneBtn = document.getElementById('nextool-update-all-done');
+   var closeBtn = document.getElementById('nextool-update-all-close');
+   if (!modalEl || !listEl || !statusEl || !doneBtn || !closeBtn) return;
+
+   var cards = nextoolUpdateAllCards();
+   if (cards.eligible.length === 0) return;
+
+   var endpoint = <?php echo json_encode(PluginNextoolCompat::webDir() . '/ajax/module_action.php'); ?>;
+   var fmt = function (tpl, args) {
+      return tpl.replace(/%(\d)\$s/g, function (m, i) { return String(args[parseInt(i, 10) - 1]); });
+   };
+
+   listEl.innerHTML = '';
+   var queue = cards.eligible.map(function (m) {
+      var row = nextoolUpdateAllRow(listEl, m.name);
+      nextoolUpdateAllSetRow(row, 'waiting');
+      return { key: m.key, row: row };
+   });
+   cards.skipped.forEach(function (s) {
+      nextoolUpdateAllSetRow(nextoolUpdateAllRow(listEl, s.name), 'skipped', s.reason);
+   });
+
+   var finish = function () { window.location.reload(); };
+   doneBtn.disabled = true;
+   closeBtn.classList.add('d-none');
+   doneBtn.onclick = finish;
+   closeBtn.onclick = finish;
+
+   var beforeUnload = function (e) {
+      e.preventDefault();
+      e.returnValue = NEXTOOL_UPDATE_ALL_I18N.leave;
+      return NEXTOOL_UPDATE_ALL_I18N.leave;
+   };
+   window._nextoolUpdateAllRunning = true;
+   window.addEventListener('beforeunload', beforeUnload);
+   nextoolSyncUpdateAllButton();
+   bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+   var okCount = 0;
+   var failCount = 0;
+   var chain = Promise.resolve();
+   queue.forEach(function (item, idx) {
+      chain = chain.then(function () {
+         statusEl.textContent = fmt(NEXTOOL_UPDATE_ALL_I18N.progress, [idx + 1, queue.length]);
+         return nextoolUpdateOneModule(endpoint, item.key, item.row).then(function (ok) {
+            if (ok) { okCount++; } else { failCount++; }
+         });
+      });
+   });
+   chain.then(function () {
+      window._nextoolUpdateAllRunning = false;
+      window.removeEventListener('beforeunload', beforeUnload);
+      statusEl.textContent = fmt(NEXTOOL_UPDATE_ALL_I18N.summary, [okCount, failCount, cards.skipped.length]);
+      doneBtn.disabled = false;
+      closeBtn.classList.remove('d-none');
+   });
+}
+
+document.addEventListener('click', function (event) {
+   var btn = event.target && typeof event.target.closest === 'function'
+      ? event.target.closest('#nextool-update-all-btn')
+      : null;
+   if (!btn) return;
+   event.preventDefault();
+   nextoolRunUpdateAll();
+});
+if (document.readyState === 'loading') {
+   document.addEventListener('DOMContentLoaded', nextoolSyncUpdateAllButton);
+} else {
+   nextoolSyncUpdateAllButton();
+}
+document.addEventListener('glpi.load', nextoolSyncUpdateAllButton);
+
 function nextoolInitCoreUpdateModal() {
    var modalEl = document.getElementById('nextool-core-update-modal');
    if (!modalEl) return;
    if (modalEl.dataset.nextoolCoreUpdateBound === '1') return;
    modalEl.dataset.nextoolCoreUpdateBound = '1';
 
-   var endpoint = <?php echo json_encode(Plugin::getWebDir('nextool') . '/ajax/core_update.php'); ?>;
+   var endpoint = <?php echo json_encode(PluginNextoolCompat::webDir() . '/ajax/core_update.php'); ?>;
 
    function invokeCoreUpdate(action) {
       var csrfToken = nextoolGetAjaxCsrfToken();
-      if (!csrfToken) {
+      if (!csrfToken && !NEXTOOL_CSRF_TOKENLESS) {
          return Promise.reject(new Error('csrf-token-not-found'));
       }
 
@@ -425,7 +884,7 @@ function nextoolInitCoreUpdateModal() {
             'Accept': 'application/json',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
             'X-Requested-With': 'XMLHttpRequest',
-            'X-Glpi-Csrf-Token': csrfToken
+            'X-Glpi-Csrf-Token': csrfToken || ''
          },
          body: new URLSearchParams({ action: action, channel: 'stable' }).toString(),
          credentials: 'same-origin'
@@ -455,6 +914,43 @@ function nextoolInitCoreUpdateModal() {
    var confirmApplyEl = document.getElementById('nextool-modal-confirm-apply');
    var confirmApplyInputEl = document.getElementById('nextool-modal-confirm-apply-input');
    var CONFIRM_APPLY_WORD = (confirmApplyEl && confirmApplyEl.dataset.confirmWord || 'confirmo').toLowerCase();
+   // Prontidão para a próxima major do GLPI (preflight.major_readiness): aviso + checkbox que libera
+   // o próximo passo. Só aparece quando a release já suporta a major e há módulo instalado sem ela.
+   var confirmMajorEl = document.getElementById('nextool-modal-confirm-major');
+   var confirmMajorTextEl = document.getElementById('nextool-modal-confirm-major-text');
+   var confirmMajorInputEl = document.getElementById('nextool-modal-confirm-major-input');
+   var majorConfirmPending = false;
+   var LABEL_MAJOR_READY = <?php echo json_encode(__('Já têm versão compatível no catálogo (atualize antes de migrar):', 'nextool')); ?>;
+   var LABEL_MAJOR_WAITING = <?php echo json_encode(__('Ainda sem versão compatível:', 'nextool')); ?>;
+
+   function hideMajorConfirm() {
+      majorConfirmPending = false;
+      if (confirmMajorEl) confirmMajorEl.classList.add('d-none');
+      if (confirmMajorInputEl) confirmMajorInputEl.checked = false;
+      if (confirmMajorTextEl) confirmMajorTextEl.textContent = '';
+   }
+
+   function showMajorConfirm(info) {
+      if (!confirmMajorEl || !confirmMajorTextEl || !info || !(info.count > 0)) { return false; }
+      var text = document.createElement('div');
+      var p = document.createElement('p'); p.className = 'mb-1'; p.textContent = info.message || ''; text.appendChild(p);
+      if (info.ready && info.ready.length) {
+         var pr = document.createElement('p'); pr.className = 'mb-1';
+         var sr = document.createElement('strong'); sr.textContent = LABEL_MAJOR_READY + ' '; pr.appendChild(sr);
+         pr.appendChild(document.createTextNode(info.ready.join(', '))); text.appendChild(pr);
+      }
+      if (info.waiting && info.waiting.length) {
+         var pw = document.createElement('p'); pw.className = 'mb-0';
+         var sw = document.createElement('strong'); sw.textContent = LABEL_MAJOR_WAITING + ' '; pw.appendChild(sw);
+         pw.appendChild(document.createTextNode(info.waiting.join(', '))); text.appendChild(pw);
+      }
+      confirmMajorTextEl.innerHTML = '';
+      confirmMajorTextEl.appendChild(text);
+      if (confirmMajorInputEl) confirmMajorInputEl.checked = false;
+      confirmMajorEl.classList.remove('d-none');
+      majorConfirmPending = true;
+      return true;
+   }
 
    var STEPS = [
       { action: 'preflight', badge: 'nextool-modal-step-1-badge', status: 'nextool-modal-step-1-status' },
@@ -512,6 +1008,7 @@ function nextoolInitCoreUpdateModal() {
       if (permDetailEl) permDetailEl.classList.add('d-none');
       if (confirmApplyEl) confirmApplyEl.classList.add('d-none');
       if (confirmApplyInputEl) confirmApplyInputEl.value = '';
+      hideMajorConfirm();
       if (actionBtn) { actionBtn.disabled = false; actionBtn.innerHTML = STEP_BTN_LABELS[0]; }
       if (typeof fetchBackups === 'function') fetchBackups();
    }
@@ -574,6 +1071,13 @@ function nextoolInitCoreUpdateModal() {
          desc: <?php echo json_encode(__('O servidor GLPI não conseguiu se conectar à ContainerAPI.', 'nextool')); ?>,
          fix: <?php echo json_encode(__('Verifique se o servidor tem acesso à internet ou à rede interna da ContainerAPI, e se não há regras de firewall bloqueando conexões de saída.', 'nextool')); ?>
       },
+      // #285: sem manifesto o motivo vem do servidor (requisito de PHP/GLPI, nenhuma versão nova, falha de
+      // comunicação) e entra como descrição (desc: null = usar bl.message, escapado).
+      'manifest_available': {
+         title: <?php echo json_encode(__('Atualização indisponível para este servidor', 'nextool')); ?>,
+         desc: null,
+         fix: <?php echo json_encode(__('Se o motivo for um requisito (PHP ou GLPI), ajuste o servidor e verifique de novo. Em caso de dúvida, abra um atendimento pelo botão Suporte.', 'nextool')); ?>
+      },
       'signature_valid': {
          title: <?php echo json_encode(__('Assinatura do pacote inválida', 'nextool')); ?>,
          desc: <?php echo json_encode(__('O manifesto da atualização não possui assinatura válida ou está ausente.', 'nextool')); ?>,
@@ -611,6 +1115,12 @@ function nextoolInitCoreUpdateModal() {
    }
    window.nextoolCopyPreflightReport = nextoolCopyPreflightReport;
 
+   function nextoolEscapeBlockerText(text) {
+      return String(text).replace(/[&<>"']/g, function (c) {
+         return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+      });
+   }
+
    function buildPreflightErrorHtml(blockers) {
       var currentVer = currentVersionEl ? currentVersionEl.textContent : (window._nextoolCurrentVersion || '?');
       var targetVer = targetVersionEl ? targetVersionEl.textContent : (window._nextoolTargetVersion || '?');
@@ -631,7 +1141,7 @@ function nextoolInitCoreUpdateModal() {
          var h = BLOCKER_HELP[bl.id] || null;
          var blData = bl.data || {};
          var title = h ? h.title : (bl.message || bl.id || '?');
-         var desc = h ? h.desc : (bl.message || '');
+         var desc = h ? (h.desc !== null ? h.desc : nextoolEscapeBlockerText(bl.message || '')) : (bl.message || '');
          var fix = h ? h.fix : '';
 
          var cmdText = '';
@@ -661,7 +1171,7 @@ function nextoolInitCoreUpdateModal() {
          html += '</div></div>';
 
          clip.push(<?php echo json_encode(__('Problema:', 'nextool')); ?> + ' ' + title);
-         if (desc) clip.push(desc);
+         if (desc) clip.push(h && h.desc === null ? (bl.message || '') : desc);
          if (fix) clip.push(LABEL_SOLUTION + ' ' + fix);
          if (cmdText) {
             clip.push(LABEL_RUN_CMD + '\n' + cmdText);
@@ -697,6 +1207,7 @@ function nextoolInitCoreUpdateModal() {
       if (alertEl) { alertEl.className = 'alert d-none mb-2'; alertEl.innerHTML = ''; }
       if (permDetailEl) permDetailEl.classList.add('d-none');
       if (confirmApplyEl) confirmApplyEl.classList.add('d-none');
+      hideMajorConfirm();
 
       setStepActive(stepIndex);
       if (actionBtn) { actionBtn.disabled = true; actionBtn.innerHTML = STEP_RUNNING_LABELS[stepIndex]; }
@@ -714,6 +1225,11 @@ function nextoolInitCoreUpdateModal() {
             }
             if (checkData.target_version && targetVersionEl) {
                targetVersionEl.textContent = checkData.target_version;
+            }
+            // Módulos que ficariam bloqueados numa migração para a próxima major: exige o "entendi".
+            var preflightData = payload.data.preflight || null;
+            if (preflightData && preflightData.major_readiness) {
+               showMajorConfirm(preflightData.major_readiness);
             }
          }
 
@@ -749,7 +1265,8 @@ function nextoolInitCoreUpdateModal() {
                confirmApplyInputEl.value = '';
                confirmApplyInputEl.focus();
             } else {
-               if (actionBtn) actionBtn.disabled = false;
+               // Com aviso de major pendente, o próximo passo só libera depois do checkbox.
+               if (actionBtn) actionBtn.disabled = majorConfirmPending;
             }
          } else {
             // All done (safety fallback)
@@ -828,6 +1345,14 @@ function nextoolInitCoreUpdateModal() {
          var typed = (confirmApplyInputEl.value || '').trim().toLowerCase();
          if (actionBtn && currentStep === 1) {
             actionBtn.disabled = typed !== CONFIRM_APPLY_WORD;
+         }
+      });
+   }
+   if (confirmMajorInputEl) {
+      confirmMajorInputEl.addEventListener('change', function() {
+         // Só gera efeito entre o preflight e o download (currentStep 0); o "entendi" libera o botão.
+         if (actionBtn && currentStep === 0 && !isRunning) {
+            actionBtn.disabled = !confirmMajorInputEl.checked;
          }
       });
    }
@@ -1340,6 +1865,7 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
 
       if (!syncChipClasses()) return false;
       applyFilters();
+      if (typeof window.nextoolSyncUpdateAllButton === 'function') window.nextoolSyncUpdateAllButton();
       return true;
    }
 
@@ -1467,7 +1993,7 @@ document.addEventListener('glpi.load', _nextoolInitContactAll);
 require_once NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
 $_nextoolUnreadAlerts = PluginNextoolAlertManager::getUnreadAlerts();
 if (!empty($_nextoolUnreadAlerts)):
-   $alertsAjaxUrl = Plugin::getWebDir('nextool') . '/ajax/alerts.php';
+   $alertsAjaxUrl = PluginNextoolCompat::webDir() . '/ajax/alerts.php';
 ?>
 <div class="modal fade" id="nextool-alerts-modal" tabindex="-1" aria-hidden="true">
    <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -1487,7 +2013,7 @@ if (!empty($_nextoolUnreadAlerts)):
                      <i class="<?php echo $uaIcon; ?> fs-3 mt-1"></i>
                      <div>
                         <div class="d-flex align-items-center gap-2 mb-1">
-                           <strong><?php echo Html::entities_deep($ua['title']); ?></strong>
+                           <strong><?php echo PluginNextoolCompat::escape($ua['title']); ?></strong>
                            <span class="badge <?php echo $uaBadge; ?>" style="font-size: 0.65rem;"><?php echo ucfirst($ua['alert_type']); ?></span>
                         </div>
                         <div class="small"><?php echo PluginNextoolAlertManager::sanitizeBody($ua['body']); ?></div>
@@ -1531,7 +2057,7 @@ if (!empty($_nextoolUnreadAlerts)):
 <?php /* F3 (5.0.0): vínculo de conta -- SEMPRE emitido, fora do if de alertas. */ ?>
 <script>
 // === F3 (5.0.0): vínculo de conta NexTool ===
-var NEXTOOL_ACCOUNT_ENDPOINT = <?php echo json_encode(Plugin::getWebDir('nextool') . '/ajax/account_action.php'); ?>;
+var NEXTOOL_ACCOUNT_ENDPOINT = <?php echo json_encode(PluginNextoolCompat::webDir() . '/ajax/account_action.php'); ?>;
 
 function nextoolAccountLinkAlert(type, msg) {
    var box = document.getElementById('nextool-account-link-alert');
@@ -1562,7 +2088,7 @@ function nextoolRefreshLinkStatus() {
    if (codeBox) { codeBox.classList.add('d-none'); }
    if (!statusBox) { return; }
    statusBox.className = 'alert alert-secondary d-flex align-items-center mb-3';
-   statusBox.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span><?php echo Html::entities_deep(__('Verificando vínculo...', 'nextool')); ?></span>';
+   statusBox.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span><?php echo PluginNextoolCompat::escape(__('Verificando vínculo...', 'nextool')); ?></span>';
    nextoolPostJson(NEXTOOL_ACCOUNT_ENDPOINT, { action: 'refresh_status' }).then(function (res) {
       var d = res.data || {};
       if (!res.ok || !d.success) {
@@ -1574,13 +2100,13 @@ function nextoolRefreshLinkStatus() {
       var genBtn = document.getElementById('nextool-account-link-generate-btn');
       if (d.linked) {
          statusBox.className = 'alert alert-success mb-3';
-         statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i><?php echo Html::entities_deep(__('Ambiente vinculado', 'nextool')); ?>' + (d.portal_email ? (': <strong>' + d.portal_email + '</strong>') : '');
+         statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i><?php echo PluginNextoolCompat::escape(__('Ambiente vinculado', 'nextool')); ?>' + (d.portal_email ? (': <strong>' + d.portal_email + '</strong>') : '');
          if (unlinkBtn) { unlinkBtn.classList.remove('d-none'); }
          if (goBtn) { goBtn.classList.remove('d-none'); }
          if (genBtn) { genBtn.classList.add('d-none'); }
       } else {
          statusBox.className = 'alert alert-secondary mb-3';
-         statusBox.innerHTML = '<i class="ti ti-circle-dashed me-1"></i><?php echo Html::entities_deep(__('Ambiente ainda não vinculado.', 'nextool')); ?>';
+         statusBox.innerHTML = '<i class="ti ti-circle-dashed me-1"></i><?php echo PluginNextoolCompat::escape(__('Ambiente ainda não vinculado.', 'nextool')); ?>';
          if (unlinkBtn) { unlinkBtn.classList.add('d-none'); }
          if (goBtn) { goBtn.classList.add('d-none'); }
          if (genBtn) { genBtn.classList.remove('d-none'); }

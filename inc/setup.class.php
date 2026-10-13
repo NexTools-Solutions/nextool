@@ -18,9 +18,10 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
-class PluginNextoolSetup extends CommonGLPI {
+require_once __DIR__ . '/compat.class.php';
 
-   static $rightname = 'config';
+// Corpo na trait, classe declarada condicionalmente no fim do arquivo: ver inc/config.class.php.
+trait PluginNextoolSetupBody {
 
    /**
     * Retorna nome da aba que será exibida em "Configurar → Geral"
@@ -47,3 +48,17 @@ class PluginNextoolSetup extends CommonGLPI {
    }
 }
 
+// GLPI 12 tipou `$rightname` no core (fatal se a redeclaracao nao tiver o tipo); no 10/11 o tipo
+// e fatal. A unica declaracao valida nos 3 majors e condicional: mesmo corpo (trait), so a
+// propriedade muda. Trait com a propriedade NAO serve (conflito de composicao, medido em 2026-10-08).
+if (PluginNextoolCompat::typedRightname()) {
+   class PluginNextoolSetup extends CommonGLPI {
+      use PluginNextoolSetupBody;
+      public static string $rightname = 'config';
+   }
+} else {
+   class PluginNextoolSetup extends CommonGLPI {
+      use PluginNextoolSetupBody;
+      public static $rightname = 'config';
+   }
+}

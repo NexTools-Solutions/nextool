@@ -80,7 +80,19 @@ try {
             $manifest !== null && isset($manifest['version']) ? $manifest['version'] : 'null'
          ));
 
-         $result = $updater->preflight($manifest, 'preflight');
+         // Sem manifesto, o relatório mostra o motivo real (#285): requisito não atendido, nenhuma
+         // versão nova ou falha de comunicação.
+         $unavailableMessage = '';
+         if ($manifest === null) {
+            if (!empty($check['data']['blocked']) && is_array($check['data']['blocked'])) {
+               $unavailableMessage = PluginNextoolCoreUpdater::describeBlocked($check['data']['blocked']);
+            } elseif (!empty($check['success'])) {
+               $unavailableMessage = __('Nenhuma versão nova do NexTool disponível para este ambiente.', 'nextool');
+            } else {
+               $unavailableMessage = (string)($check['message'] ?? '');
+            }
+         }
+         $result = $updater->preflight($manifest, 'preflight', ['manifest_unavailable_message' => $unavailableMessage]);
          $result = [
             'success' => !empty($result['ok']),
             'message' => $result['message'] ?? __('Preflight concluído.', 'nextool'),

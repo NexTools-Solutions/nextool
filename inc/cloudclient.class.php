@@ -177,9 +177,7 @@ class PluginNextoolCloudClient {
          return ['ok' => false, 'http' => 0, 'error' => 'network'];
       }
       try {
-         $client = method_exists('Toolbox', 'getGuzzleClient')
-            ? Toolbox::getGuzzleClient($options)
-            : new \GuzzleHttp\Client($options);
+         $client = PluginNextoolCompat::httpClient($options);
          $resp   = $client->request('POST', $pedido['url'], ['headers' => $pedido['headers'], 'body' => $pedido['json']]);
          $http   = (int) $resp->getStatusCode();
          $tipo   = strtolower(trim(explode(';', $resp->getHeaderLine('Content-Type'))[0]));
@@ -208,14 +206,19 @@ class PluginNextoolCloudClient {
             if ($total > $maxBytes) {
                fclose($fh);
                @unlink($tmp);
+               if (method_exists($resp, 'cancel')) {
+                  $resp->cancel(); // GLPI 12 (Symfony): interrompe a transferência em vez de esperá-la terminar
+               }
                return ['ok' => false, 'http' => $http, 'error' => 'file_too_large'];
             }
             fwrite($fh, $parte);
          }
          fclose($fh);
       } catch (\Throwable $e) {
-         // Rede, timeout, TLS ou protocolo recusado: nada do pedido vai para o log.
+         // Rede, timeout, TLS ou protocolo recusado: nada do pedido vai para o log, só a classe do
+         // erro (distingue destino em rede privada bloqueado pelo GLPI 12 de um timeout).
          @unlink($tmp);
+         self::log('fetchFile falhou sem resposta: ' . get_class($e));
          return ['ok' => false, 'http' => 0, 'error' => 'network'];
       }
 
@@ -318,7 +321,7 @@ class PluginNextoolCloudClient {
     * URL do exec a partir de um `url_base` ('' quando ele não é absoluto).
     *
     * O `url_base` JÁ contém o subcaminho do GLPI (`https://cliente/glpi`). Até a 6.24.1 somava-se o
-    * `Plugin::getWebDir('nextool')`, que prefixa o `root_doc` (`/glpi`), e a URL declarada saía
+    * `PluginNextoolCompat::webDir()`, que prefixa o `root_doc` (`/glpi`), e a URL declarada saía
     * `.../glpi/glpi/plugins/...`: o cérebro a aceitava, ela nunca respondia, e nada avisava. Por isso
     * o caminho do plugin entra aqui SEM o root_doc.
     */
@@ -342,7 +345,7 @@ class PluginNextoolCloudClient {
       if (defined('GLPI_VERSION') && version_compare(GLPI_VERSION, '11.0.0-dev', '>=')) {
          return 'plugins/nextool';
       }
-      $rel = Plugin::getWebDir('nextool', false);
+      $rel = PluginNextoolCompat::webDir(false);
 
       return (is_string($rel) && $rel !== '') ? trim($rel, '/') : 'plugins/nextool';
    }
@@ -943,6 +946,8 @@ class PluginNextoolCloudClient {
     * https, inclusive se alguém ligar o redirecionamento.
     *
     * GLPI 10 anterior ao helper: cliente sem proxy, como era o curl próprio até a 6.24.1.
+    * GLPI 12: `Toolbox::getGuzzleClient` não existe; `PluginNextoolCompat::httpClient` devolve o
+    * adaptador sobre `Glpi\Toolbox\HttpClient` (mesma superfície, mesmas semânticas de 3xx/4xx/5xx).
     *
     * @param array<string,string> $headers
     * @return array{0:int, 1:?string} [código HTTP, corpo], ou [0, null] quando não houve resposta
@@ -963,13 +968,13 @@ class PluginNextoolCloudClient {
       }
 
       try {
-         $client = method_exists('Toolbox', 'getGuzzleClient')
-            ? Toolbox::getGuzzleClient($options)
-            : new \GuzzleHttp\Client($options);
+         $client = PluginNextoolCompat::httpClient($options);
          $resp = $client->request('POST', $url, ['headers' => $headers, 'body' => $body]);
       } catch (\Throwable $e) {
          // Rede, timeout, TLS, protocolo recusado ou proxy fora: mesmo resultado para quem chama, e
-         // nada do pedido vai para o log, como antes.
+         // nada do pedido vai para o log, como antes -- só a classe do erro (no GLPI 12 um destino em
+         // rede privada é bloqueado pelo core e chegaria aqui igual a um timeout).
+         self::log('send falhou sem resposta: ' . get_class($e));
          return [0, null];
       }
 
