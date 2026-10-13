@@ -159,7 +159,7 @@ class PluginNextoolModuleManager {
    public const UPGRADE_STATE_CONTEXT = 'plugin:nextool_upgrade_state';
    /** Escada de retentativa (s): 1min, 5min, 15min, 1h, 6h. Continua tentando; nunca desiste. */
    private const UPGRADE_RETRY_LADDER = [60, 300, 900, 3600, 21600];
-   /** Falhas iguais consecutivas antes de avisar o admin na aba Alertas. */
+   /** Falhas iguais consecutivas antes de avisar o admin na aba Novidades. */
    private const UPGRADE_ALERT_THRESHOLD = 3;
    /** Memo por request do context de estado de upgrade (null = ainda não lido). */
    private ?array $upgradeStateCache = null;
@@ -2151,7 +2151,7 @@ class PluginNextoolModuleManager {
    /**
     * Registra a falha: mesma assinatura (from|to|erro) => conta como repetição e sobe a
     * escada; erro diferente => recomeça. A partir de UPGRADE_ALERT_THRESHOLD repetições,
-    * avisa o admin na aba Alertas (dedup por módulo+versão-alvo). Nunca desiste.
+    * avisa o admin na aba Novidades (dedup por módulo+versão-alvo). Nunca desiste.
     */
    private function registerUpgradeFailure(string $moduleKey, ?string $from, ?string $to, string $error): void {
       $state = $this->readUpgradeState($moduleKey);
@@ -2214,7 +2214,7 @@ class PluginNextoolModuleManager {
       );
    }
 
-   /** Upgrade convergiu: apaga o estado e recolhe o aviso da aba Alertas, se houve. */
+   /** Upgrade convergiu: apaga o estado e recolhe o aviso da aba Novidades, se houve. */
    private function clearUpgradeFailure(string $moduleKey): void {
       $state = $this->readUpgradeState($moduleKey);
       if ($state === []) {

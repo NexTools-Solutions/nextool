@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS `glpi_plugin_nextool_main_validation_attempts`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_license_config`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_module_audit`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_config_audit`;
+-- Log unificado (substitui as três tabelas de log acima, mantidas aqui para instalações antigas).
+DROP TABLE IF EXISTS `glpi_plugin_nextool_main_logs`;
 DROP TABLE IF EXISTS `glpi_plugin_nextool_core_updates`;
 -- Estado das rotinas do dispatcher (nextool-dev#281): recriado vazio na reinstalação.
 DROP TABLE IF EXISTS `glpi_plugin_nextool_main_jobs`;

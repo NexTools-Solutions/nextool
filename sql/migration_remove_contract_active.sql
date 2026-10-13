@@ -11,10 +11,5 @@ WHERE `license_status` = 'FREE_TIER';
 ALTER TABLE `glpi_plugin_nextool_main_license_config`
 DROP COLUMN IF EXISTS `contract_active`;
 
--- 3. Drop contract_active column from validation_attempts
-ALTER TABLE `glpi_plugin_nextool_main_validation_attempts`
-DROP COLUMN IF EXISTS `contract_active`;
-
--- 4. Drop contract_active column from module_audit
-ALTER TABLE `glpi_plugin_nextool_main_module_audit`
-DROP COLUMN IF EXISTS `contract_active`;
+-- 3/4. (removidos) contract_active de validation_attempts e module_audit: as duas tabelas foram
+-- absorvidas por glpi_plugin_nextool_main_logs e removidas no install, que roda ANTES deste arquivo.

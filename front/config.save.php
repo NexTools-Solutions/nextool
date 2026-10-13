@@ -288,12 +288,12 @@ if ($action === 'unlink_environment') {
       'section' => 'distribution',
       'action'  => 'unlink_environment',
       'result'  => 1,
-      'message' => __('Vínculo de provisionamento local removido.', 'nextool'),
+      'message' => __('Segredo de comunicação local apagado.', 'nextool'),
       'details' => ['environment_identifier' => $clientIdentifier],
    ]);
 
    Session::addMessageAfterRedirect(
-      __('Vínculo de provisionamento removido localmente. Para provisionar novamente, solicite ao administrador o reset deste ambiente no servidor.', 'nextool'),
+      __('Segredo de comunicação apagado. Sem licença vinculada, a próxima sincronização gera um segredo novo; com licença, peça ao suporte NexTool para liberar o reprovisionamento no servidor.', 'nextool'),
       false,
       INFO
    );
@@ -303,7 +303,7 @@ if ($action === 'unlink_environment') {
 }
 
 if ($action === 'job_run_now' || $action === 'job_resume') {
-   // Rotinas do NexTool (nextool-dev#281), aba Logs: executar agora / retomar uma rotina pausada.
+   // Rotinas do NexTool (nextool-dev#281), aba Manutenção: executar agora / retomar uma rotina pausada.
    require_once NEXTOOL_PHP_DIR . '/inc/jobdispatcher.class.php';
    $jobModule = (string) ($_POST['module_key'] ?? '');
    $jobKey    = (string) ($_POST['job_key'] ?? '');
@@ -799,24 +799,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'validate_license') {
    ];
    Toolbox::logInFile('plugin_nextool', 'Manual validation payload: ' . json_encode($logPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
-   // Resultado para auditoria: sucesso = sincronização concluída (servidor respondeu).
-   // Falha = erro real de comunicação (timeout, sem resposta, 5xx).
-   // HTTP 200 + valid=false + plan=FREE é sincronização bem-sucedida, não falha.
-   // HTTP 403 com license_status/plan = resposta de negócio válida (ex: SUSPENDED), não erro.
-   $syncHttpCode = (int) ($result['http_code'] ?? 0);
-   $syncSucceeded = ($syncHttpCode >= 200 && $syncHttpCode < 500) && $syncHttpCode !== 0;
-
-   PluginNextoolConfigAudit::log([
-      'section' => 'validation',
-      'action'  => 'manual_validation',
-      'result'  => $syncSucceeded ? 1 : 0,
-      'message' => $msg,
-      'details' => [
-         'http_code'        => $result['http_code'] ?? null,
-         'license_status'   => $result['license_status'] ?? null,
-         'plan'             => $result['plan'] ?? null,
-      ],
-   ]);
+   // A sincronização manual não grava evento de configuração: o validador já registra a tentativa
+   // (origem manual_validation) no log unificado, com resultado, HTTP, plano e usuário.
 
    // Após "Sincronizar", atualiza o estado de core update para acender
    // automaticamente o botão do quick-flow quando houver versão nova.

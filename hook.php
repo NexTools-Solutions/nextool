@@ -131,6 +131,21 @@ function plugin_nextool_install() {
       $migration->addKey($cloudRequestsTable, ['service', 'created_at'], 'service_window');
    }
    $migration->executeMigration();
+
+   // Logs unificados: copia as três tabelas antigas de log para glpi_plugin_nextool_main_logs
+   // (criada pelo install.sql) e remove cada uma só depois de conferir a cópia. Idempotente e
+   // não-fatal: o que falhar fica para o próximo install.
+   $eventLogFile = NEXTOOL_PHP_DIR . '/inc/eventlog.class.php';
+   if (file_exists($eventLogFile)) {
+      require_once $eventLogFile;
+      PluginNextoolEventLog::migrateLegacyTables();
+      try {
+         PluginNextoolEventLog::ensureDisplayPreferences();
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'Preferências da grade de logs falharam: ' . $e->getMessage() . "\n");
+      }
+   }
+
    // Marcador lido pela rede de segurança do boot (_plugin_nextool_ensure_schema, setup.php).
    if (function_exists('_plugin_nextool_schema_mark')) {
       _plugin_nextool_schema_mark();
@@ -270,7 +285,7 @@ function plugin_nextool_uninstall() {
    // A remoção real de um módulo (tabelas + arquivos) é exclusiva do botão "Apagar dados"
    // por módulo (purgeModuleData) OU do modo "Apagar tudo" abaixo.
 
-   // #160: escolha manter/apagar persistida na aba Licenciamento (o modal do core não é
+   // #160: escolha manter/apagar persistida na aba Manutenção (o modal do core não é
    // interceptável e este hook roda sem argumentos -- a intenção é lida da config).
    $nextoolUninstallMode = 'keep';
    if (class_exists('Config')) {

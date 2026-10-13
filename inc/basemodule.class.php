@@ -454,7 +454,7 @@ abstract class PluginNextoolBaseModule {
     *    próprio módulo (`PluginNextool<Modulo>...`).
     *
     * Módulo desativado não tem rotina executada. Cinco falhas seguidas pausam a rotina (recuo até 1 h);
-    * a tela "Rotinas do NexTool" (aba Logs) mostra o estado e permite executar agora ou retomar.
+    * a tela "Rotinas do NexTool" (aba Manutenção) mostra o estado e permite executar agora ou retomar.
     *
     * Fica como CronTask própria: envio com espaçamento deliberado entre mensagens (anti-banimento) e
     * tarefa diária ou pesada. Ver KB `modules/common/method-standards.md`, "Rotinas: dispatcher da base".

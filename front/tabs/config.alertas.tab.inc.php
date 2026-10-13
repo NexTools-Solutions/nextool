@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
 /**
- * Aba Alertas do Nextool - historico de alertas recebidos.
+ * Aba Novidades do Nextool (até 2026-10-13 "Alertas"): avisos recebidos do servidor, alertas locais
+ * de pré-requisito e as novidades publicadas pelo portal (tipo `novidades`, que não vão para o sino).
  */
 
 require_once NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
@@ -22,7 +23,7 @@ $alertsEndpoint = PluginNextoolCompat::webDir() . '/ajax/alerts.php';
             <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-purple s-1">
                <i class="fs-2x ti ti-bell"></i>
             </div>
-            <span class="ms-5"><?php echo __('Alertas', 'nextool'); ?></span>
+            <span class="ms-5"><?php echo __('Novidades', 'nextool'); ?></span>
          </h4>
          <?php if (!empty($alertHistory)): ?>
          <button type="button" class="btn btn-sm btn-outline-secondary" id="nextool-alerts-mark-all-read"
@@ -34,7 +35,7 @@ $alertsEndpoint = PluginNextoolCompat::webDir() . '/ajax/alerts.php';
       <div class="card-body">
          <?php if (empty($alertHistory)): ?>
             <div class="alert alert-info mb-0">
-               <i class="ti ti-info-circle me-2"></i><?php echo __('Nenhum alerta recebido. Clique em Sincronizar para verificar.', 'nextool'); ?>
+               <i class="ti ti-info-circle me-2"></i><?php echo __('Nenhuma novidade ou aviso recebido. Clique em Sincronizar para verificar.', 'nextool'); ?>
             </div>
          <?php else: ?>
             <div class="list-group" id="nextool-alerts-list">

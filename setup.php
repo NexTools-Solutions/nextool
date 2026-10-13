@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.36.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.37.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -426,11 +426,13 @@ function plugin_init_nextool() {
       //  um preg_grep sobre todas as chaves de $CFG_GLPI por chamada -- #249)
    }
 
-   $validationAttemptFile = NEXTOOL_PHP_DIR . '/inc/validationattempt.class.php';
-   if (file_exists($validationAttemptFile)) {
-      require_once $validationAttemptFile;
-      $CFG_GLPI['glpiitemtypetables']['glpi_plugin_nextool_main_validation_attempts'] = 'PluginNextoolValidationAttempt';
-      $CFG_GLPI['glpitablesitemtype']['PluginNextoolValidationAttempt'] = 'glpi_plugin_nextool_main_validation_attempts';
+   // Log unificado da base (aba Logs): pin tabela<->itemtype para o Search::show, que não deduz
+   // a classe de uma tabela com nome fora da convenção (`main_logs` != `eventlogs`).
+   $eventLogFile = NEXTOOL_PHP_DIR . '/inc/eventlog.class.php';
+   if (file_exists($eventLogFile)) {
+      require_once $eventLogFile;
+      $CFG_GLPI['glpiitemtypetables']['glpi_plugin_nextool_main_logs'] = 'PluginNextoolEventLog';
+      $CFG_GLPI['glpitablesitemtype']['PluginNextoolEventLog'] = 'glpi_plugin_nextool_main_logs';
       // ensureDisplayPreferences() saiu daqui (1 SELECT em TODO request para um
       // estado que so muda no install): roda junto com o sync de rights, sob o
       // file-flag versionado nextool_rights_synced_v* (A5, #249).
@@ -455,7 +457,7 @@ function plugin_init_nextool() {
       $hookdispatcherfile = NEXTOOL_PHP_DIR . '/inc/hookdispatcher.class.php';
       if (file_exists($hookdispatcherfile)) {
          require_once $hookdispatcherfile;
-         // Fonte de notificação da PRÓPRIA BASE: os avisos da NexTool (aba Alertas)
+         // Fonte de notificação da PRÓPRIA BASE: os avisos da NexTool (aba Novidades)
          // também são publicados no canal e entregues POR USUÁRIO no sino do módulo
          // de notificações, para quem enxerga as abas admin da base. A audiência é
          // 'base_admins', resolvida pelo consumidor na LEITURA (a base não é módulo
@@ -466,7 +468,7 @@ function plugin_init_nextool() {
             PluginNextoolHookDispatcher::registerNotificationSource('nextool.server_alert', [
                // rotulos lazy: traduzidos so no consumidor, nao em todo boot (#249)
                'label'       => ['Avisos da NexTool', 'nextool'],
-               'description' => ['Comunicados oficiais recebidos do servidor NexTool (os mesmos da aba Alertas).', 'nextool'],
+               'description' => ['Comunicados oficiais recebidos do servidor NexTool (os mesmos da aba Novidades).', 'nextool'],
                'icon'        => 'ti ti-bell-ringing',
                'color'       => 'purple',
                'severity'    => 'info',
@@ -562,10 +564,10 @@ function plugin_init_nextool() {
                ? GLPI_CACHE_DIR . '/nextool_rights_synced_v' . PLUGIN_NEXTOOL_VERSION
                : null;
             if ($rightsSyncFlag === null || !is_file($rightsSyncFlag)) {
-               // Preferencias de exibicao da grade de tentativas de validacao: so
-               // mudam no install; sincronizadas 1x por versao junto com os rights.
-               if (class_exists('PluginNextoolValidationAttempt')) {
-                  PluginNextoolValidationAttempt::ensureDisplayPreferences();
+               // Preferencias de exibicao da grade de logs: so mudam no install;
+               // sincronizadas 1x por versao junto com os rights.
+               if (class_exists('PluginNextoolEventLog')) {
+                  PluginNextoolEventLog::ensureDisplayPreferences();
                }
                PluginNextoolPermissionManager::syncModuleRights();
                if ($rightsSyncFlag !== null) {
@@ -595,7 +597,7 @@ function plugin_init_nextool() {
 
             // Pré-requisitos que exigem humano (nextool-dev#260): base desatualizada
             // bloqueando módulos, extensão PHP ausente, diretório sem escrita -> alerta
-            // local (aba Alertas + sino). 1x/h real por file-flag em GLPI_CACHE_DIR
+            // local (aba Novidades + sino). 1x/h real por file-flag em GLPI_CACHE_DIR
             // (regime: 1 is_file + 1 filemtime, zero query); nunca derruba o boot.
             plugin_nextool_prof_start('prereq');
             $prereqFile = NEXTOOL_PHP_DIR . '/inc/prereqcheck.class.php';

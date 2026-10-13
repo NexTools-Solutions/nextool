@@ -716,7 +716,7 @@ class PluginNextoolCloudClient {
    }
 
    /**
-    * Aplica o `destino` da resposta nos avisos locais (aba Alertas e sino). Pública para o E2E aplicar
+    * Aplica o `destino` da resposta nos avisos locais (aba Novidades e sino). Pública para o E2E aplicar
     * uma resposta sintética, sem chamar o cérebro.
     *
     * @param ?bool $inbound há módulo com ferramentas de entrada (null = consulta hasInboundTools())

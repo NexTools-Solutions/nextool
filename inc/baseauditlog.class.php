@@ -5,8 +5,8 @@ declare(strict_types=1);
  * NexTool Solutions - Base Audit Log
  * -------------------------------------------------------------------------
  * Classe abstract com helpers compartilhados pelas várias trilhas de
- * auditoria do plugin (ModuleAudit, ConfigAudit, CoreUpdateLog,
- * ValidationAttempt). Centraliza:
+ * auditoria do plugin (EventLog -- log unificado da base --, CoreUpdateLog
+ * e os logs dos módulos). Centraliza:
  *  - resolução implícita de user_id via Session
  *  - resolução de source_ip via REMOTE_ADDR
  *  - encode condicional JSON para campos que aceitam array

@@ -54,9 +54,7 @@ class PluginNextoolLogMaintenance {
 
       $threshold = date('Y-m-d H:i:s', time() - ($retentionDays * 86400));
       $tables = [
-         ['table' => 'glpi_plugin_nextool_main_validation_attempts', 'column' => 'attempt_date'],
-         ['table' => 'glpi_plugin_nextool_main_module_audit',        'column' => 'action_date'],
-         ['table' => 'glpi_plugin_nextool_main_config_audit',        'column' => 'event_date'],
+         ['table' => 'glpi_plugin_nextool_main_logs', 'column' => 'date'],
       ];
 
       $affected = 0;

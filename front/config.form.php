@@ -498,11 +498,11 @@ if ($nextool_is_standalone) {
       'licenca' => ['id' => 'rt-tab-licenca', 'label' => __('Licenciamento', 'nextool'), 'icon' => 'ti ti-key', 'allowed' => $canViewAdminTabs],
       'logs'    => ['id' => 'rt-tab-logs', 'label' => __('Logs', 'nextool'), 'icon' => 'ti ti-report-analytics', 'allowed' => $canViewAdminTabs],
       'servicos'  => ['id' => 'rt-tab-servicos', 'label' => __('Serviços', 'nextool'), 'icon' => 'ti ti-briefcase', 'allowed' => $canViewAdminTabs],
-      'novidades' => ['id' => 'rt-tab-novidades', 'label' => __('Novidades', 'nextool'), 'icon' => 'ti ti-sparkles', 'allowed' => $canViewAdminTabs],
+      'manutencao' => ['id' => 'rt-tab-manutencao', 'label' => __('Manutenção', 'nextool'), 'icon' => 'ti ti-tool', 'allowed' => $canViewAdminTabs],
       'sobre'     => ['id' => 'rt-tab-sobre', 'label' => __('Sobre', 'nextool'), 'icon' => 'ti ti-info-circle', 'allowed' => $canViewAdminTabs],
    ];
    $canShow = ($nextool_show_only_tab === 'modules' && $canViewAnyModule)
-      || (in_array($nextool_show_only_tab, ['licenca', 'logs', 'alertas', 'servicos', 'novidades', 'sobre'], true) && $canViewAdminTabs);
+      || (in_array($nextool_show_only_tab, ['licenca', 'logs', 'alertas', 'servicos', 'sobre', 'manutencao'], true) && $canViewAdminTabs);
    echo "<div class='m-3' id='nextool-config-form'>";
    if (!$canShow) {
       echo "<div class='alert alert-warning'><i class='ti ti-lock me-2'></i>" . __('Sem permissão para acessar esta seção.', 'nextool') . "</div>";
@@ -531,10 +531,10 @@ $tabsRegistry = $tabsRegistry ?? [
       'icon'    => 'ti ti-briefcase',
       'allowed' => $canViewAdminTabs,
    ],
-   'novidades' => [
-      'id'      => 'rt-tab-novidades',
-      'label'   => __('Novidades', 'nextool'),
-      'icon'    => 'ti ti-sparkles',
+   'manutencao' => [
+      'id'      => 'rt-tab-manutencao',
+      'label'   => __('Manutenção', 'nextool'),
+      'icon'    => 'ti ti-tool',
       'allowed' => $canViewAdminTabs,
    ],
    'sobre' => [
@@ -563,7 +563,7 @@ foreach ($tabsRegistry as $key => $meta) {
 // Exibido para qualquer perfil que enxergue a tela (informativo). Botões Sincronizar
 // e "Atualização Disponível" são ocultados para perfis sem canManageAdminTabs.
 $nextool_hero_standalone = '';
-if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'logs', 'alertas', 'sobre'], true)) {
+if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'logs', 'alertas', 'servicos', 'sobre', 'manutencao'], true)) {
    ob_start();
    $nextoolHeroWithMarginTop = false;
    $nextoolHeroDisableSync = false;
@@ -574,8 +574,10 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
       'modules' => 'PluginNextoolMainConfig$1',
       'licenca' => 'PluginNextoolMainConfig$3',
       'alertas' => 'PluginNextoolMainConfig$4',
-      'logs'    => 'PluginNextoolMainConfig$5',
-      'sobre'   => 'PluginNextoolMainConfig$' . PluginNextoolMainConfig::TAB_SOBRE,
+      'logs'      => 'PluginNextoolMainConfig$5',
+      'servicos'  => 'PluginNextoolMainConfig$' . PluginNextoolMainConfig::TAB_SERVICOS,
+      'sobre'     => 'PluginNextoolMainConfig$' . PluginNextoolMainConfig::TAB_SOBRE,
+      'manutencao' => 'PluginNextoolMainConfig$' . PluginNextoolMainConfig::TAB_MANUTENCAO,
    ];
    $nextoolHeroForcetab = $nextoolHeroForcetabMap[$nextool_standalone_output_tab] ?? 'PluginNextoolMainConfig$1';
    include NEXTOOL_PHP_DIR . '/front/tabs/config.hero.inc.php';
@@ -631,14 +633,13 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
 
         <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.licenca.tab.inc.php'; ?>
 
+        <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.manutencao.tab.inc.php'; ?>
         <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.sobre.tab.inc.php'; ?>
         <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.logs.tab.inc.php'; ?>
 
         <?php include NEXTOOL_PHP_DIR . '/front/tabs/config.alertas.tab.inc.php'; ?>
 
         <?php $nextoolVitrineTab = 'servicos'; include NEXTOOL_PHP_DIR . '/front/tabs/config.vitrine.tab.inc.php'; ?>
-
-        <?php $nextoolVitrineTab = 'novidades'; include NEXTOOL_PHP_DIR . '/front/tabs/config.vitrine.tab.inc.php'; ?>
 
       <?php if (!$nextool_is_standalone): ?></div></div><?php endif; ?>
 

@@ -2343,7 +2343,7 @@ class PluginNextoolLicenseValidator {
       // (#246) Contexto SUPERVISIONADO = há um humano na tela (Sincronizar, instalar/atualizar
       // módulo, aceitar políticas...). A cron catalogSync (6/6h) roda sem ninguém olhando:
       // nela o passo destrutivo (desinstalar + apagar arquivos) NÃO acontece -- só desativa
-      // e avisa na aba Alertas. Um falso negativo de entitlement no servidor deixa de
+      // e avisa na aba Novidades. Um falso negativo de entitlement no servidor deixa de
       // apagar módulo pago à noite; a remoção fica para a próxima validação supervisionada,
       // que reconfirma a ausência de licença antes de agir.
       $supervised = $origin !== 'cron_sync';
@@ -2405,7 +2405,7 @@ class PluginNextoolLicenseValidator {
    }
 
    /**
-    * (#246) Avisa o admin, na aba Alertas + sino, que a cron desativou um módulo pago sem
+    * (#246) Avisa o admin, na aba Novidades + sino, que a cron desativou um módulo pago sem
     * licença e que a remoção espera um Sincronizar manual. Dedup: 1 aviso por módulo/dia
     * (chave com a data; o AlertManager expira a família anterior ao emitir a nova).
     */
@@ -2649,7 +2649,7 @@ class PluginNextoolLicenseValidator {
     * Publica um alerta recém-recebido no canal de notificações (sino por usuário
     * via módulo de notificações). Fail-silent por contrato do canal: publicar
     * nunca pode quebrar a sincronização; ambiente sem o módulo consumidor apenas
-    * não exibe (o popup/aba Alertas continuam cobrindo).
+    * não exibe (o popup/aba Novidades continuam cobrindo).
     */
    private static function publishAlertNotification(int $remoteId, array $data): void {
       // Conteúdo das guias Serviços/Novidades (nextool-dev#277) não é aviso: não vai para o sino.

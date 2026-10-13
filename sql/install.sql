@@ -69,63 +69,38 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_license_config` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Tabela de tentativas de validação de licença
-CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_validation_attempts` (
+-- Log unificado da base (aba Logs): validações de licença, alterações de configuração e ações em
+-- módulos. Substitui main_validation_attempts, main_config_audit e main_module_audit, que são
+-- copiadas para cá e removidas no upgrade (PluginNextoolEventLog::migrateLegacyTables).
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_logs` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `attempt_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `result` tinyint NOT NULL COMMENT '0=falha, 1=sucesso',
-  `message` text DEFAULT NULL COMMENT 'Mensagem de erro ou sucesso',
-  `http_code` int DEFAULT NULL COMMENT 'Código HTTP da resposta',
-  `response_time_ms` int DEFAULT NULL COMMENT 'Tempo de resposta em milissegundos',
+  `date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `log_type` varchar(16) NOT NULL COMMENT 'validation|config|module',
+  `section` varchar(32) DEFAULT NULL COMMENT 'Seção da configuração (config)',
+  `action` varchar(64) DEFAULT NULL,
+  `module_key` varchar(100) DEFAULT NULL,
   `origin` varchar(64) DEFAULT NULL COMMENT 'Contexto informado pelo chamador',
-  `requested_modules` text DEFAULT NULL COMMENT 'Lista de módulos solicitados (JSON)',
-  `client_identifier` varchar(191) DEFAULT NULL COMMENT 'Identificador do ambiente local',
-  `license_status` varchar(32) DEFAULT NULL COMMENT 'Status retornado pelo administrativo',
-  `plan` varchar(32) DEFAULT NULL COMMENT 'Plano retornado pelo administrativo',
-  `force_refresh` tinyint DEFAULT NULL COMMENT '1 quando cache foi ignorado',
-  `cache_hit` tinyint DEFAULT NULL COMMENT '1 quando resposta veio do cache local',
-  `user_id` int unsigned DEFAULT NULL COMMENT 'Usuário autenticado que originou a chamada',
-  PRIMARY KEY (`id`),
-  KEY `attempt_date` (`attempt_date`),
-  KEY `result` (`result`),
-  KEY `origin` (`origin`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Auditoria de ações de módulos (instalação/ativação/desativação)
-CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_module_audit` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `action_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `module_key` varchar(100) NOT NULL,
-  `action` varchar(32) NOT NULL COMMENT 'install/enable/disable/uninstall',
-  `result` tinyint NOT NULL DEFAULT '0' COMMENT '0=falha, 1=sucesso',
-  `message` text DEFAULT NULL COMMENT 'Mensagem resumindo o resultado',
-  `user_id` int unsigned DEFAULT NULL COMMENT 'Usuário autenticado (se houver)',
-  `origin` varchar(64) DEFAULT NULL COMMENT 'Origem declarada pela ação',
-  `source_ip` varchar(45) DEFAULT NULL COMMENT 'IP do solicitante (quando aplicável)',
+  `result` tinyint DEFAULT NULL COMMENT '0=falha, 1=sucesso',
+  `message` text DEFAULT NULL,
+  `users_id` int unsigned NOT NULL DEFAULT '0',
+  `source_ip` varchar(45) DEFAULT NULL,
+  `http_code` int DEFAULT NULL,
+  `response_time_ms` int DEFAULT NULL,
+  `client_identifier` varchar(191) DEFAULT NULL,
   `license_status` varchar(32) DEFAULT NULL,
   `plan` varchar(32) DEFAULT NULL,
-  `allowed_modules` text DEFAULT NULL COMMENT 'Snapshot de allowed_modules (JSON)',
-  `requested_modules` text DEFAULT NULL COMMENT 'Snapshot dos módulos solicitados (JSON)',
+  `force_refresh` tinyint DEFAULT NULL,
+  `cache_hit` tinyint DEFAULT NULL,
+  `requested_modules` text DEFAULT NULL COMMENT 'JSON',
+  `allowed_modules` text DEFAULT NULL COMMENT 'JSON',
+  `details` text DEFAULT NULL COMMENT 'JSON',
+  `legacy_id` int unsigned DEFAULT NULL COMMENT 'id na tabela antiga (migração)',
   PRIMARY KEY (`id`),
+  KEY `legacy` (`log_type`, `legacy_id`),
+  KEY `date` (`date`),
+  KEY `log_type` (`log_type`),
   KEY `module_key` (`module_key`),
-  KEY `action_date` (`action_date`),
-  KEY `action` (`action`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Auditoria de alterações de configuração/licença
-CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_config_audit` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `event_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `section` varchar(32) NOT NULL COMMENT 'global|license|validation',
-  `action` varchar(64) DEFAULT NULL,
-  `result` tinyint DEFAULT NULL COMMENT '0=falha,1=sucesso',
-  `message` text DEFAULT NULL,
-  `user_id` int unsigned DEFAULT NULL,
-  `source_ip` varchar(45) DEFAULT NULL,
-  `details` text DEFAULT NULL COMMENT 'JSON com campos/valores',
-  PRIMARY KEY (`id`),
-  KEY `section` (`section`),
-  KEY `event_date` (`event_date`)
+  KEY `users_id` (`users_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Tabela para página de config standalone (abas verticais: Módulos, Contato, Licenciamento, Logs)

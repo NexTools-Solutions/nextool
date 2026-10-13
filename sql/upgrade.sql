@@ -21,15 +21,6 @@ ALTER TABLE `glpi_plugin_nextool_main_license_config`
    MODIFY COLUMN `date_creation` timestamp NULL DEFAULT NULL,
    MODIFY COLUMN `date_mod` timestamp NULL DEFAULT NULL;
 
-ALTER TABLE `glpi_plugin_nextool_main_validation_attempts`
-   MODIFY COLUMN `attempt_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP;
-
-ALTER TABLE `glpi_plugin_nextool_main_module_audit`
-   MODIFY COLUMN `action_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP;
-
-ALTER TABLE `glpi_plugin_nextool_main_config_audit`
-   MODIFY COLUMN `event_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP;
-
 ALTER TABLE `glpi_plugin_nextool_core_updates`
    MODIFY COLUMN `finished_at` timestamp NULL DEFAULT NULL COMMENT 'Momento de conclusão da operação',
    MODIFY COLUMN `date_creation` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Momento de criação do registro';

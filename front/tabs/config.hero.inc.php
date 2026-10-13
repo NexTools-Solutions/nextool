@@ -100,7 +100,7 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                        data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal"
                        onclick="nextoolRefreshLinkStatus();">
                   <i class="ti <?php echo !empty($accountLinked) ? 'ti-user-cog' : 'ti-user-check'; ?> me-1"></i>
-                  <?php echo !empty($accountLinked) ? __('Gerenciar conta', 'nextool') : __('Vincular conta', 'nextool'); ?>
+                  <?php echo !empty($accountLinked) ? __('Conta', 'nextool') : __('Vincular conta', 'nextool'); ?>
                </button>
             <?php endif; ?>
             </div>
@@ -126,6 +126,16 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
             <a href="<?php echo PluginNextoolCompat::escape(NEXTOOL_WHATSAPP_URL); ?>" target="_blank" rel="noopener" class="btn btn-light btn-sm"><i class="ti ti-brand-whatsapp me-1"></i><?php echo __('WhatsApp', 'nextool'); ?></a>
             <a href="<?php echo PluginNextoolCompat::escape(NEXTOOL_BOOKING_URL); ?>" target="_blank" rel="noopener" class="btn btn-light btn-sm"><i class="ti ti-calendar-event me-1"></i><?php echo __('Agendar uma conversa', 'nextool'); ?></a>
             <a href="<?php echo PluginNextoolCompat::escape(NEXTOOL_SITE_URL); ?>" target="_blank" rel="noopener" class="btn btn-light btn-sm"><i class="ti ti-world me-1"></i><?php echo __('Site', 'nextool'); ?></a>
+            <?php
+               // Blog no idioma do usuário (mesmo prefixo do site que a antiga guia Novidades usava) + UTM do hero.
+               $nextoolHeroLang = strtolower((string) ($_SESSION['glpilanguage'] ?? ''));
+               $nextoolHeroBlogPrefix = $nextoolHeroLang === 'pt_pt' ? '/pt-pt'
+                  : (in_array(substr($nextoolHeroLang, 0, 2), ['en', 'es', 'fr', 'it'], true) ? '/' . substr($nextoolHeroLang, 0, 2) : '');
+               $nextoolHeroBlogUrl = rtrim(NEXTOOL_SITE_URL, '/') . $nextoolHeroBlogPrefix . '/blog?' . http_build_query([
+                  'utm_source' => 'glpi', 'utm_medium' => 'nextool-base', 'utm_campaign' => 'hero', 'utm_content' => 'blog',
+               ]);
+            ?>
+            <a href="<?php echo PluginNextoolCompat::escape($nextoolHeroBlogUrl); ?>" target="_blank" rel="noopener" class="btn btn-light btn-sm" id="nextool-hero-blog"><i class="ti ti-news me-1"></i><?php echo __('Blog', 'nextool'); ?></a>
             <a href="<?php echo PluginNextoolCompat::escape(NEXTOOL_AUTHOR_URL); ?>" target="_blank" rel="noopener" class="btn btn-light btn-sm"><i class="ti ti-brand-linkedin me-1"></i>LinkedIn</a>
          </div>
       </div>
@@ -209,8 +219,12 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
          </div>
          <div class="modal-body">
-            <p class="text-muted small">
+            <?php // Um texto por estado: o JS (nextoolRefreshLinkStatus) mostra o certo depois de consultar o vínculo. ?>
+            <p class="text-muted small" id="nextool-account-link-intro-unlinked">
                <?php echo __('Vincule este ambiente a uma conta no nosso site para continuar baixando módulos gratuitos. Gere um código abaixo e confirme o vínculo no portal (já logado) ou informe o código manualmente.', 'nextool'); ?>
+            </p>
+            <p class="text-muted small d-none" id="nextool-account-link-intro-linked">
+               <?php echo __('Este ambiente está vinculado à sua conta NexTool e baixa os módulos gratuitos e os licenciados nela. Use "Ir ao painel" para acompanhar a conta no portal ou "Desvincular" para trocar de conta.', 'nextool'); ?>
             </p>
 
             <div id="nextool-account-link-status" class="alert alert-secondary d-flex align-items-center mb-3">
@@ -238,13 +252,12 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
             <div class="alert d-none mt-2" role="alert" id="nextool-account-link-alert"></div>
          </div>
          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-danger me-auto d-none" id="nextool-account-link-unlink-btn" onclick="nextoolUnlinkAccount(this);">
+            <button type="button" class="btn btn-outline-danger d-none" id="nextool-account-link-unlink-btn" onclick="nextoolUnlinkAccount(this);">
                <i class="ti ti-unlink me-1"></i><?php echo __('Desvincular', 'nextool'); ?>
             </button>
             <a href="https://app.nextoolsolutions.com/painel/plugin-nextool" target="_blank" rel="noopener" class="btn btn-outline-primary d-none" id="nextool-account-link-portal-go-btn">
                <i class="ti ti-external-link me-1"></i><?php echo __('Ir ao painel', 'nextool'); ?>
             </a>
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?php echo __('Fechar', 'nextool'); ?></button>
             <button type="button" class="btn btn-primary" id="nextool-account-link-generate-btn" onclick="nextoolGenerateLinkCode(this);">
                <i class="ti ti-key me-1"></i><?php echo __('Gerar código', 'nextool'); ?>
             </button>

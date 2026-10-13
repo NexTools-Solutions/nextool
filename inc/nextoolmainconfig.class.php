@@ -33,9 +33,13 @@ interface PluginNextoolMainConfigConstants {
    const FIXED_TAB_COUNT = 5;
    /** Guias de divulgação (nextool-dev#277): números altos, fora da faixa das guias de módulo. */
    const TAB_SERVICOS  = 90;
+   /** Guia "Novidades" antiga: saiu em 2026-10-13 (a aba 4 passou a se chamar Novidades). Link antigo para
+    *  ela é redirecionado para a 4 em front/nextoolconfig.form.php; o número fica reservado. */
    const TAB_NOVIDADES = 91;
    /** Guia "Sobre" da base (ficha do plugin + como funciona o licenciamento), antes de Logs. */
    const TAB_SOBRE     = 92;
+   /** Guia "Manutenção" da base: rotinas, provisionamento e desinstalação, antes de Sobre e Logs. */
+   const TAB_MANUTENCAO = 93;
 }
 
 trait PluginNextoolMainConfigBody {
@@ -211,8 +215,8 @@ trait PluginNextoolMainConfigBody {
          'PluginNextoolMainConfig$4',
          'PluginNextoolMainConfig$5',
          'PluginNextoolMainConfig$' . self::TAB_SERVICOS,
-         'PluginNextoolMainConfig$' . self::TAB_NOVIDADES,
          'PluginNextoolMainConfig$' . self::TAB_SOBRE,
+         'PluginNextoolMainConfig$' . self::TAB_MANUTENCAO,
       ];
       $moduleTabs = self::getModuleConfigTabs();
       foreach (array_keys($moduleTabs) as $tabNum) {
@@ -234,11 +238,11 @@ trait PluginNextoolMainConfigBody {
          // 2 (Contato) saiu em 2026-10-09: o suporte é aberto pelo botão Suporte do hero. O número fica vago
          // (não renumerar: links com forcetab apontam para as demais).
          3 => self::createTabEntry(__('Licenciamento', 'nextool'), 0, $item::getType(), 'ti ti-key'),
-         4 => self::createTabEntry(__('Alertas', 'nextool'), 0, $item::getType(), 'ti ti-bell'),
+         // 4 = Novidades (até 2026-10-13 "Alertas"): avisos do servidor e locais + novidades publicadas.
+         4 => self::createTabEntry(__('Novidades', 'nextool'), 0, $item::getType(), 'ti ti-sparkles'),
          // nextool-dev#277: números fixos FORA da faixa das guias de módulo (que começam em FIXED_TAB_COUNT + 1):
          // aumentar o FIXED_TAB_COUNT renumeraria as guias de módulo e quebraria links com forcetab.
          self::TAB_SERVICOS  => self::createTabEntry(__('Serviços', 'nextool'), 0, $item::getType(), 'ti ti-briefcase'),
-         self::TAB_NOVIDADES => self::createTabEntry(__('Novidades', 'nextool'), 0, $item::getType(), 'ti ti-sparkles'),
       ];
 
       $moduleTabs = self::getModuleConfigTabs();
@@ -251,10 +255,23 @@ trait PluginNextoolMainConfigBody {
          );
       }
 
+      $tabs[self::TAB_MANUTENCAO] = self::createTabEntry(__('Manutenção', 'nextool'), 0, $item::getType(), 'ti ti-tool');
       $tabs[self::TAB_SOBRE] = self::createTabEntry(__('Sobre', 'nextool'), 0, $item::getType(), 'ti ti-info-circle');
       $tabs[5] = self::createTabEntry(__('Logs', 'nextool'), 0, $item::getType(), 'ti ti-report-analytics');
 
       return $tabs;
+   }
+
+   /**
+    * Rodapé da configuração (versões, ambiente e links fixos) no fim de TODA aba, das abas da base e das
+    * de configuração dos módulos. Não-fatal: falha no rodapé nunca derruba a aba.
+    */
+   private static function nextoolRenderFooter(): void {
+      try {
+         include NEXTOOL_PHP_DIR . '/front/tabs/config.footer.inc.php';
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'Rodapé da configuração falhou: ' . $e->getMessage() . "\n");
+      }
    }
 
    public static function displayTabContentForItem(CommonGLPI $item, $tabnum = 1, $withtemplate = 0) {
@@ -263,7 +280,8 @@ trait PluginNextoolMainConfigBody {
       }
 
       $tabMap = [1 => 'modules', 3 => 'licenca', 4 => 'alertas', 5 => 'logs',
-                 self::TAB_SERVICOS => 'servicos', self::TAB_NOVIDADES => 'novidades', self::TAB_SOBRE => 'sobre'];
+                 self::TAB_SERVICOS => 'servicos', self::TAB_SOBRE => 'sobre',
+                 self::TAB_MANUTENCAO => 'manutencao'];
       $moduleTabs = self::getModuleConfigTabs();
 
       if (isset($tabMap[$tabnum])) {
@@ -272,6 +290,7 @@ trait PluginNextoolMainConfigBody {
          $GLOBALS['nextool_config_form_included'] = true; // ver cabeçalho de config.form.php (#252)
          include NEXTOOL_PHP_DIR . '/front/config.form.php';
          unset($GLOBALS['nextool_show_only_tab'], $GLOBALS['nextool_config_form_included']);
+         self::nextoolRenderFooter();
          return true;
       }
 
@@ -326,6 +345,7 @@ trait PluginNextoolMainConfigBody {
             unset($GLOBALS['nextool_config_form_test_url']);
          }
          echo '</div>';
+         self::nextoolRenderFooter();
          return true;
       }
 

@@ -2098,9 +2098,32 @@ function nextoolRefreshLinkStatus() {
       }
       var goBtn = document.getElementById('nextool-account-link-portal-go-btn');
       var genBtn = document.getElementById('nextool-account-link-generate-btn');
+      var introLinked = document.getElementById('nextool-account-link-intro-linked');
+      var introUnlinked = document.getElementById('nextool-account-link-intro-unlinked');
+      if (introLinked) { introLinked.classList.toggle('d-none', !d.linked); }
+      if (introUnlinked) { introUnlinked.classList.toggle('d-none', !!d.linked); }
       if (d.linked) {
-         statusBox.className = 'alert alert-success mb-3';
-         statusBox.innerHTML = '<i class="ti ti-circle-check me-1"></i><?php echo PluginNextoolCompat::escape(__('Ambiente vinculado', 'nextool')); ?>' + (d.portal_email ? (': <strong>' + d.portal_email + '</strong>') : '');
+         // Um dado por linha (o .alert do Tabler é flex: d-block evita as linhas lado a lado). E-mail e código
+         // do ambiente (client_identifier) vêm do servidor: montados com nós de texto, nunca no innerHTML.
+         statusBox.className = 'alert alert-success mb-3 d-block';
+         statusBox.textContent = '';
+         var addLine = function (label, value, asCode) {
+            var line = document.createElement('div');
+            line.className = 'mt-1';
+            line.appendChild(document.createTextNode(label + ': '));
+            var val = document.createElement(asCode ? 'code' : 'strong');
+            if (asCode) { val.className = 'text-nowrap'; }
+            val.textContent = value;
+            line.appendChild(val);
+            statusBox.appendChild(line);
+         };
+         var linkedLine = document.createElement('div');
+         linkedLine.className = 'fw-semibold';
+         linkedLine.innerHTML = '<i class="ti ti-circle-check me-1"></i>';
+         linkedLine.appendChild(document.createTextNode(<?php echo json_encode(__('Ambiente vinculado', 'nextool')); ?>));
+         statusBox.appendChild(linkedLine);
+         if (d.portal_email) { addLine(<?php echo json_encode(__('Conta', 'nextool')); ?>, d.portal_email, false); }
+         if (d.environment_id) { addLine(<?php echo json_encode(__('Código do ambiente', 'nextool')); ?>, d.environment_id, true); }
          if (unlinkBtn) { unlinkBtn.classList.remove('d-none'); }
          if (goBtn) { goBtn.classList.remove('d-none'); }
          if (genBtn) { genBtn.classList.add('d-none'); }

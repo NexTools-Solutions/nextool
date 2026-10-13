@@ -35,14 +35,6 @@ require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
 
 $e = static fn($v): string => (string) PluginNextoolCompat::escape((string) $v);
 
-// Ficha técnica deste ambiente (rodapé da guia).
-$sobreDist        = PluginNextoolConfig::getDistributionSettings();
-$sobreIdentifier  = trim((string) ($sobreDist['client_identifier'] ?? ''));
-$sobreGlpiVersion = defined('GLPI_VERSION') ? (string) GLPI_VERSION : '-';
-$sobreLinked      = !empty($accountLinked);
-$sobreWeb         = PluginNextoolCompat::webDir();
-$sobreLicencaUrl  = $sobreWeb . '/front/nextoolconfig.form.php?id=1&forcetab=' . rawurlencode('PluginNextoolMainConfig$3');
-$sobreModulosUrl  = $sobreWeb . '/front/nextoolconfig.form.php?id=1&forcetab=' . rawurlencode('PluginNextoolMainConfig$1');
 
 // Logo embutido (data URI): a raiz do plugin não é servida pelo GLPI 11/12, e front/ vai no pacote.
 $sobreLogoFile = NEXTOOL_PHP_DIR . '/front/logo-nextool-192.png';
@@ -225,25 +217,6 @@ $sobreCheck = static fn(string $text, bool $last = false): string =>
                      </ul>
                   </div></div>
                </div>
-            </div>
-
-            <!-- Ficha técnica deste ambiente (o contato fica no hero) -->
-            <div class="d-flex flex-wrap align-items-center gap-3 text-muted small border-top pt-3">
-               <span><i class="ti ti-tool me-1"></i>NexTool <strong>v<?php echo $e(PLUGIN_NEXTOOL_VERSION); ?></strong></span>
-               <span><i class="ti ti-server me-1"></i>GLPI <strong><?php echo $e($sobreGlpiVersion); ?></strong> · PHP <?php echo $e(PHP_VERSION); ?></span>
-               <span><i class="ti ti-fingerprint me-1"></i><?php echo __('Ambiente', 'nextool'); ?>
-                  <?php echo $sobreIdentifier !== '' ? '<code>' . $e($sobreIdentifier) . '</code>' : '<em>' . $e(__('não identificado', 'nextool')) . '</em>'; ?>
-                  <span class="badge <?php echo $sobreLinked ? 'bg-success' : 'bg-secondary'; ?> text-white ms-1"><?php echo $e($sobreLinked ? __('Vinculado', 'nextool') : __('Não vinculado', 'nextool')); ?></span>
-               </span>
-               <span class="ms-auto">
-                  <a href="<?php echo $e($sobreLicencaUrl); ?>" class="text-decoration-underline"><?php echo __('Minhas licenças', 'nextool'); ?></a>
-                  · <a href="<?php echo $e($sobreModulosUrl); ?>" class="text-decoration-underline"><?php echo __('Módulos', 'nextool'); ?></a>
-                  · <a href="<?php echo $e(NEXTOOL_RELEASES_URL); ?>" target="_blank" rel="noopener" class="text-decoration-underline">Releases</a>
-                  · <a href="<?php echo $e(NEXTOOL_TERMS_URL); ?>" target="_blank" rel="noopener" class="text-decoration-underline"><?php echo __('Termos de uso', 'nextool'); ?></a>
-                  · <?php echo sprintf(__('Desenvolvido por %s', 'nextool'),
-                        '<a href="' . $e(NEXTOOL_AUTHOR_URL) . '" target="_blank" rel="noopener" class="text-decoration-underline">' . $e(NEXTOOL_AUTHOR_NAME) . '</a>'
-                        . ' · <a href="' . $e(NEXTOOL_SITE_URL) . '" target="_blank" rel="noopener" class="text-decoration-underline">NexTool Solutions</a>'); ?>
-               </span>
             </div>
          </div>
       </div>

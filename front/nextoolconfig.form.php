@@ -59,6 +59,10 @@ if (!isset($_SESSION['glpi_tabs'])) {
    $_SESSION['glpi_tabs'] = [];
 }
 
+// A guia "Novidades" ($91) saiu em 2026-10-13: a aba 4 (antes "Alertas") passou a se chamar Novidades.
+if (($_GET['forcetab'] ?? '') === 'PluginNextoolMainConfig$' . PluginNextoolMainConfig::TAB_NOVIDADES) {
+   $_GET['forcetab'] = 'PluginNextoolMainConfig$4';
+}
 if (isset($_GET['forcetab']) && in_array($_GET['forcetab'], $validTabs, true)) {
    $forcetab = $_GET['forcetab'];
    $_SESSION['glpi_tabs'][$tabKey] = $forcetab;

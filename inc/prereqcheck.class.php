@@ -4,7 +4,7 @@ declare(strict_types=1);
  * -------------------------------------------------------------------------
  * NexTool Solutions - Pré-requisitos do ambiente que exigem humano (nextool-dev#260)
  * -------------------------------------------------------------------------
- * Três checks viram ALERTA LOCAL (aba Alertas + sino) em vez de linha de log:
+ * Três checks viram ALERTA LOCAL (aba Novidades + sino) em vez de linha de log:
  *  1. base desatualizada bloqueando download/atualização de módulos
  *     (`nextool_upgrade_required` do servidor, ou derivado do catálogo local);
  *  2. extensões PHP ausentes (curl, phar; verificador Ed25519 só com update do

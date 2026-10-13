@@ -73,8 +73,9 @@ class PluginNextoolAlertManager {
    }
 
    /**
-    * Tipos de comunicado que NÃO são aviso: são o conteúdo das guias "Serviços" e "Novidades" (nextool-dev#277).
-    * Chegam pelo mesmo canal dos comunicados, mas ficam fora do popup, do histórico da aba Alertas e do sino.
+    * Tipos de comunicado que NÃO são aviso (nextool-dev#277): ficam fora do popup e do sino. `servicos` é o conteúdo
+    * da guia Serviços e fica fora também da lista da aba Novidades; `novidades` aparece nessa lista (desde
+    * 2026-10-13, quando a guia Novidades própria saiu e a aba 4, antes "Alertas", passou a se chamar Novidades).
     */
    public const VITRINE_TYPES = ['servicos', 'novidades'];
 
@@ -136,14 +137,18 @@ class PluginNextoolAlertManager {
       $reads  = self::readsForUser($userId);
       $iterator = $DB->request([
          'FROM'  => self::TABLE,
-         'WHERE' => [['NOT' => ['alert_type' => self::VITRINE_TYPES]]], // conteúdo das guias (#277) não é aviso
+         // Só a guia Serviços fica fora: as novidades publicadas aparecem na aba Novidades (2026-10-13),
+         // mas continuam fora do sino e do popup (getUnreadAlerts).
+         'WHERE' => [['NOT' => ['alert_type' => ['servicos']]]],
          'ORDER' => 'date_received DESC',
          'LIMIT' => $limit,
       ]);
       $alerts = [];
       foreach ($iterator as $row) {
-         // Histórico mostra tudo; o expirado fica visível com o marcador (aba Alertas).
+         // Aviso expirado fica visível com o marcador (aba Novidades); novidade publicada vencida sai da lista,
+         // como os itens da guia Serviços (2026-10-13: não acumula conteúdo velho nem item de teste).
          $row['is_expired'] = self::isExpired($row);
+         if ($row['is_expired'] && $row['alert_type'] === 'novidades') { continue; }
          // Estado de leitura DO USUÁRIO ATUAL (o is_read global vira legado).
          $id = (int)$row['id'];
          $row['is_read_user']   = isset($reads[$id]) || !empty($row['is_read']);

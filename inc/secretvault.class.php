@@ -86,7 +86,7 @@ class PluginNextoolSecretVault {
    /**
     * Segredo marcado como cifrado que nao abre: quase sempre a chave do GLPI foi trocada (security:change_key) sem
     * rodar a re-cifra do NexTool (nextool-dev#269). Ate aqui o sintoma era silencioso (as integracoes paravam). Vira
-    * aviso na aba Alertas, um por chave do GLPI (a chave do aviso leva a impressao digital da chave atual: cada troca
+    * aviso na aba Novidades, um por chave do GLPI (a chave do aviso leva a impressao digital da chave atual: cada troca
     * gera um aviso novo). Marca em GLPI_CACHE_DIR: depois do primeiro, nenhuma consulta nas chamadas seguintes.
     * O `plugins:nextool:secrets:rekey --apply` expira o aviso quando nada mais falha.
     */

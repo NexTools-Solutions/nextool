@@ -1,8 +1,9 @@
 <?php
 declare(strict_types=1);
 /**
- * Guias de divulgação "Serviços" e "Novidades" (nextool-dev#277). Um arquivo só para as duas: quem inclui define
- * $nextoolVitrineTab ('servicos' | 'novidades').
+ * Guia de divulgação "Serviços" (nextool-dev#277). Nasceu servindo também a guia "Novidades", que saiu em
+ * 2026-10-13: as novidades publicadas aparecem na aba 4 (Novidades, antes Alertas) e o blog ganhou botão no hero.
+ * Quem inclui define $nextoolVitrineTab ('servicos').
  * Contexto/variáveis esperadas: $nextool_is_standalone, $nextool_standalone_output_tab, $canViewAdminTabs,
  * $firstTabKey, $nextool_hero_standalone, $nextoolVitrineTab.
  *
@@ -15,7 +16,7 @@ declare(strict_types=1);
  * @license GPLv3+
  */
 
-$nextoolVitrineTab = in_array($nextoolVitrineTab ?? '', PluginNextoolAlertManager::VITRINE_TYPES, true) ? $nextoolVitrineTab : 'servicos';
+$nextoolVitrineTab = 'servicos';
 $show_vitrine = (!$nextool_is_standalone || $nextool_standalone_output_tab === $nextoolVitrineTab) && $canViewAdminTabs;
 
 if ($show_vitrine):
@@ -37,24 +38,14 @@ if ($show_vitrine):
    };
 
    $nextoolVitrineItems = PluginNextoolAlertManager::getVitrineItems($nextoolVitrineTab);
-   if ($nextoolVitrineTab === 'servicos') {
-      $nextoolVitrineTitle = __('Serviços NexTool Solutions', 'nextool');
-      $nextoolVitrineIcon  = 'ti ti-briefcase';
-      $nextoolVitrineIntro = __('Além dos módulos, a NexTool ajuda a tirar mais do seu GLPI: da implantação à evolução contínua.', 'nextool');
-      $nextoolVitrineDefault = [
-         ['ti ti-messages', __('Consultoria em GLPI', 'nextool'), __('Processos, catálogo de serviços, SLAs e automações desenhados para a sua operação.', 'nextool'), $nextoolSiteUrl('/servicos/consultoria', 'consultoria'), __('Conhecer a consultoria', 'nextool')],
-         ['ti ti-rocket', __('Implantação', 'nextool'), __('GLPI no ar com a sua estrutura, perfis, regras e integrações, pronto para a equipe usar.', 'nextool'), $nextoolSiteUrl('/servicos/implantacao', 'implantacao'), __('Conhecer a implantação', 'nextool')],
-         ['ti ti-puzzle', __('Módulos sob medida', 'nextool'), __('Precisa de algo que nenhum módulo faz? Desenvolvemos para o seu cenário.', 'nextool'), $nextoolSiteUrl('/servicos/consultoria', 'sob-medida'), __('Falar com um especialista', 'nextool')],
-      ];
-   } else {
-      $nextoolVitrineTitle = __('Novidades NexTool', 'nextool');
-      $nextoolVitrineIcon  = 'ti ti-sparkles';
-      $nextoolVitrineIntro = __('Módulos novos, versões e dicas para o seu GLPI.', 'nextool');
-      $nextoolVitrineDefault = [
-         ['ti ti-news', __('Blog', 'nextool'), __('Guias práticos e novidades do ecossistema GLPI.', 'nextool'), $nextoolSiteUrl('/blog', 'blog'), __('Ler o blog', 'nextool')],
-         ['ti ti-apps', __('Catálogo de módulos', 'nextool'), __('Conheça todos os módulos NexTool, gratuitos e licenciados.', 'nextool'), $nextoolSiteUrl('/plugins-glpi', 'catalogo'), __('Ver o catálogo', 'nextool')],
-      ];
-   }
+   $nextoolVitrineTitle = __('Serviços NexTool Solutions', 'nextool');
+   $nextoolVitrineIcon  = 'ti ti-briefcase';
+   $nextoolVitrineIntro = __('Além dos módulos, a NexTool ajuda a tirar mais do seu GLPI: da implantação à evolução contínua.', 'nextool');
+   $nextoolVitrineDefault = [
+      ['ti ti-messages', __('Consultoria em GLPI', 'nextool'), __('Processos, catálogo de serviços, SLAs e automações desenhados para a sua operação.', 'nextool'), $nextoolSiteUrl('/servicos/consultoria', 'consultoria'), __('Conhecer a consultoria', 'nextool')],
+      ['ti ti-rocket', __('Implantação', 'nextool'), __('GLPI no ar com a sua estrutura, perfis, regras e integrações, pronto para a equipe usar.', 'nextool'), $nextoolSiteUrl('/servicos/implantacao', 'implantacao'), __('Conhecer a implantação', 'nextool')],
+      ['ti ti-puzzle', __('Módulos sob medida', 'nextool'), __('Precisa de algo que nenhum módulo faz? Desenvolvemos para o seu cenário.', 'nextool'), $nextoolSiteUrl('/servicos/consultoria', 'sob-medida'), __('Falar com um especialista', 'nextool')],
+   ];
 ?>
 <?php if (!$nextool_is_standalone): ?><div class="tab-pane fade<?php echo $firstTabKey === $nextoolVitrineTab ? ' show active' : ''; ?>" id="rt-tab-<?php echo $nextoolVitrineTab; ?>" role="tabpanel" aria-labelledby="rt-tab-<?php echo $nextoolVitrineTab; ?>-link"><?php endif; ?>
    <?php echo $nextool_hero_standalone; ?>

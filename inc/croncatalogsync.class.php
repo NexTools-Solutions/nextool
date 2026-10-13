@@ -163,7 +163,7 @@ class PluginNextoolCronCatalogSync {
 
    /**
     * (#162) Detecta update disponível (core + módulos) e avisa o admin via alerta
-    * LOCAL (popup/aba Alertas + sino), com dedup por versão/conjunto -- a mesma
+    * LOCAL (popup/aba Novidades + sino), com dedup por versão/conjunto -- a mesma
     * situação nunca re-alerta a cada tick de 6h. Nada é baixado/instalado aqui.
     */
    private static function notifyPendingUpdates(CronTask $task): void {

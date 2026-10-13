@@ -3,7 +3,7 @@
  * Compat de versao -- shim da interface de Search do GLPI 11.
  *
  * O GLPI 11 expoe \Glpi\Search\DefaultSearchRequestInterface; o GLPI 10 nao.
- * Classes do plugin (ex.: PluginNextoolValidationAttempt) declaram
+ * Classes do plugin (ex.: PluginNextoolEventLog) declaram
  * `implements \Glpi\Search\DefaultSearchRequestInterface`, clausula resolvida
  * no LOAD da classe -- no GLPI 10 dispararia Fatal "Interface not found" e
  * mataria o plugin_init.

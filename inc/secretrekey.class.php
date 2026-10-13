@@ -39,7 +39,7 @@ class PluginNextoolSecretRekey {
    public const RESULT_FAILED  = 'failed';      // parece cifrado (NXENC1) mas não decifra com nenhuma das duas
    public const RESULT_PLAIN   = 'plain';       // não é segredo cifrado: intocado
 
-   /** Família do aviso "segredo que não decifra" (aba Alertas). */
+   /** Família do aviso "segredo que não decifra" (aba Novidades). */
    public const ALERT_FAMILY = 'secret_undecryptable:';
 
    /** Tabelas grandes ou sem segredo que a varredura de `%config%` não abre. */
