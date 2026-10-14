@@ -245,6 +245,24 @@ if (method_exists('Session', 'initVars')) {
    Session::initVars();
 }
 
+// IDIOMA DO USUÁRIO. Neste path stateless o Kernel carregou os dicionários (core,
+// base e módulos) ANTES da restauração acima, sem sessão: valeu o idioma padrão do
+// GLPI. Sem recarregar, todo texto devolvido pelos handlers dos módulos sai nesse
+// idioma padrão, qualquer que seja o do usuário (sino do smartnotify em pt_BR para
+// quem usa fr_FR). Session::loadLanguage() cria um $TRANSLATE novo e só repõe os
+// plugins pelo caminho padrão; a base (fallback de variante) e os domínios
+// nextool_<modulo> são registrados de novo logo em seguida. No GLPI 10 a sessão já
+// vem viva do bootstrap e o idioma coincide: nada a fazer.
+global $TRANSLATE;
+$nxSessionLang = (string) ($_SESSION['glpilanguage'] ?? '');
+if ($nxSessionLang !== '' && isset($TRANSLATE) && $TRANSLATE->getLocale() !== $nxSessionLang) {
+   Session::loadLanguage();
+   plugin_nextool_load_base_lang();
+   foreach (PluginNextoolModuleManager::getInstance()->getActiveModules() as $nxLoadedModule) {
+      $nxLoadedModule->loadModuleLang();
+   }
+}
+
 // Reaplica CSRF para endpoints autenticados.
 // (O CheckCsrfListener é bypassado quando o path é stateless.)
 $method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) $_SERVER['REQUEST_METHOD']) : 'GET';

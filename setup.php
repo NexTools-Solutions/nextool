@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.40.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.40.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -162,6 +162,29 @@ function plugin_nextool_boot_fast_path_enabled(): bool {
 }
 
 /**
+ * Registra o dicionário da base no idioma da sessão (com fallback de variante:
+ * es_CO usa es_ES.mo sem alterar o idioma corrente do GLPI). Usado no init e
+ * pelo ajax/module_ajax.php quando ele restaura a sessão depois do boot.
+ */
+function plugin_nextool_load_base_lang(): void {
+   global $CFG_GLPI;
+
+   $requested = (string) ($_SESSION['glpilanguage'] ?? $CFG_GLPI['language'] ?? 'en_GB');
+   $resolved = PluginNextoolLocaleResolver::resolveMoFile(
+      NEXTOOL_PHP_DIR . '/locales',
+      $requested,
+      (string) ($CFG_GLPI['language'] ?? 'en_GB'),
+      (array) ($CFG_GLPI['languages'] ?? [])
+   );
+   if ($resolved !== null) {
+      // O 3o argumento registra o catálogo escolhido sob o locale real da sessão.
+      Plugin::loadLang('nextool', $resolved['locale'], $requested);
+   } else {
+      Plugin::loadLang('nextool');
+   }
+}
+
+/**
  * Hook executado durante o boot do GLPI, antes da sessão e da inicialização dos plugins.
  *
  * GLPI 11 (Symfony) aplica CSRF em qualquer POST não-stateless via CheckCsrfListener.
@@ -277,51 +300,67 @@ function plugin_init_nextool() {
       ? GLPI_CACHE_DIR . '/nextool_pending_apply'
       : null;
    if ($pendingApplyFlag !== null && is_file($pendingApplyFlag)) {
-      // try/catch OBRIGATÓRIO: uma exceção aqui (install de módulo antigo
-      // incompatível, permissão de arquivo, etc.) matava o init em TODO
-      // request - plugin sem hooks, POSTs 403 e flag/update_available presos
-      // para sempre (incidente do portfolio, 2026-06-10). Em falha: remove o
-      // flag (sai do loop), loga o erro e segue o init - o update pode ser
-      // re-tentado pela UI com o GLPI utilizável.
-      try {
-         global $DB;
-         $plugin = new Plugin();
-         if ($plugin->getFromDBbyDir('nextool')) {
-            $plugin->install($plugin->fields['id']);
-            $plugin->getFromDB($plugin->fields['id']);
-            if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
-               $plugin->activate($plugin->fields['id']);
+      // Um processo por vez (nextool-dev#287): a flag só some no fim, então requisições simultâneas logo
+      // depois do apply viam a flag e rodavam o install ao mesmo tempo -- a segunda falhava com
+      // "Duplicate column (1060)" no meio da migração (JMBA, 14/10/2026). Mesma trava do
+      // _plugin_nextool_ensure_schema(); com ela ocupada, outra requisição está migrando: não mexe na flag
+      // (a próxima requisição confere). Sem conseguir abrir o arquivo da trava, segue sem ela (como antes).
+      $pendingLock = @fopen(GLPI_CACHE_DIR . '/nextool_schema.lock', 'c');
+      $pendingLocked = $pendingLock !== false && flock($pendingLock, LOCK_EX | LOCK_NB);
+      clearstatcache(true, $pendingApplyFlag);
+      if (($pendingLock === false || $pendingLocked) && is_file($pendingApplyFlag)) {
+         // try/catch OBRIGATÓRIO: uma exceção aqui (install de módulo antigo
+         // incompatível, permissão de arquivo, etc.) matava o init em TODO
+         // request - plugin sem hooks, POSTs 403 e flag/update_available presos
+         // para sempre (incidente do portfolio, 2026-06-10). Em falha: remove o
+         // flag (sai do loop), loga o erro e segue o init - o update pode ser
+         // re-tentado pela UI com o GLPI utilizável.
+         try {
+            global $DB;
+            $plugin = new Plugin();
+            if ($plugin->getFromDBbyDir('nextool')) {
+               $plugin->install($plugin->fields['id']);
+               $plugin->getFromDB($plugin->fields['id']);
+               if ((int)($plugin->fields['state'] ?? 0) !== Plugin::ACTIVATED) {
+                  $plugin->activate($plugin->fields['id']);
+               }
+               // BOOT-SAFE: escrita DIRETA em glpi_configs - NUNCA Config::setConfigurationValues()
+               // aqui. setConfigurationValues() → CommonDBTM->update → post_updateItem →
+               // logConfigChange → Log::constructHistory → SearchOption::getOptionsForItemtype('Config')
+               // → plugin_fields_getAddSearchOptions() → "Class PluginFieldsContainer not found"
+               // quando o plugin Fields ainda não foi carregado NESTE boot dos plugins. Essa
+               // exceção matava o plugin_init e - no 4.3.0, antes do csrf_compliant - virava 403
+               // ("A ação que você requisitou não é permitida") em TODO POST, travando o cliente
+               // em loop. getConfigurationValues() lê direto do DB (sem cache), então o reset é
+               // visto no mesmo request. Incidente portfolio 2026-06-10 (stack real:
+               // setup.php → Config::setConfigurationValues → fields/hook.php:178).
+               foreach ([
+                  'pending_apply_version' => '',
+                  'update_available'      => '0',
+                  'staged_target_version' => '',
+                  'staged_source'         => '',
+                  'staged_at'             => '',
+               ] as $cfgName => $cfgValue) {
+                  $DB->update('glpi_configs', ['value' => $cfgValue], [
+                     'context' => 'plugin:nextool_core_update',
+                     'name'    => $cfgName,
+                  ]);
+               }
             }
-            // BOOT-SAFE: escrita DIRETA em glpi_configs - NUNCA Config::setConfigurationValues()
-            // aqui. setConfigurationValues() → CommonDBTM->update → post_updateItem →
-            // logConfigChange → Log::constructHistory → SearchOption::getOptionsForItemtype('Config')
-            // → plugin_fields_getAddSearchOptions() → "Class PluginFieldsContainer not found"
-            // quando o plugin Fields ainda não foi carregado NESTE boot dos plugins. Essa
-            // exceção matava o plugin_init e - no 4.3.0, antes do csrf_compliant - virava 403
-            // ("A ação que você requisitou não é permitida") em TODO POST, travando o cliente
-            // em loop. getConfigurationValues() lê direto do DB (sem cache), então o reset é
-            // visto no mesmo request. Incidente portfolio 2026-06-10 (stack real:
-            // setup.php → Config::setConfigurationValues → fields/hook.php:178).
-            foreach ([
-               'pending_apply_version' => '',
-               'update_available'      => '0',
-               'staged_target_version' => '',
-               'staged_source'         => '',
-               'staged_at'             => '',
-            ] as $cfgName => $cfgValue) {
-               $DB->update('glpi_configs', ['value' => $cfgValue], [
-                  'context' => 'plugin:nextool_core_update',
-                  'name'    => $cfgName,
-               ]);
+         } catch (\Throwable $e) {
+            error_log('[NexTool] pending_apply falhou (update pode ser re-tentado pela UI): ' . $e->getMessage());
+            if (class_exists('Toolbox')) {
+               Toolbox::logInFile('plugin_nextool', '[CORE-UPDATE] pending_apply EXCEPTION: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             }
+         } finally {
+            @unlink($pendingApplyFlag);
          }
-      } catch (\Throwable $e) {
-         error_log('[NexTool] pending_apply falhou (update pode ser re-tentado pela UI): ' . $e->getMessage());
-         if (class_exists('Toolbox')) {
-            Toolbox::logInFile('plugin_nextool', '[CORE-UPDATE] pending_apply EXCEPTION: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+      }
+      if ($pendingLock !== false) {
+         if ($pendingLocked) {
+            flock($pendingLock, LOCK_UN);
          }
-      } finally {
-         @unlink($pendingApplyFlag);
+         fclose($pendingLock);
       }
    }
 
@@ -367,21 +406,7 @@ function plugin_init_nextool() {
       define('NEXTOOL_BOOT_FAST_PATH_ACTIVE', true);
    }
    plugin_nextool_prof_start('lang');
-   $nxRequestedLocale = (string) ($_SESSION['glpilanguage'] ?? $CFG_GLPI['language'] ?? 'en_GB');
-   $nxDefaultLocale = (string) ($CFG_GLPI['language'] ?? 'en_GB');
-   $nxResolvedLocale = PluginNextoolLocaleResolver::resolveMoFile(
-      NEXTOOL_PHP_DIR . '/locales',
-      $nxRequestedLocale,
-      $nxDefaultLocale,
-      (array) ($CFG_GLPI['languages'] ?? [])
-   );
-   if ($nxResolvedLocale !== null) {
-      // O 3o argumento registra o catálogo escolhido sob o locale real da sessão.
-      // Assim es_CO usa es_ES.mo sem alterar o idioma corrente do GLPI.
-      Plugin::loadLang('nextool', $nxResolvedLocale['locale'], $nxRequestedLocale);
-   } else {
-      Plugin::loadLang('nextool');
-   }
+   plugin_nextool_load_base_lang();
    plugin_nextool_prof_stop('lang');
 
    $permissionfile = NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
