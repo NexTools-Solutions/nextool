@@ -46,6 +46,37 @@ function plugin_nextool_getRuleActions($params) {
 }
 
 /**
+ * Hook GLPI `getRuleCriteria` (Hooks::AUTO_GET_RULE_CRITERIA): critérios de regra contribuídos
+ * por módulos (ex.: roles do SSO numa RuleRight). Delegado ao dispatcher central; só é invocado
+ * para os itemtypes declarados em $PLUGIN_HOOKS['use_rules']['nextool'] (ver
+ * PluginNextoolHookDispatcher::useRules()).
+ *
+ * @param array $params ['rule_itemtype' => string, 'values' => array]
+ * @return array [criteriaKey => definição] - vazio se nenhum módulo contribuir
+ */
+function plugin_nextool_getRuleCriteria($params) {
+   if (!class_exists('PluginNextoolHookDispatcher')) {
+      return [];
+   }
+   return PluginNextoolHookDispatcher::dispatchRuleCriteria(is_array($params) ? $params : []);
+}
+
+/**
+ * Hook GLPI `ruleCollectionPrepareInputDataForProcess`
+ * (Hooks::AUTO_RULE_COLLECTION_PREPARE_INPUT_DATA_FOR_PROCESS): VALOR dos critérios contribuídos,
+ * mesclado no input da regra antes do processamento. Par obrigatório do hook acima.
+ *
+ * @param array $params ['rule_itemtype' => string, 'values' => ['input' => array, 'params' => array]]
+ * @return array [criteriaKey => valor] - vazio se nenhum módulo contribuir
+ */
+function plugin_nextool_ruleCollectionPrepareInputDataForProcess($params) {
+   if (!class_exists('PluginNextoolHookDispatcher')) {
+      return [];
+   }
+   return PluginNextoolHookDispatcher::dispatchRuleInput(is_array($params) ? $params : []);
+}
+
+/**
  * Search options adicionais em itemtypes nativos, contribuídas por módulos.
  * O GLPI chama esta função para cada itemtype pesquisado; módulos registram
  * providers via PluginNextoolHookDispatcher::registerSearchOptions() no onInit().
@@ -58,6 +89,19 @@ function plugin_nextool_getAddSearchOptions($itemtype) {
       return [];
    }
    return PluginNextoolHookDispatcher::dispatchGetAddSearchOptions((string) $itemtype);
+}
+
+/**
+ * Listas dos módulos na tela "Configurar > Listas suspensas" (categoria "NexTool": o GLPI agrupa
+ * as listas de plugin pelo nome do plugin). Módulos declaram em getDropdownClasses().
+ *
+ * @return array<string,string> [itemtype => rótulo]
+ */
+function plugin_nextool_getDropdown() {
+   if (!class_exists('PluginNextoolHookDispatcher')) {
+      return [];
+   }
+   return PluginNextoolHookDispatcher::dispatchGetDropdown();
 }
 
 function plugin_nextool_install() {
@@ -683,6 +727,8 @@ function _plugin_nextool_build_menus($menu) {
             if ($menuClass !== null) {
                $data = $menuClass::getMenuContent();
                if (is_array($data) && !empty($data['page'])) {
+                  // Nome do catálogo no idioma do usuário, como nas abas de módulo.
+                  $data['title'] = $modManager->getDisplayName($mk, (string) ($data['title'] ?? $mod->getName()));
                   $nextoolsItem['content']['module_' . $mk] = plugin_nextool_menu_normalize($data);
                }
                continue;
@@ -693,7 +739,7 @@ function _plugin_nextool_build_menus($menu) {
                }
                $key = 'module_' . $mk;
                $nextoolsItem['content'][$key] = [
-                  'title' => $mod->getName(),
+                  'title' => $modManager->getDisplayName($mk, (string) $mod->getName()),
                   'page'  => plugin_nextool_menu_page((string)$mod->getConfigPage()),
                   'icon'  => $mod->getIcon(),
                ];

@@ -577,6 +577,7 @@ class PluginNextoolModuleManager {
       // Migration::executeMigration, que ecoa a tela de progresso ("Tarefa concluída. (0 segundo)")
       // no HTML. Capturamos esse output para não vazar na UI (handler imune ao ob_flush interno).
       ob_start(static function () { return ''; });
+      $this->disableSchemaCache();
       $installOk = $module->install();
       if (ob_get_level() > 0) { @ob_end_clean(); }
       if (!$installOk) {
@@ -1811,6 +1812,21 @@ class PluginNextoolModuleManager {
     *
     * @return array<string, array{installed: bool, enabled: bool}>
     */
+   /**
+    * Nome do módulo para exibição: o do catálogo no idioma da sessão (name_i18n, mesma regra
+    * de PluginNextoolModuleCatalog::localized). Módulo fora do catálogo = $fallback (o
+    * getName() do código). Lê do cache de linhas: sem query extra por item de menu.
+    */
+   public function getDisplayName(string $moduleKey, string $fallback): string {
+      $this->preloadModuleRowCache();
+      $row = $this->getModuleRow($moduleKey);
+      $name = trim((string) ($row['name'] ?? ''));
+      if ($row === null || $name === '') {
+         return $fallback;
+      }
+      return PluginNextoolModuleCatalog::localized($row['name_i18n'] ?? null, $name);
+   }
+
    public function getModulesStateMap(): array {
       $this->preloadModuleRowCache();
 
@@ -2089,6 +2105,7 @@ class PluginNextoolModuleManager {
       // schema-drift guard). As queries de schema rodam normalmente.
       ob_start(static function () { return ''; }); // handler descarta (imune ao ob_flush da Migration)
       try {
+         $this->disableSchemaCache();
          $ok = $module->upgrade($from, $to) !== false;
          ob_end_clean();
          if ($ok) {
@@ -2215,6 +2232,20 @@ class PluginNextoolModuleManager {
    }
 
    /** Upgrade convergiu: apaga o estado e recolhe o aviso da aba Novidades, se houve. */
+   /**
+    * Desliga o cache de schema do $DB pelo resto da requisição, antes de install/upgrade de
+    * módulo -- o mesmo que o core faz no install/update de plugin (Plugin.php). O DDL das
+    * migrações não invalida o cache de colunas: sem isto, um módulo que checa fieldExists()
+    * duas vezes na mesma requisição (upgrade() + install()) vê a coluna que já apagou e cai
+    * com "Unknown column" (subtaskflow 1.6.0 no Portfolio, 2026-10-13).
+    */
+   private function disableSchemaCache(): void {
+      global $DB;
+      if (method_exists($DB, 'disableTableCaching')) {
+         $DB->disableTableCaching();
+      }
+   }
+
    private function clearUpgradeFailure(string $moduleKey): void {
       $state = $this->readUpgradeState($moduleKey);
       if ($state === []) {

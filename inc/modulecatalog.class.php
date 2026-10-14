@@ -79,8 +79,8 @@ class PluginNextoolModuleCatalog {
     */
    /**
     * Texto no idioma da sessão a partir do JSON {locale: texto} do catálogo (nextool-dev#262). Ordem: idioma exato,
-    * mesma família (es_CO usa es_ES; a variante "xx_XX" da família vem antes das outras), e por fim $fallback (o
-    * nome/descrição únicos de sempre). JSON ausente ou inválido = $fallback.
+    * mesma família (es_CO usa es_ES; a variante "xx_XX" da família vem antes das outras), inglês (en_US, en_GB)
+    * e por fim $fallback (o nome/descrição únicos de sempre, em pt_BR). JSON ausente ou inválido = $fallback.
     */
    public static function localized($json, string $fallback): string {
       if (!is_string($json) || $json === '') {
@@ -104,6 +104,12 @@ class PluginNextoolModuleCatalog {
             if (is_string($locale) && strncmp($locale, $prefix . '_', 3) === 0 && is_string($text) && $text !== '') {
                return $text;
             }
+         }
+      }
+      // Idioma sem tradução (de_DE, ru_RU, nl_NL...): inglês antes do original em pt_BR.
+      foreach (['en_US', 'en_GB'] as $english) {
+         if (isset($map[$english]) && is_string($map[$english]) && $map[$english] !== '') {
+            return $map[$english];
          }
       }
       return $fallback;

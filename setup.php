@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.37.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.39.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -193,6 +193,15 @@ function plugin_nextool_boot() {
          \Glpi\Http\SessionManager::registerPluginStatelessPath(
             'nextool',
             '#^/ajax/cloud_exec\\.php$#'
+         );
+         // Rota pública dos módulos (src/Controller/SsoController.php,
+         // /plugins/nextool/sso/<modulo>/<acao>): só a ação `callback` é stateless (volta do
+         // provedor de identidade: sem cookie, sem sessão, sem CSRF). As demais ações rodam
+         // com sessão anônima; o firewall vem do atributo SecurityStrategy do controller.
+         // O padrão casa o recurso DEPOIS de /plugins/nextool (SessionManager::isResourceStateless).
+         \Glpi\Http\SessionManager::registerPluginStatelessPath(
+            'nextool',
+            '#^/sso/[a-z0-9_]+/callback$#'
          );
       }
       if (class_exists('\Glpi\Http\Firewall')
@@ -718,6 +727,11 @@ function plugin_init_nextool() {
                // módulos na timeline do chamado (registrados via registerTimelineItems no
                // onInit). Só ocupa o slot se algum módulo registrou -- ver installTimelineItemsHook().
                PluginNextoolHookDispatcher::installTimelineItemsHook($PLUGIN_HOOKS);
+
+               // display_login: vários módulos na tela de login (registrados via
+               // registerDisplayLogin no onInit; branding 10 = CSS/JS, botões de SSO 100).
+               // Só ocupa o slot se algum módulo registrou -- ver installDisplayLoginHook().
+               PluginNextoolHookDispatcher::installDisplayLoginHook($PLUGIN_HOOKS);
 
                // item_get_events / item_add_targets / item_action_targets / item_get_datas:
                // eventos de notificação próprios dos módulos num alvo do core (registrados via

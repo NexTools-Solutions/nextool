@@ -10,7 +10,7 @@ declare(strict_types=1);
  * - Ler configuração de licença/endpoints
  * - Decidir quando usar cache ou chamar a API remota (ContainerAPI)
  * - Atualizar o cache local (tabela glpi_plugin_nextool_main_license_config)
- * - Registrar tentativas (glpi_plugin_nextool_main_validation_attempts)
+ * - Registrar tentativas (log unificado glpi_plugin_nextool_main_logs, log_type = validation)
  *
  * A decisão de bloqueio/desativação de módulos é aplicada em outras
  * camadas (ModuleManager / UI), com base no snapshot retornado.
@@ -767,7 +767,7 @@ class PluginNextoolLicenseValidator {
 
       // Backoff de auth (issue #243) e de rede/5xx (#245): ambiente em 401
       // determinístico ou com o servidor caído NÃO martela -- devolve o estado em
-      // cache até a janela abrir. Sem rede e SEM linha em validation_attempts (não
+      // cache até a janela abrir. Sem rede e SEM tentativa de validação no log (não
       // é um evento de comunicação).
       if ($useDistributionValidation && !$bypassCommBackoff
           && ($commSuppression = PluginNextoolCommBackoff::shouldSuppress()) !== null) {

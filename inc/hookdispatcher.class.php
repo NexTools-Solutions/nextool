@@ -494,6 +494,128 @@ class PluginNextoolHookDispatcher {
 
 
    // ========================================
+   // RULE CRITERIA + INPUT (critérios de regra contribuídos por módulos)
+   // ========================================
+   //
+   // Par do registry de ações acima. O core pede os CRITÉRIOS de um tipo de regra por
+   // Rule::doHookAndMergeResults(Hooks::AUTO_GET_RULE_CRITERIA, ...) ->
+   // plugin_nextool_getRuleCriteria (hook.php), com ['rule_itemtype' => string,
+   // 'values' => array]; e, ao processar a coleção, pede o VALOR desses critérios por
+   // RuleCollection::prepareInputDataForProcessWithPlugins ->
+   // plugin_nextool_ruleCollectionPrepareInputDataForProcess, com
+   // ['rule_itemtype' => string, 'values' => ['input' => array, 'params' => array]].
+   // Os dois só são invocados para os itemtypes declarados em
+   // $PLUGIN_HOOKS['use_rules']['nextool']: useRules() faz essa declaração de forma
+   // idempotente e os dois registros abaixo já a chamam. Um módulo que registra critério
+   // sem registrar input tem um critério que aparece na tela e nunca casa. O valor pode ser
+   // string ou lista (Rule::checkCriteria casa cada item da lista); entrada cujo valor é
+   // string (não array) no retorno de critérios vira rótulo de grupo no seletor
+   // (Rule::dropdownCriteria), como o core faz com os próprios grupos.
+
+   /** @var array<string, callable[]> ruleCriteria[ruleItemtype] = [ provider, ... ] */
+   private static $ruleCriteria = [];
+
+   /** @var array<string, callable[]> ruleInput[ruleItemtype] = [ provider, ... ] */
+   private static $ruleInput = [];
+
+   /**
+    * Declara, sem duplicar, que o NexTool estende o tipo de regra informado
+    * ($PLUGIN_HOOKS['use_rules']['nextool']). Sem isso o core não chama nenhum dos hooks de regra.
+    *
+    * @param string $ruleItemtype Ex.: 'RuleRight'
+    */
+   public static function useRules(string $ruleItemtype): void {
+      global $PLUGIN_HOOKS;
+      if ($ruleItemtype === '') {
+         return;
+      }
+      $existing = $PLUGIN_HOOKS['use_rules']['nextool'] ?? [];
+      if (!is_array($existing)) {
+         $existing = [];
+      }
+      if (!in_array($ruleItemtype, $existing, true)) {
+         $existing[] = $ruleItemtype;
+      }
+      $PLUGIN_HOOKS['use_rules']['nextool'] = $existing;
+   }
+
+   /**
+    * Registra um provider de critérios para um tipo de regra (e declara o use_rules).
+    *
+    * @param string   $ruleItemtype Ex.: 'RuleRight'
+    * @param callable $provider     fn(array $params): array - devolve [criteriaKey => definição]
+    *                               (mesmo formato de Rule::getCriterias(): name, table, field,
+    *                               linkfield, type, virtual, id, allow_condition...)
+    */
+   public static function registerRuleCriteria(string $ruleItemtype, callable $provider): void {
+      if (!isset(self::$ruleCriteria[$ruleItemtype])) {
+         self::$ruleCriteria[$ruleItemtype] = [];
+      }
+      self::$ruleCriteria[$ruleItemtype][] = $provider;
+      self::useRules($ruleItemtype);
+   }
+
+   /**
+    * Registra um provider do VALOR dos critérios para um tipo de regra (e declara o use_rules).
+    *
+    * @param string   $ruleItemtype Ex.: 'RuleRight'
+    * @param callable $provider     fn(array $params): array - devolve [criteriaKey => valor];
+    *                               $params['values']['input'] é o input da regra até aqui e
+    *                               $params['values']['params'] os parâmetros do processAllRules.
+    */
+   public static function registerRuleInput(string $ruleItemtype, callable $provider): void {
+      if (!isset(self::$ruleInput[$ruleItemtype])) {
+         self::$ruleInput[$ruleItemtype] = [];
+      }
+      self::$ruleInput[$ruleItemtype][] = $provider;
+      self::useRules($ruleItemtype);
+   }
+
+   /**
+    * Despacha a coleta de critérios (hook getRuleCriteria).
+    *
+    * @param array $params ['rule_itemtype' => string, 'values' => array]
+    * @return array [criteriaKey => definição] - vazio se não houver provider
+    */
+   public static function dispatchRuleCriteria(array $params): array {
+      return self::dispatchRuleRegistry(self::$ruleCriteria, $params, 'getRuleCriteria');
+   }
+
+   /**
+    * Despacha a coleta do valor dos critérios (hook ruleCollectionPrepareInputDataForProcess).
+    *
+    * @param array $params ['rule_itemtype' => string, 'values' => ['input' => array, 'params' => array]]
+    * @return array [criteriaKey => valor] - vazio se não houver provider
+    */
+   public static function dispatchRuleInput(array $params): array {
+      return self::dispatchRuleRegistry(self::$ruleInput, $params, 'ruleCollectionPrepareInputDataForProcess');
+   }
+
+   /** Mescla o retorno dos providers do itemtype, isolando a falha de cada um (log em plugin_nextool). */
+   private static function dispatchRuleRegistry(array $registry, array $params, string $label): array {
+      $itemtype = (string) ($params['rule_itemtype'] ?? '');
+      if ($itemtype === '' || empty($registry[$itemtype])) {
+         return [];
+      }
+      $merged = [];
+      foreach ($registry[$itemtype] as $provider) {
+         try {
+            $ret = call_user_func($provider, $params);
+            if (is_array($ret)) {
+               $merged = array_merge($merged, $ret);
+            }
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               '[HookDispatcher] %s %s: %s',
+               $label,
+               $itemtype,
+               $e->getMessage()
+            ));
+         }
+      }
+      return $merged;
+   }
+   // ========================================
    // TIMELINE ANSWER ACTIONS (ações na barra da timeline do chamado)
    // ========================================
    //
@@ -722,6 +844,111 @@ class PluginNextoolHookDispatcher {
             }
          }
       };
+   }
+
+   // ========================================
+   // TELA DE LOGIN (display_login): vários módulos no mesmo slot
+   // ========================================
+   //
+   // O core chama UM callable por plugin, sem argumentos, de dentro do template de login
+   // (`call_plugin_hook` do Twig descarta o retorno): o contrato é ECOAR. O slot
+   // `$PLUGIN_HOOKS['display_login']['nextool']` é único por plugin, e ocupar o slot vazio já
+   // muda o layout do login (o core decide o painel da direita pela contagem de plugins no
+   // slot), por isso o instalador só o ocupa quando algum módulo registrou. Ordem por
+   // prioridade explícita (menor roda antes; empate = ordem de registro): branding 10
+   // (CSS/JS da tela), botões de login de módulos (ex.: SSO) 100. Cada callback roda no
+   // próprio buffer de saída: falha no meio descarta a saída parcial (sem <style>/<script>
+   // aberto na tela) e os demais seguem.
+
+   /** @var array<int, array{cb: callable, prio: int}> */
+   private static $displayLogin = [];
+
+   /** @var Closure|null closure de encadeamento (slot legado + dispatcher), para idempotência */
+   private static $displayLoginChain = null;
+
+   /**
+    * Registra um callback da tela de login (chamado no onInit() do módulo).
+    *
+    * @param callable $callback fn(): void -- ECOA o HTML/CSS/JS; o retorno é ignorado
+    * @param int      $priority menor roda antes (branding 10; botões de login 100)
+    */
+   public static function registerDisplayLogin(callable $callback, int $priority = 100): void {
+      self::$displayLogin[] = ['cb' => $callback, 'prio' => $priority];
+   }
+
+   /**
+    * Despacha para os callbacks em ordem de prioridade, cada um no próprio buffer de saída.
+    * A falha de um callback descarta só a saída dele, vai para o log e não impede os demais.
+    */
+   public static function dispatchDisplayLogin(): void {
+      $entries = self::$displayLogin;
+      usort($entries, static fn(array $a, array $b): int => $a['prio'] <=> $b['prio']);
+      foreach ($entries as $entry) {
+         self::runEchoingCallback($entry['cb'], 'display_login');
+      }
+   }
+
+   /**
+    * Executa um callback que ECOA, isolado num buffer de saída: só o que ele produziu por
+    * inteiro chega ao chamador; em exceção, a saída parcial é descartada e o nível de buffer
+    * volta ao que era (nunca `ob_end_clean()` cego: o chamador pode estar dentro do Twig).
+    */
+   private static function runEchoingCallback(callable $callback, string $label): void {
+      $level = ob_get_level();
+      ob_start();
+      try {
+         call_user_func($callback);
+         // Buffers que o callback abriu e não fechou: esvazia para dentro do nosso.
+         while (ob_get_level() > $level + 1) {
+            ob_end_flush();
+         }
+         if (ob_get_level() === $level + 1) {
+            echo ob_get_clean();
+         }
+      } catch (Throwable $e) {
+         while (ob_get_level() > $level) {
+            ob_end_clean();
+         }
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[HookDispatcher] %s: %s\n",
+            $label,
+            $e->getMessage()
+         ));
+      }
+   }
+
+   /**
+    * Ocupa o slot `display_login` do plugin com o dispatcher -- SÓ se algum módulo registrou.
+    * Slot já ocupado por módulo antigo que gravou direto (branding <= 1.7.0): LEGADO PRIMEIRO,
+    * dispatcher depois -- o inverso do installHook(), porque a saída legada é o CSS/JS do
+    * branding e tem de vir antes dos botões de login dos módulos registrados aqui. Idempotente.
+    *
+    * @param array $PLUGIN_HOOKS por referência (global do GLPI)
+    */
+   public static function installDisplayLoginHook(array &$PLUGIN_HOOKS): void {
+      if (self::$displayLogin === []) {
+         return;
+      }
+      $dispatcher = [self::class, 'dispatchDisplayLogin'];
+      $existing   = $PLUGIN_HOOKS['display_login']['nextool'] ?? null;
+
+      $isOwn = is_array($existing)
+         && (($existing[0] ?? null) === self::class || ($existing[0] ?? null) === 'PluginNextoolHookDispatcher');
+      if ($existing === null || $isOwn) {
+         $PLUGIN_HOOKS['display_login']['nextool'] = $dispatcher;
+         return;
+      }
+      if (self::$displayLoginChain !== null && $existing === self::$displayLoginChain) {
+         return; // já encadeado nesta request
+      }
+
+      self::$displayLoginChain = static function () use ($dispatcher, $existing): void {
+         if (is_callable($existing)) {
+            self::runEchoingCallback($existing, 'display_login (legado)');
+         }
+         call_user_func($dispatcher);
+      };
+      $PLUGIN_HOOKS['display_login']['nextool'] = self::$displayLoginChain;
    }
 
    // ========================================
@@ -968,6 +1195,46 @@ class PluginNextoolHookDispatcher {
          }
       }
       return $options;
+   }
+
+   /**
+    * Listas dos módulos para a tela "Configurar > Listas suspensas" (plugin_nextool_getDropdown, hook.php).
+    * Pull a cada chamada (sem registro no onInit): só módulos instalados e ativos, só classes que existem e
+    * estendem CommonDropdown. Falha de um módulo não derruba a tela.
+    *
+    * @return array<string,string> [itemtype => "Módulo - rótulo"], em ordem de rótulo
+    */
+   public static function dispatchGetDropdown(): array {
+      global $DB;
+      if (!$DB->tableExists('glpi_plugin_nextool_main_modules')) {
+         return [];
+      }
+      require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+      $manager = PluginNextoolModuleManager::getInstance();
+      $out = [];
+      foreach ($DB->request([
+         'SELECT' => ['module_key'],
+         'FROM'   => 'glpi_plugin_nextool_main_modules',
+         'WHERE'  => ['is_enabled' => 1, 'is_installed' => 1],
+      ]) as $row) {
+         $moduleKey = (string) $row['module_key'];
+         try {
+            $module = $manager->getModule($moduleKey);
+            if ($module === null || !method_exists($module, 'getDropdownClasses')) {
+               continue;
+            }
+            foreach ((array) $module->getDropdownClasses() as $itemtype => $label) {
+               if (!is_string($itemtype) || !class_exists($itemtype) || !is_subclass_of($itemtype, 'CommonDropdown')) {
+                  continue;
+               }
+               $out[$itemtype] = sprintf('%s - %s', (string) $module->getName(), (string) $label);
+            }
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf('[HookDispatcher] getDropdown %s: %s', $moduleKey, $e->getMessage()));
+         }
+      }
+      asort($out, SORT_NATURAL | SORT_FLAG_CASE);
+      return $out;
    }
 
    // NOTA: render de search options 'specific' (giveItem) NÃO fica aqui - já

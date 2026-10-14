@@ -466,6 +466,23 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Listas do módulo na tela nativa "Configurar > Listas suspensas" do GLPI.
+    *
+    * O GLPI agrupa as listas de plugin pelo NOME do plugin: todas as do NexTool ficam na categoria
+    * "NexTool", e a base prefixa o rótulo com o nome do módulo ("Azure DevOps - Squads"). Só entram
+    * módulos instalados e ativos; o próprio GLPI esconde as que o perfil não pode ver (canView()).
+    *
+    * Cada classe precisa estender CommonDropdown (ou CommonTreeDropdown) e ter getSearchURL() e
+    * getFormURL() pelo roteador de módulos: o link padrão do GLPI aponta para /plugins/nextool/front/,
+    * onde o código do módulo não existe. Base antiga simplesmente não chama este método.
+    *
+    * @return array<string,string> [itemtype => rótulo]
+    */
+   public function getDropdownClasses(): array {
+      return [];
+   }
+
+   /**
     * Instalação do módulo
     * Cria tabelas, insere dados iniciais, etc.
     * 
@@ -707,6 +724,46 @@ abstract class PluginNextoolBaseModule {
     */
    public function getStatelessFiles(): array {
       return [];
+   }
+
+   /**
+    * Ações PÚBLICAS do módulo (sem login), servidas pelo controller do base em
+    * `/plugins/nextool/sso/<module_key>/<acao>` (GLPI 11 e 12; no GLPI 10 a rota não existe).
+    *
+    * Contrato:
+    * - nomes `[a-z0-9_]+`; cada ação é o arquivo `<modulo>/front/public/<acao>.php`;
+    * - a ação `callback` é STATELESS (sem sessão, sem cookie, sem CSRF; aceita POST do
+    *   provedor); as demais rodam com SESSÃO ANÔNIMA e só por GET (POST com sessão passa
+    *   pelo CSRF do core);
+    * - o arquivo recebe `$request` (Symfony Request) e `$nxModule` (esta instância); pode
+    *   ecoar ou retornar um `Response`; redireciona com `Html::redirect()`; NUNCA chama
+    *   `exit`/`die` nem `Html::nullHeader()` no `callback` (não há sessão);
+    * - módulo fora dos ativos (desabilitado ou que falhou no onInit) recebe uma página
+    *   neutra 503 ANTES de o arquivo rodar; ação não declarada ou arquivo ausente dá 404.
+    *
+    * @return string[] Ex.: ['start', 'callback', 'process']
+    */
+   public function getPublicActions(): array {
+      return [];
+   }
+
+   /**
+    * URL absoluta de uma ação pública, SEMPRE a partir de `url_base` (nunca de HTTP_HOST,
+    * nunca de webDir(): a URI cadastrada no provedor de identidade não pode mudar porque a
+    * base está em /marketplace ou atrás de outro host). O roteador do core aceita
+    * `/plugins/<key>/` para qualquer plugin carregado.
+    *
+    * @param string $action nome declarado em getPublicActions()
+    * @return string Ex.: https://glpi.exemplo/plugins/nextool/sso/ssologin/callback
+    * @throws InvalidArgumentException nome fora de `[a-z0-9_]+`
+    */
+   public function getPublicActionUrl(string $action): string {
+      global $CFG_GLPI;
+      if (preg_match('/^[a-z0-9_]+$/', $action) !== 1) {
+         throw new InvalidArgumentException('Ação pública inválida: ' . $action);
+      }
+      $base = rtrim((string) ($CFG_GLPI['url_base'] ?? ''), '/');
+      return $base . '/plugins/nextool/sso/' . $this->getModuleKey() . '/' . $action;
    }
 
    /**
