@@ -155,10 +155,9 @@ declare(strict_types=1);
                   // Prontidão para a próxima major do GLPI (12): só aparece quando há módulo instalado que
                   // não a declara. Abaixo do 12 é preparação ("se migrar..."); no 12 são os bloqueados agora.
                   require_once NEXTOOL_PHP_DIR . '/inc/majorreadiness.class.php';
-                  $nextoolReadiness = PluginNextoolMajorReadiness::report();
+                  $nextoolReadiness = PluginNextoolMajorReadiness::withoutReady(PluginNextoolMajorReadiness::report());
                   if ((int)($nextoolReadiness['count'] ?? 0) > 0):
                      $rdTarget    = (int)$nextoolReadiness['target'];
-                     $rdPreparing = (int)$nextoolReadiness['current'] < $rdTarget;
                ?>
                <div class="mb-3" id="nextool-major-readiness">
                   <a class="d-inline-flex align-items-center gap-2 text-decoration-none text-reset" data-bs-toggle="collapse"
@@ -171,9 +170,8 @@ declare(strict_types=1);
                      <div class="alert alert-warning mb-0">
                         <?php if (!empty($nextoolReadiness['ready'])): ?>
                            <p class="mb-1">
-                              <strong><?php echo PluginNextoolCompat::escape($rdPreparing
-                                 ? sprintf(__('Já têm versão para o GLPI %d no catálogo (atualize antes de migrar):', 'nextool'), $rdTarget)
-                                 : __('Com versão compatível no catálogo (clique em Atualizar no card):', 'nextool')); ?></strong>
+                              <?php // Só no próprio major-alvo: na preparação withoutReady() já tirou esta lista. ?>
+                              <strong><?php echo PluginNextoolCompat::escape(__('Com versão compatível no catálogo (clique em Atualizar no card):', 'nextool')); ?></strong>
                               <?php echo PluginNextoolCompat::escape(implode(', ', array_map(
                                  static fn(string $rk): string => $nextoolReadiness['modules'][$rk]['name'] . ' ' . $nextoolReadiness['modules'][$rk]['catalog_version'],
                                  $nextoolReadiness['ready']

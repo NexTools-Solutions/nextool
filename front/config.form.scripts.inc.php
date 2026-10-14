@@ -920,7 +920,6 @@ function nextoolInitCoreUpdateModal() {
    var confirmMajorTextEl = document.getElementById('nextool-modal-confirm-major-text');
    var confirmMajorInputEl = document.getElementById('nextool-modal-confirm-major-input');
    var majorConfirmPending = false;
-   var LABEL_MAJOR_READY = <?php echo json_encode(__('Já têm versão compatível no catálogo (atualize antes de migrar):', 'nextool')); ?>;
    var LABEL_MAJOR_WAITING = <?php echo json_encode(__('Ainda sem versão compatível:', 'nextool')); ?>;
 
    function hideMajorConfirm() {
@@ -934,11 +933,6 @@ function nextoolInitCoreUpdateModal() {
       if (!confirmMajorEl || !confirmMajorTextEl || !info || !(info.count > 0)) { return false; }
       var text = document.createElement('div');
       var p = document.createElement('p'); p.className = 'mb-1'; p.textContent = info.message || ''; text.appendChild(p);
-      if (info.ready && info.ready.length) {
-         var pr = document.createElement('p'); pr.className = 'mb-1';
-         var sr = document.createElement('strong'); sr.textContent = LABEL_MAJOR_READY + ' '; pr.appendChild(sr);
-         pr.appendChild(document.createTextNode(info.ready.join(', '))); text.appendChild(pr);
-      }
       if (info.waiting && info.waiting.length) {
          var pw = document.createElement('p'); pw.className = 'mb-0';
          var sw = document.createElement('strong'); sw.textContent = LABEL_MAJOR_WAITING + ' '; pw.appendChild(sw);

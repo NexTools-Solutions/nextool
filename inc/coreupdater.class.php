@@ -484,7 +484,7 @@ class PluginNextoolCoreUpdater {
          return null;
       }
       try {
-         $report = PluginNextoolMajorReadiness::report($next);
+         $report = PluginNextoolMajorReadiness::withoutReady(PluginNextoolMajorReadiness::report($next));
       } catch (Throwable $e) {
          return null;
       }

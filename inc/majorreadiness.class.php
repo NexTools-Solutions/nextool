@@ -173,6 +173,23 @@ final class PluginNextoolMajorReadiness {
       return self::$reports[$target] = $report;
    }
 
+   /**
+    * Versão do relatório para a PREPARAÇÃO (GLPI abaixo do major-alvo): só os módulos ainda sem
+    * versão para o major. Módulo que já tem versão compatível no catálogo não é pendência de
+    * migração (o botão Atualizar do card já sinaliza), então sai da lista e da contagem. No próprio
+    * major-alvo o relatório volta inteiro: lá esses módulos estão bloqueados e a atualização os destrava.
+    */
+   public static function withoutReady(array $report): array {
+      if ((int) ($report['current'] ?? self::currentMajor()) >= (int) ($report['target'] ?? self::NEXT_MAJOR)) {
+         return $report;
+      }
+      $waiting           = (array) ($report['waiting'] ?? []);
+      $report['modules'] = array_intersect_key((array) ($report['modules'] ?? []), array_flip($waiting));
+      $report['ready']   = [];
+      $report['count']   = count($waiting);
+      return $report;
+   }
+
    /** Descarta o memo (testes e ações que mudam módulos no mesmo request). */
    public static function resetCache(): void {
       self::$reports = [];
