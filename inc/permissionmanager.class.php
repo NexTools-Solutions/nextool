@@ -108,7 +108,24 @@ class PluginNextoolPermissionManager {
     * A migracao concede admin_global a quem tinha config/UPDATE (Super-Admin intacto).
     */
    public static function hasGlobalAdminAccess(): bool {
+      if (self::isHelpdeskInterface()) {
+         return false;
+      }
       return self::haveRight(self::RIGHT_ADMIN_GLOBAL, self::GLOBAL_BIT);
+   }
+
+   /**
+    * Perfil ativo de interface simplificada (helpdesk/portal).
+    *
+    * Administracao do NexTool (console, catalogo, configuracao, logs, alertas) e
+    * EXCLUSIVA da interface central (PERMISSIONS.md § 8): no helpdesk, todo gate
+    * administrativo nega, e o uso fica restrito aos bits que o modulo declara em
+    * getHelpdeskRights(). Bit fora disso num perfil helpdesk e residuo (gravado antes
+    * da matriz por interface, ou por SQL) e a tela de perfil nem permite desmarca-lo.
+    * Contexto sem perfil (CLI, cron) nao e helpdesk.
+    */
+   public static function isHelpdeskInterface(): bool {
+      return ($_SESSION['glpiactiveprofile']['interface'] ?? '') === 'helpdesk';
    }
 
    /** Alias semantico. */
@@ -118,6 +135,9 @@ class PluginNextoolPermissionManager {
 
    /** Verifica um bit do direito base (nextool_base). */
    public static function canBase(int $bit): bool {
+      if (self::isHelpdeskInterface()) {
+         return false;
+      }
       return self::hasGlobalAdminAccess() || self::haveRight(self::RIGHT_BASE, $bit);
    }
 
@@ -142,11 +162,18 @@ class PluginNextoolPermissionManager {
 
    /** Usabilidade: o perfil pode USAR (bit de uso) este modulo. */
    public static function canUse(string $moduleKey, int $bit = self::ACCESS): bool {
+      if (self::isHelpdeskInterface()) {
+         $bit &= self::helpdeskUsableMask($moduleKey);
+         return $bit !== 0 && self::haveModuleRight($moduleKey, $bit);
+      }
       return self::hasGlobalAdminAccess() || self::haveModuleRight($moduleKey, $bit);
    }
 
    /** Administracao: o perfil pode ADMINISTRAR (bit de admin) este modulo. */
    public static function canAdmin(string $moduleKey, int $bit): bool {
+      if (self::isHelpdeskInterface()) {
+         return false;
+      }
       return self::hasGlobalAdminAccess() || self::haveModuleRight($moduleKey, $bit);
    }
 
@@ -166,6 +193,9 @@ class PluginNextoolPermissionManager {
     * O perfil tem acesso a PELO MENOS um modulo (para decidir se mostra o menu/aba).
     */
    public static function canViewAnyModule(): bool {
+      if (self::isHelpdeskInterface()) {
+         return false;
+      }
       if (self::hasGlobalAdminAccess()) {
          return true;
       }
@@ -353,6 +383,7 @@ class PluginNextoolPermissionManager {
 
       PluginNextoolMigrationHelper::runSilently($migration);
       self::migrateLegacyRights();
+      self::cleanHelpdeskProfileRights();
 
       // Apos conceder os direitos no banco, recarrega-os na sessao ATIVA: o admin que
       // acabou de instalar recebe o super-direito no perfil, mas na interface central o
@@ -422,6 +453,75 @@ class PluginNextoolPermissionManager {
       if ($changes) {
          PluginNextoolMigrationHelper::runSilently($migration);
       }
+   }
+
+   /**
+    * Limpa os direitos NexTool dos perfis de interface simplificada (idempotente).
+    *
+    * A matriz do perfil helpdesk so exibe os bits de getHelpdeskRights(); um bit gravado
+    * antes dela (ou por SQL) fica invisivel e impossivel de desmarcar pela tela. Os gates
+    * ja ignoram esses bits no helpdesk (canUse/canAdmin); aqui o banco e saneado:
+    *  - super-direito e direito base: zerados (administracao nunca e do helpdesk);
+    *  - direito de modulo: so os bits declarados em getHelpdeskRights(); modulo que nao
+    *    carrega aqui perde apenas os bits de administracao (nao se apaga uso legitimo
+    *    sem saber o que o modulo declara).
+    *
+    * @return int quantidade de linhas alteradas
+    */
+   public static function cleanHelpdeskProfileRights(): int {
+      global $DB;
+      if (!$DB->tableExists('glpi_profilerights') || !$DB->tableExists('glpi_profiles')) {
+         return 0;
+      }
+      $adminMask = self::CONFIGURE | self::MANAGE_ITEMS | self::TOGGLE | self::MOD_UPDATE
+         | self::UNINSTALL | self::VIEW_LOGS | self::PURGE_DATA | self::MODULE_ADMIN_EXTRA_MASK;
+
+      $rows = $DB->request([
+         'SELECT'     => ['pr.id', 'pr.name', 'pr.rights'],
+         'FROM'       => 'glpi_profilerights AS pr',
+         'INNER JOIN' => ['glpi_profiles AS p' => ['ON' => ['p' => 'id', 'pr' => 'profiles_id']]],
+         'WHERE'      => [
+            'p.interface' => 'helpdesk',
+            'pr.rights'   => ['<>', 0],
+            'OR'          => [
+               'pr.name' => [self::RIGHT_ADMIN_GLOBAL, self::RIGHT_BASE],
+               ['pr.name' => ['LIKE', self::MODULE_RIGHT_PREFIX . '%']],
+            ],
+         ],
+      ]);
+
+      $changed = 0;
+      foreach ($rows as $row) {
+         $name    = (string) $row['name'];
+         $current = (int) $row['rights'];
+         if ($name === self::RIGHT_ADMIN_GLOBAL || $name === self::RIGHT_BASE) {
+            $new = 0;
+         } else {
+            $moduleKey = substr($name, strlen(self::MODULE_RIGHT_PREFIX));
+            $module    = null;
+            try {
+               if (class_exists('PluginNextoolModuleManager')) {
+                  $module = PluginNextoolModuleManager::getInstance()->getModule($moduleKey);
+               }
+            } catch (\Throwable $e) {
+               $module = null;
+            }
+            $new = $module !== null
+               ? ($current & self::helpdeskUsableMask($moduleKey))
+               : ($current & ~$adminMask);
+         }
+         if ($new !== $current) {
+            $DB->update('glpi_profilerights', ['rights' => $new], ['id' => (int) $row['id']]);
+            $changed++;
+         }
+      }
+      if ($changed > 0) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[rights] perfis helpdesk: %d direito(s) NexTool saneado(s) (bits fora de getHelpdeskRights)\n",
+            $changed
+         ));
+      }
+      return $changed;
    }
 
    /**
@@ -634,10 +734,42 @@ class PluginNextoolPermissionManager {
     * quando o modulo troca o bit generico "acessar" por um Ver por menu.
     */
    public static function canViewModuleAny(string $moduleKey): bool {
+      if (self::isHelpdeskInterface()) {
+         return false;
+      }
       if (self::hasGlobalAdminAccess()) {
          return true;
       }
       return self::haveModuleRight($moduleKey, self::moduleViewMask($moduleKey));
+   }
+
+   /**
+    * Bits que o modulo declara para a interface simplificada (chaves de
+    * getHelpdeskRights()). Modulo que nao declara, ou que nao carrega: 0 (fail-closed).
+    */
+   public static function helpdeskUsableMask(string $moduleKey): int {
+      static $cache = [];
+      $key = self::normalizeModuleKey($moduleKey);
+      if (isset($cache[$key])) {
+         return $cache[$key];
+      }
+      $mask = 0;
+      try {
+         if (class_exists('PluginNextoolModuleManager')) {
+            $mod = PluginNextoolModuleManager::getInstance()->getModule($key);
+            if ($mod && method_exists($mod, 'getHelpdeskRights')) {
+               foreach (array_keys((array) $mod->getHelpdeskRights()) as $declaredBit) {
+                  $mask |= (int) $declaredBit;
+               }
+            }
+         }
+      } catch (\Throwable $e) {
+         $mask = 0;
+      }
+      // Administracao nunca e concedivel no helpdesk, mesmo se um modulo a declarar.
+      $adminMask = self::CONFIGURE | self::MANAGE_ITEMS | self::TOGGLE | self::MOD_UPDATE
+         | self::UNINSTALL | self::VIEW_LOGS | self::PURGE_DATA | self::MODULE_ADMIN_EXTRA_MASK;
+      return $cache[$key] = ($mask & ~$adminMask);
    }
 
    public static function moduleViewMask(string $moduleKey): int {

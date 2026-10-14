@@ -316,30 +316,26 @@ class PluginNextoolModuleCardHelper {
    }
 
    /**
-    * Resolve a primeira major compatível do módulo a partir do CSV. Usado
-    * para apontar o link de changelog para a plataforma certa quando o módulo
-    * é incompatível com a versão atual.
+    * Link das notas de versão do módulo no repositório público. Filtra só por
+    * "modulo:<chave>", sem o major: a etiqueta das releases leva o compat do
+    * módulo ([GLPI_11], depois [GLPI_10/11], [GLPI_10/11/12]) e um filtro com o
+    * major parava nas releases de antes da unificação do artefato.
     */
-   private static function resolveFirstCompatMajor(array $state): ?string {
-      $csv = isset($state['compat_glpi_majors']) ? trim((string) $state['compat_glpi_majors']) : '';
-      $list = array_filter(array_map('trim', explode(',', $csv)));
-      return $list ? (string) reset($list) : null;
+   private static function buildChangelogUrl(string $moduleKey): string {
+      return 'https://github.com/NexTools-Solutions/nextool/releases?q='
+         . urlencode('modulo:' . $moduleKey);
    }
 
    /**
-    * Dropdown items para card de módulo incompatível: Saiba Mais + Changelogs
-    * apontando para a major correta (não a atual do GLPI).
+    * Dropdown items para card de módulo incompatível: Saiba Mais + Changelogs.
     */
    private static function appendExternalLinksForCompat(array $state, array &$items): void {
       if (!empty($state['website_url'])) {
          $items[] = self::renderDropdownItem(__('Saiba Mais', 'nextool'), 'ti ti-external-link', $state['website_url'], true);
       }
       $moduleKey = $state['module_key'] ?? '';
-      $major = self::resolveFirstCompatMajor($state);
-      if ($moduleKey !== '' && $major !== null) {
-         $changelogUrl = 'https://github.com/NexTools-Solutions/nextool/releases?q='
-            . urlencode('Etiqueta: modulo:' . $moduleKey . '[GLPI_' . $major . ']');
-         $items[] = self::renderDropdownItem(__('Changelogs', 'nextool'), 'ti ti-history', $changelogUrl, true);
+      if ($moduleKey !== '') {
+         $items[] = self::renderDropdownItem(__('Changelogs', 'nextool'), 'ti ti-history', self::buildChangelogUrl($moduleKey), true);
       }
    }
 
@@ -363,12 +359,7 @@ class PluginNextoolModuleCardHelper {
       }
       $moduleKey = $state['module_key'] ?? '';
       if ($moduleKey !== '') {
-         // Artefato único: a tag de plataforma segue o GLPI onde o plugin roda
-         // (GLPI_10 num GLPI 10, GLPI_11 num GLPI 11), não hardcoded.
-         $currentMajor = (int) explode('.', GLPI_VERSION)[0];
-         $changelogUrl = 'https://github.com/NexTools-Solutions/nextool/releases?q='
-            . urlencode('Etiqueta: modulo:' . $moduleKey . '[GLPI_' . $currentMajor . ']');
-         $items[] = self::renderDropdownItem(__('Changelogs', 'nextool'), 'ti ti-history', $changelogUrl, true);
+         $items[] = self::renderDropdownItem(__('Changelogs', 'nextool'), 'ti ti-history', self::buildChangelogUrl($moduleKey), true);
       }
    }
 

@@ -1975,6 +1975,39 @@ class PluginNextoolModuleManager {
    }
 
    /**
+    * Interface simplificada (helpdesk) nunca alcanca a administracao de um modulo
+    * (PERMISSIONS.md § 8), mesmo com URL direta: pagina de configuracao declarada em
+    * getConfigPage(), abas do console (*.tab.inc.php, *.about.inc.php) e handlers de
+    * gravacao/teste (*.save.php, *.test.php, *.config.php). Defesa em profundidade:
+    * varias telas de config usam canView() = canUse(), e o bit de uso (ACCESS) e
+    * legitimo no portal (ex.: "Ver Ordem de Servico").
+    */
+   public static function helpdeskAdminSurfaceGate(string $moduleKey, string $filename): void {
+      global $CFG_GLPI;
+
+      if (!PluginNextoolPermissionManager::isHelpdeskInterface()) {
+         return;
+      }
+      $isAdminSurface = (bool) preg_match('/(\.tab\.inc\.php|\.about\.inc\.php|\.save\.php|\.test\.php|\.config\.php)$/', $filename);
+      if (!$isAdminSurface) {
+         $module = self::getInstance()->getModule($moduleKey);
+         $isAdminSurface = $module !== null && self::configPageBasename($module) === $filename;
+      }
+      if (!$isAdminSurface) {
+         return;
+      }
+
+      Toolbox::logInFile('plugin_nextool', sprintf(
+         "[session-gate] acesso recusado: interface simplificada em tela administrativa (%s/%s)\n",
+         $moduleKey,
+         $filename
+      ));
+      Session::addMessageAfterRedirect(__('Você não tem permissão para acessar esta página.', 'nextool'), false, ERROR);
+      Html::redirect(($CFG_GLPI['root_doc'] ?? '') . '/front/helpdesk.public.php');
+      exit;
+   }
+
+   /**
     * Basename do `file=` da URL declarada em `getConfigPage()` (mesma extracao da
     * aba de config, `PluginNextoolMainConfig::displayTabContentForItem`).
     */

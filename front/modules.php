@@ -129,6 +129,8 @@ if ($extension !== 'php') {
 // só existe a partir daqui.
 require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
 PluginNextoolModuleManager::sessionModuleGate($moduleKey, $filename, 'html');
+require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+PluginNextoolModuleManager::helpdeskAdminSurfaceGate($moduleKey, $filename);
 
 // Carrega o arquivo do módulo
 // O arquivo do módulo será executado no contexto atual (variáveis globais já estão disponíveis)
