@@ -54,7 +54,8 @@ class PluginNextoolModuleCatalog {
          $moduleKey = (string)($row['module_key'] ?? '');
          $installed = trim((string)($row['version'] ?? ''));
          $available = trim((string)($row['available_version'] ?? ''));
-         if ($moduleKey === '' || $installed === '' || $available === ''
+         // Descontinuado não tem atualização a cobrar (saiu de linha).
+         if ($moduleKey === '' || $installed === '' || $available === '' || !empty($row['is_discontinued'])
              || !version_compare($available, $installed, '>')
              || !is_dir(NEXTOOL_MODULES_BASE . '/' . $moduleKey)) {
             continue;
@@ -155,6 +156,8 @@ class PluginNextoolModuleCatalog {
             'is_installed' => (bool)($row['is_installed'] ?? 0),
             'is_enabled'   => (bool)($row['is_enabled'] ?? 0),
             'is_available' => (bool)($row['is_available'] ?? 0),
+            // Descontinuado (catálogo, 2026-10-14). Coluna ausente (sync ainda não rodou) = em linha.
+            'is_discontinued' => (bool)($row['is_discontinued'] ?? 0),
             'min_version_nextools' => $minVerNextool,
             'website_url' => isset($row['website_url']) && $row['website_url'] !== '' ? $row['website_url'] : null,
             'icon'         => isset($row['icon']) && $row['icon'] !== '' ? $row['icon'] : self::DEFAULT_ICON,

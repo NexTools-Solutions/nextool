@@ -201,7 +201,10 @@ foreach ($allModuleKeys as $moduleKey) {
 
    // Catálogo já vem com is_available do banco
    $catalogIsEnabled = (bool) ($meta['is_available'] ?? false);
-   if (!$catalogIsEnabled) {
+   // Descontinuado (catálogo, 2026-10-14): quem já o tem INSTALADO continua vendo o card, com o selo
+   // "Descontinuado" (antes ele sumia junto com os desativados e não dava nem para desinstalar).
+   $isDiscontinued = !empty($meta['is_discontinued']);
+   if (!$catalogIsEnabled && !($isDiscontinued && !empty($meta['is_installed']))) {
       // Não exibe módulos desativados no catálogo remoto.
       continue;
    }
@@ -249,7 +252,7 @@ foreach ($allModuleKeys as $moduleKey) {
       }
    }
    // Se a pasta do módulo não existe, não sinalizar atualização (trata como download pendente)
-   if (!$moduleDownloaded) {
+   if (!$moduleDownloaded || $isDiscontinued) {
       $updateAvailable = false;
    }
 
@@ -309,6 +312,10 @@ foreach ($allModuleKeys as $moduleKey) {
    if (!$isCompatibleWithMajor) {
       $canDownloadModule = false;
    }
+   // Descontinuado: nada a baixar nem a atualizar (o card só mostra o selo e o que dá para desfazer).
+   if ($isDiscontinued) {
+      $canDownloadModule = false;
+   }
 
    $hasModuleDbData = $manager->moduleHasData($moduleKey);
    $hasModuleData   = $hasModuleDbData || $moduleDownloaded;
@@ -364,6 +371,9 @@ foreach ($allModuleKeys as $moduleKey) {
    } elseif ($canUseModule && $requiresRemoteDownload) {
       $sortGroup = 7; // FREE disponível para download
    }
+   if ($isDiscontinued) {
+      $sortGroup = 8; // descontinuado vai para o fim da lista
+   }
 
    // Módulos novos (<30 dias): apenas marca a flag $isNewModule; NÃO promove mais ao
    // topo -- dentro de cada bucket a prioridade é a quantidade de downloads (desempate 3).
@@ -396,6 +406,7 @@ foreach ($allModuleKeys as $moduleKey) {
       'module_downloaded' => $moduleDownloaded,
       'can_download'      => $canDownloadModule,
       'catalog_is_enabled'=> $catalogIsEnabled,
+      'is_discontinued'   => $isDiscontinued,
       'update_available'  => $updateAvailable,
       'blocked_reason'    => $blockedReason,
       'has_module_data'   => $hasModuleData,
@@ -427,6 +438,7 @@ foreach ($allModuleKeys as $moduleKey) {
          'has_module_db_data'      => $hasModuleDbData,
          'module_downloaded'       => $moduleDownloaded,
          'catalog_is_enabled'      => $catalogIsEnabled,
+         'is_discontinued'         => $isDiscontinued,
          'update_available'        => $updateAvailable,
          'account_link_required'   => $accountLinkRequired,
          'plugin_version'          => $currentPluginVersion,

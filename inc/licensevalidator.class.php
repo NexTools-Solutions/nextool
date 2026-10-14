@@ -1325,6 +1325,15 @@ class PluginNextoolLicenseValidator {
             PluginNextoolMigrationHelper::runSilently($m);
          }
       }
+      // Descontinuado (catálogo, 2026-10-14): bool NOT NULL default 0.
+      if (!$DB->fieldExists($table, 'is_discontinued')) {
+         $m = new Migration(111);
+         $m->addField($table, 'is_discontinued', 'bool', ['value' => 0, 'after' => 'is_available']);
+         PluginNextoolMigrationHelper::runSilently($m);
+      }
+      // Sem cache: a coluna pode ter nascido agora, e o fieldExists em cache diria que não (o
+      // primeiro sync depois da migração deixaria a flag para a validação seguinte).
+      $hasDiscontinuedColumn = $DB->fieldExists($table, 'is_discontinued', false);
 
       if ($schemaUpdated) {
          PluginNextoolMigrationHelper::runSilently($migration);
@@ -1382,6 +1391,10 @@ class PluginNextoolLicenseValidator {
             if (!$DB->fieldExists($table, $i18nField)) {
                unset($i18nData[$i18nField]);
             }
+         }
+         // Descontinuado (catálogo, 2026-10-14). Chave AUSENTE = servidor antigo: não mexe no gravado.
+         if (array_key_exists('is_discontinued', $entry) && $hasDiscontinuedColumn) {
+            $i18nData['is_discontinued'] = !empty($entry['is_discontinued']) ? 1 : 0;
          }
 
          // Bloco platforms (ContainerAPI 4.0+). Quando ausente, cai no fallback

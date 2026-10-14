@@ -174,6 +174,16 @@ function plugin_nextool_install() {
       // 6.27.0: teto por serviço (contrato §8.7). O addKey é no-op quando o índice já existe.
       $migration->addKey($cloudRequestsTable, ['service', 'created_at'], 'service_window');
    }
+   // Vigia das rotinas: marca de início por job (job que derruba o processo deixa last_started > last_run).
+   $jobsTable = 'glpi_plugin_nextool_main_jobs';
+   if ($DB->tableExists($jobsTable)) {
+      $migration->addField($jobsTable, 'last_started', 'timestamp', [
+         'after'   => 'last_run',
+         'null'    => true,
+         'value'   => null,
+         'comment' => 'início da execução em curso; maior que last_run = o processo morreu nela',
+      ]);
+   }
    $migration->executeMigration();
 
    // Logs unificados: copia as três tabelas antigas de log para glpi_plugin_nextool_main_logs

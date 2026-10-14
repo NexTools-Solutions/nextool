@@ -61,6 +61,28 @@ class PluginNextoolModuleCardHelper {
          return $primary . self::wrapDropdown($secondary);
       }
 
+      // Módulo DESCONTINUADO (catálogo, 2026-10-14): saiu de linha. Sem Download, Instalar, Licenciar
+      // nem Atualizar; quem já o tem instalado ainda abre a configuração, desativa e desinstala.
+      if (!empty($state['is_discontinued'])) {
+         $secondary = [];
+         if (!empty($state['is_installed']) && $canManage) {
+            if (!empty($state['is_enabled'])) {
+               if ($state['show_config_button']) {
+                  $secondary[] = self::renderDropdownItem(__('Configurações', 'nextool'), 'ti ti-settings', $state['config_url']);
+               }
+               if ($canToggleMod) {
+                  $secondary[] = self::renderDropdownAction($state, 'disable', __('Desativar', 'nextool'), 'ti ti-player-pause');
+               }
+            } elseif ($canUninstall) {
+               $secondary[] = self::renderDropdownAction($state, 'uninstall', __('Desinstalar', 'nextool'), 'ti ti-trash text-danger', false,
+                  __('Tem certeza? O módulo será desativado, mas tabelas e dados permanecerão no banco.', 'nextool'));
+            }
+         }
+         self::appendExternalLinks($state, $secondary);
+         self::appendDataItems($state, $secondary);
+         return self::renderBadge(__('Descontinuado', 'nextool'), 'badge bg-secondary text-white me-1') . self::wrapDropdown($secondary);
+      }
+
       $catalogDisabled = empty($state['catalog_is_enabled']);
 
       if (!$canManage) {

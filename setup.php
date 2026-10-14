@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.39.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.40.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -482,6 +482,12 @@ function plugin_init_nextool() {
                'color'       => 'purple',
                'severity'    => 'info',
             ]);
+            // Vigia das rotinas: avisos obrigatórios de rotina/ação automática parada.
+            $watchdogFile = NEXTOOL_PHP_DIR . '/inc/jobwatchdog.class.php';
+            if (file_exists($watchdogFile)) {
+               require_once $watchdogFile;
+               PluginNextoolJobWatchdog::registerSources();
+            }
          }
       }
 
@@ -775,6 +781,12 @@ function plugin_init_nextool() {
                }
             }
             plugin_nextool_prof_stop('dispatch_menus');
+
+            // Vigia das rotinas pela web (cron do servidor parado não roda o vigia). Depois dos
+            // módulos: o sino (sink) já está registrado. Um stat por request; checagem a cada 10 min.
+            if (!$nxAssetFastPath && class_exists('PluginNextoolJobWatchdog')) {
+               PluginNextoolJobWatchdog::maybeRunFromWeb();
+            }
          } catch (Exception $e) {
             Toolbox::logInFile('plugin_nextool', "Erro ao carregar módulos: " . $e->getMessage());
          }
@@ -1029,6 +1041,20 @@ function _plugin_nextool_register_crons() {
    if (class_exists('PluginNextoolJobDispatcher')) {
       CronTask::register('PluginNextoolJobDispatcher', PluginNextoolJobDispatcher::TASK_NAME, MINUTE_TIMESTAMP, [
          'comment' => 'Executa as rotinas frequentes dos módulos NexTool numa única ação automática',
+         'mode'    => CronTask::MODE_EXTERNAL,
+      ]);
+   }
+
+   // Vigia das rotinas: CronTask SEPARADA da que ele vigia (uma presa não impede a outra de rodar).
+   if (!class_exists('PluginNextoolJobWatchdog')) {
+      $watchdogFile = __DIR__ . '/inc/jobwatchdog.class.php';
+      if (file_exists($watchdogFile)) {
+         require_once $watchdogFile;
+      }
+   }
+   if (class_exists('PluginNextoolJobWatchdog')) {
+      CronTask::register('PluginNextoolJobWatchdog', PluginNextoolJobWatchdog::TASK_NAME, PluginNextoolJobWatchdog::FREQUENCY, [
+         'comment' => 'Destrava as rotinas do NexTool quando o processo morreu no meio e avisa quando algo para de rodar',
          'mode'    => CronTask::MODE_EXTERNAL,
       ]);
    }

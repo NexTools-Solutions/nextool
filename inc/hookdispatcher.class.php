@@ -1331,10 +1331,13 @@ class PluginNextoolHookDispatcher {
          'icon'            => (string)($meta['icon'] ?? 'ti ti-bell'),
          'color'           => (string)($meta['color'] ?? 'secondary'),
          'severity'        => (string)($meta['severity'] ?? 'info'),
-         'default_enabled' => !isset($meta['default_enabled']) || (bool)$meta['default_enabled'],
+         'default_enabled' => !empty($meta['mandatory']) || !isset($meta['default_enabled']) || (bool)$meta['default_enabled'],
          'dedup_window'    => max(0, (int)($meta['dedup_window'] ?? 0)),
          'required_bit'    => max(0, (int)($meta['required_bit'] ?? 0)),
          'required_scope'  => $scope,
+         // Obrigatória: o consumidor não deixa o administrador nem o usuário desligar (avisos de falha
+         // que param o produto, ex.: rotinas do NexTool paradas). A audiência continua valendo.
+         'mandatory'       => !empty($meta['mandatory']),
       ];
    }
 

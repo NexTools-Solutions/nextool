@@ -99,7 +99,7 @@ final class PluginNextoolMajorReadiness {
     * PURA (testável com dados injetados): dado o conjunto de módulos instalados, quais não
     * declaram $target e o que o catálogo oferece para cada um.
     *
-    * @param array<string, array{name?:string, version?:string, declared?:int[]|null, catalog_majors?:int[]|null, catalog_version?:string|null}> $installed
+    * @param array<string, array{name?:string, version?:string, declared?:int[]|null, catalog_majors?:int[]|null, catalog_version?:string|null, discontinued?:bool}> $installed
     * @return array{target:int, count:int, modules:array<string,array{name:string,version:string,has_release:bool,catalog_version:?string}>, ready:string[], waiting:string[]}
     */
    public static function classify(array $installed, int $target): array {
@@ -109,6 +109,9 @@ final class PluginNextoolMajorReadiness {
          $declared = $info['declared'] ?? null;
          if ($declared === null || in_array($target, $declared, true)) {
             continue; // legado (não listado) ou já compatível
+         }
+         if (!empty($info['discontinued'])) {
+            continue; // descontinuado no catálogo: não terá versão para o major, não é pendência
          }
          $catalogMajors  = $info['catalog_majors'] ?? null;
          $catalogVersion = isset($info['catalog_version']) && trim((string) $info['catalog_version']) !== '' ? trim((string) $info['catalog_version']) : null;
@@ -159,6 +162,7 @@ final class PluginNextoolMajorReadiness {
                'declared'        => self::declaredMajors((string) $key),
                'catalog_majors'  => self::parseMajors($meta['compat_glpi_majors'] ?? null),
                'catalog_version' => isset($meta['version']) ? (string) $meta['version'] : null,
+               'discontinued'    => !empty($meta['is_discontinued']),
             ];
          }
       } catch (\Throwable $e) {

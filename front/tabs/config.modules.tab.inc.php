@@ -317,14 +317,21 @@ declare(strict_types=1);
                            </div>
                            <?php endif; ?>
 
-                           <?php if (!$module['catalog_is_enabled']): ?>
+                           <?php if (!empty($module['is_discontinued'])): ?>
+                           <!-- Descontinuado (catálogo, 2026-10-14): o módulo saiu de linha e não recebe
+                                atualizações nem versões para novos GLPI; o card fica para desativar/desinstalar. -->
+                           <div class="alert alert-secondary small p-2 mb-2">
+                              <span class="badge text-white bg-secondary me-1"><?php echo __('Descontinuado', 'nextool'); ?></span>
+                              <?php echo __('Este módulo saiu de linha: não recebe atualizações nem versões para novas versões do GLPI.', 'nextool'); ?>
+                           </div>
+                           <?php elseif (!$module['catalog_is_enabled']): ?>
                            <div class="mb-2">
                               <span class="badge text-white bg-secondary"><?php echo __('Indisponível', 'nextool'); ?></span>
                            </div>
                            <?php endif; ?>
 
                            <div class="mt-auto pt-2">
-                              <?php if ($module['is_paid'] && empty($module['can_download']) && empty($module['is_license_suspended'])): ?>
+                              <?php if ($module['is_paid'] && empty($module['can_download']) && empty($module['is_license_suspended']) && empty($module['is_discontinued'])): ?>
                               <div class="alert alert-warning small p-2 mb-2 d-flex align-items-center justify-content-between">
                                  <span><i class="ti ti-lock me-1"></i><?php echo __('Licença necessária para utilizar todos os recursos', 'nextool'); ?></span>
                               </div>

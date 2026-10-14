@@ -21,6 +21,13 @@
  *  - 5 falhas seguidas pausam o job por 2x o intervalo dele, dobrando a cada falha até 1 h; um sucesso
  *    tira a pausa.
  *    Estourar o tempo NÃO pausa: só registra e manda o job para o fim da próxima rodada.
+ *
+ * Processo que morre no meio (erro fatal, OOM, kill) deixa a CronTask em "em execução" para sempre: o
+ * GLPI não destrava sozinho (incidente glpisync na JMBA, 47 dias parado). Por isso a rodada segura a
+ * trava `roundLockName()` (o MariaDB a solta quando a conexão cai: é a prova de morte que o vigia,
+ * `PluginNextoolJobWatchdog`, usa para destravar) e cada job grava `last_started` antes de rodar
+ * (`last_started > last_run` com a trava do job livre = o job derrubou o processo; conta como falha
+ * na rodada seguinte, então um job que mata o processo toda vez também acaba pausado).
  */
 
 if (!defined('GLPI_ROOT')) {
@@ -66,7 +73,23 @@ class PluginNextoolJobDispatcher {
          $task->log(__('Rotinas do NexTool desligadas (jobs_dispatcher_enabled = 0)', 'nextool'));
          return 0;
       }
-      return self::runRound(PluginNextoolJobContext::forTask($task, self::BUDGET_SECONDS), time());
+      $trava = self::roundLockName();
+      $status = self::tryLock($trava);
+      if ($status === false) {
+         $task->log(__('Outra rodada das rotinas ainda está em execução', 'nextool'));
+         return 0;
+      }
+      // null = o banco não respondeu ao GET_LOCK: roda sem a trava (comportamento anterior), só o vigia
+      // perde a prova de morte desta rodada.
+      try {
+         $now = time();
+         self::reapCrashed($now, PluginNextoolJobContext::forTask($task, 0));
+         return self::runRound(PluginNextoolJobContext::forTask($task, self::BUDGET_SECONDS), $now);
+      } finally {
+         if ($status === true) {
+            self::unlock($trava);
+         }
+      }
    }
 
    /** Chave de emergência. Padrão ligado. */
@@ -256,6 +279,7 @@ class PluginNextoolJobDispatcher {
          return ['result' => null, 'message' => 'em execução por outro processo', 'duration_ms' => 0];
       }
       $jctx = $ctx->scoped($job['module_key'] . '/' . $job['key']);
+      $row = self::markStarted($job, $row, $now);
       $inicio = microtime(true);
       $result = 0;
       $erro = '';
@@ -294,18 +318,7 @@ class PluginNextoolJobDispatcher {
 
    private static function saveResult(array $job, ?array $row, int $now, int $result, int $duracao, int $overrun, string $mensagem): void {
       global $DB;
-      $fails = (int) ($row['fails'] ?? 0);
-      $pausa = null;
-      if ($result < 0) {
-         $fails++;
-         if ($fails >= self::MAX_FAILS) {
-            // 2x o intervalo do job na 5ª falha, dobrando a cada falha seguinte, até MAX_PAUSE.
-            $segundos = (int) min(self::MAX_PAUSE, (int) $job['every'] * (2 ** min(10, $fails - self::MAX_FAILS + 1)));
-            $pausa = date('Y-m-d H:i:s', $now + $segundos);
-         }
-      } else {
-         $fails = 0;
-      }
+      [$fails, $pausa] = self::failState((int) ($row['fails'] ?? 0), $result, (int) $job['every'], $now);
       $dados = [
          'last_run'         => date('Y-m-d H:i:s', $now),
          'last_result'      => $result,
@@ -322,6 +335,135 @@ class PluginNextoolJobDispatcher {
       } else {
          $DB->update(self::TABLE, $dados, ['id' => (int) $row['id']]);
       }
+   }
+
+   /**
+    * Falhas seguidas e pausa depois de um resultado. 5 falhas pausam por 2x o intervalo do job, dobrando
+    * a cada falha seguinte, até MAX_PAUSE; resultado >= 0 zera.
+    *
+    * @return array{0:int, 1:?string} [falhas, pausado até (Y-m-d H:i:s) ou null]
+    */
+   public static function failState(int $fails, int $result, int $every, int $now): array {
+      if ($result >= 0) {
+         return [0, null];
+      }
+      $fails++;
+      $pausa = null;
+      if ($fails >= self::MAX_FAILS) {
+         $segundos = (int) min(self::MAX_PAUSE, $every * (2 ** min(10, $fails - self::MAX_FAILS + 1)));
+         $pausa = date('Y-m-d H:i:s', $now + $segundos);
+      }
+      return [$fails, $pausa];
+   }
+
+   /**
+    * Grava `last_started` antes do run (mesmo relógio do `last_run`: só um job que não terminou fica com
+    * `last_started > last_run`). Devolve a linha com o id, para o saveResult atualizar em vez de inserir.
+    */
+   private static function markStarted(array $job, ?array $row, int $now): ?array {
+      global $DB;
+      if (!self::hasStartedColumn()) {
+         return $row;
+      }
+      $quando = date('Y-m-d H:i:s', $now);
+      try {
+         if ($row === null || empty($row['id'])) {
+            $DB->insert(self::TABLE, [
+               'module_key'   => $job['module_key'],
+               'job_key'      => $job['key'],
+               'last_started' => $quando,
+               'date_mod'     => date('Y-m-d H:i:s'),
+            ]);
+            $novo = $DB->request(['FROM' => self::TABLE, 'WHERE' => ['module_key' => $job['module_key'], 'job_key' => $job['key']], 'LIMIT' => 1])->current();
+            return $novo ?: $row;
+         }
+         $DB->update(self::TABLE, ['last_started' => $quando], ['id' => (int) $row['id']]);
+         $row['last_started'] = $quando;
+      } catch (\Throwable $e) {
+         // sem a marca, o job roda igual; só a atribuição de queda fica cega
+      }
+      return $row;
+   }
+
+   /** Coluna `last_started` (base com o vigia). Cliente no meio do update ainda não a tem. */
+   private static function hasStartedColumn(): bool {
+      static $tem = null;
+      if ($tem === null) {
+         global $DB;
+         $tem = isset($DB) && $DB->tableExists(self::TABLE) && $DB->fieldExists(self::TABLE, 'last_started', false);
+      }
+      return $tem;
+   }
+
+   /**
+    * Jobs que começaram e não terminaram (o processo morreu dentro deles), com a trava do job livre (não é
+    * um "Executar agora" em andamento).
+    *
+    * @return array<int, array> linhas da tabela
+    */
+   public static function getCrashedRows(): array {
+      global $DB;
+      if (!self::hasStartedColumn()) {
+         return [];
+      }
+      $out = [];
+      foreach ($DB->request(['FROM' => self::TABLE, 'WHERE' => ['NOT' => ['last_started' => null]]]) as $row) {
+         $inicio = strtotime((string) $row['last_started']);
+         $fim = empty($row['last_run']) ? false : strtotime((string) $row['last_run']);
+         if ($inicio === false || ($fim !== false && $inicio <= $fim)) {
+            continue;
+         }
+         if (self::isLockFree(self::lockName((string) $row['module_key'], (string) $row['job_key'])) !== true) {
+            continue;
+         }
+         $out[] = $row;
+      }
+      return $out;
+   }
+
+   /**
+    * Registra como falha os jobs que derrubaram o processo na rodada anterior. Roda no começo da rodada,
+    * já com a trava da rodada: um fatal (que o try/catch não pega) passa a contar e a pausar como exceção.
+    *
+    * @return string[] "modulo/job" registrados
+    */
+   public static function reapCrashed(int $now, ?PluginNextoolJobContext $ctx = null): array {
+      global $DB;
+      $linhas = self::getCrashedRows();
+      if ($linhas === []) {
+         return [];
+      }
+      $every = [];
+      try {
+         foreach (self::collectJobs() as $job) {
+            $every[self::stateKey($job)] = (int) $job['every'];
+         }
+      } catch (\Throwable $e) {
+         // sem o intervalo declarado, usa o mínimo
+      }
+      $mensagem = __('O processo terminou durante esta rotina, sem concluir (erro fatal ou processo encerrado)', 'nextool');
+      $feitos = [];
+      foreach ($linhas as $row) {
+         $chave = $row['module_key'] . '/' . $row['job_key'];
+         [$fails, $pausa] = self::failState((int) $row['fails'], -1, $every[$chave] ?? self::MIN_EVERY, $now);
+         $DB->update(self::TABLE, [
+            'last_run'     => date('Y-m-d H:i:s', $now),
+            'last_result'  => -1,
+            'last_message' => mb_substr($mensagem, 0, 255),
+            'fails'        => $fails,
+            'paused_until' => $pausa,
+            'date_mod'     => date('Y-m-d H:i:s'),
+         ], ['id' => (int) $row['id']]);
+         $feitos[] = $chave;
+         self::warn($ctx, sprintf('%s: %s (falhas seguidas: %d)', $chave, $mensagem, $fails));
+      }
+      return $feitos;
+   }
+
+   /** Trava da rodada inteira: segurada pela CronTask enquanto roda; livre com o processo morto. */
+   public static function roundLockName(): string {
+      global $DB;
+      return 'nxjobs_round_' . substr(md5((string) ($DB->dbdefault ?? '')), 0, 24);
    }
 
    /**
@@ -438,21 +580,37 @@ class PluginNextoolJobDispatcher {
    }
 
    private static function lock(string $trava): bool {
+      return self::tryLock($trava) === true;
+   }
+
+   /** GET_LOCK sem espera: true = pegou, false = outra conexão segura, null = o banco não respondeu. */
+   public static function tryLock(string $trava): ?bool {
+      $l = self::lockQuery(sprintf("SELECT GET_LOCK('%s', 0) AS l", $trava));
+      return $l === null ? null : $l === 1;
+   }
+
+   /** IS_FREE_LOCK: true = ninguém segura (processo dono morreu ou terminou), false = segurada, null = erro. */
+   public static function isLockFree(string $trava): ?bool {
+      $l = self::lockQuery(sprintf("SELECT IS_FREE_LOCK('%s') AS l", $trava));
+      return $l === null ? null : $l === 1;
+   }
+
+   private static function lockQuery(string $sql): ?int {
       global $DB;
       $metodo = method_exists($DB, 'doQuery') ? 'doQuery' : 'query'; // doQuery só a partir do GLPI 10.0.7
       try {
-         $res = $DB->$metodo(sprintf("SELECT GET_LOCK('%s', 0) AS l", $trava));
+         $res = $DB->$metodo($sql);
       } catch (\Throwable $e) {
-         return false;
+         return null;
       }
       if (!$res instanceof \mysqli_result) {
-         return false;
+         return null;
       }
       $row = $res->fetch_assoc();
-      return (int) ($row['l'] ?? 0) === 1;
+      return isset($row['l']) ? (int) $row['l'] : null;
    }
 
-   private static function unlock(string $trava): void {
+   public static function unlock(string $trava): void {
       global $DB;
       $metodo = method_exists($DB, 'doQuery') ? 'doQuery' : 'query';
       try {
