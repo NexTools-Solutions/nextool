@@ -264,14 +264,32 @@ final class PluginNextoolCompat {
     */
    public static function httpClient(array $guzzleOptions = []) {
       if (method_exists('Toolbox', 'getGuzzleClient')) {
+         unset($guzzleOptions[self::HTTP_CONTEXT_OPTION], $guzzleOptions[self::HTTP_ALLOW_HTTP_OPTION]);
          return Toolbox::getGuzzleClient($guzzleOptions);
       }
       if (class_exists('Glpi\Toolbox\HttpClient')) {
          require_once __DIR__ . '/httpclientadapter.class.php';
          return new PluginNextoolHttpClientAdapter($guzzleOptions);
       }
+      unset($guzzleOptions[self::HTTP_CONTEXT_OPTION], $guzzleOptions[self::HTTP_ALLOW_HTTP_OPTION]);
       return new \GuzzleHttp\Client($guzzleOptions);
    }
+
+   /**
+    * Opção extra de `httpClient()`: contexto do `Glpi\Toolbox\HttpClient` do GLPI 12 (class-string, ex.:
+    * `Auth`), que decide proxy (`proxy_exclusions`) e rede privada
+    * (`GLPI_SERVERSIDE_URL_ALLOWED_PRIVATE_NETWORKS_CONTEXTS`; o padrão do core libera `Agent` e `Auth`).
+    * Sem a opção, o adaptador usa o contexto `PluginNextoolCloudClient`. Ignorada no 10/11 (Guzzle).
+    * Quem chama confere `defined('PluginNextoolCompat::HTTP_CONTEXT_OPTION')` para seguir compatível
+    * com base antiga.
+    */
+   public const HTTP_CONTEXT_OPTION = 'nextool_context';
+
+   /**
+    * Opção extra de `httpClient()`: aceitar `http://` no adaptador do GLPI 12 (que por padrão só aceita
+    * `https://`, como o curl do Guzzle da base). No 10/11 o `http` já era aceito pela allowlist do core.
+    */
+   public const HTTP_ALLOW_HTTP_OPTION = 'nextool_allow_http';
 }
 
 }

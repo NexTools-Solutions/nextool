@@ -440,8 +440,10 @@ class PluginNextoolHookDispatcher {
    // `plugin_nextool_getRuleActions` (ver hook.php), invocada por
    // Rule::doHookAndMergeResults(Hooks::AUTO_GET_RULE_ACTIONS, ...). Cada módulo
    // que queira contribuir ações para um tipo de regra (ex.: 'RuleRight')
-   // registra um provider aqui no onInit() e declara o itemtype em
-   // $PLUGIN_HOOKS['use_rules']['nextool']. A persistência do valor atribuído é
+   // registra um provider aqui no onInit(); o itemtype é declarado em
+   // $PLUGIN_HOOKS['use_rules']['nextool'] pelo próprio registro (useRules(), como
+   // registerRuleCriteria/registerRuleInput já faziam; módulos antigos que ainda
+   // declaram à mão continuam valendo: é idempotente). A persistência do valor atribuído é
    // nativa: RuleRight::executeActions() trata qualquer ação `assign` no `default`
    // do switch e o resultado é mesclado nos campos do usuário (User.php).
 
@@ -459,6 +461,7 @@ class PluginNextoolHookDispatcher {
          self::$ruleActions[$ruleItemtype] = [];
       }
       self::$ruleActions[$ruleItemtype][] = $provider;
+      self::useRules($ruleItemtype);
    }
 
    /**

@@ -50,10 +50,23 @@ final class PluginNextoolHttpClientAdapter {
    /** @var array<string,mixed> opções já no vocabulário do Symfony */
    private $options;
 
+   /** @var string contexto do HttpClient do core (por chamada: opção `nextool_context`) */
+   private $context = self::CONTEXT;
+
+   /** @var bool aceitar `http://` além de `https://` (por chamada: opção `nextool_allow_http`) */
+   private $allowHttp = false;
+
    /**
-    * @param array<string,mixed> $guzzleOptions
+    * @param array<string,mixed> $guzzleOptions além das opções do Guzzle, `nextool_context` (class-string
+    *                                           do contexto do core, ex.: `Auth`) e `nextool_allow_http` (bool)
     */
    public function __construct(array $guzzleOptions = []) {
+      $ctx = $guzzleOptions[PluginNextoolCompat::HTTP_CONTEXT_OPTION] ?? null;
+      if (is_string($ctx) && preg_match('/^[A-Za-z0-9_\\\\]{1,128}$/', $ctx) === 1) {
+         $this->context = $ctx;
+      }
+      $this->allowHttp = !empty($guzzleOptions[PluginNextoolCompat::HTTP_ALLOW_HTTP_OPTION]);
+      unset($guzzleOptions[PluginNextoolCompat::HTTP_CONTEXT_OPTION], $guzzleOptions[PluginNextoolCompat::HTTP_ALLOW_HTTP_OPTION]);
       $this->options = self::mapOptions($guzzleOptions);
    }
 
@@ -88,9 +101,10 @@ final class PluginNextoolHttpClientAdapter {
     * @param array<string,mixed> $options só `headers` e `body` são usados
     */
    public function request(string $method, string $uri, array $options = []): PluginNextoolHttpClientResponse {
-      if (!preg_match('#^https://#i', $uri)) {
+      if (!preg_match($this->allowHttp ? '#^https?://#i' : '#^https://#i', $uri)) {
          // O curl do Guzzle era limitado a https por CURLOPT_PROTOCOLS, que o Symfony recusa.
-         throw new \InvalidArgumentException('Only https:// is allowed');
+         // `http://` só por opção explícita de quem chama (ex.: discovery de IdP interno do SSO Login).
+         throw new \InvalidArgumentException($this->allowHttp ? 'Only http(s):// is allowed' : 'Only https:// is allowed');
       }
       $request = [];
       if (isset($options['headers']) && is_array($options['headers'])) {
@@ -100,7 +114,7 @@ final class PluginNextoolHttpClientAdapter {
          $request['body'] = $options['body'];
       }
 
-      $client = new \Glpi\Toolbox\HttpClient(self::CONTEXT, $this->options);
+      $client = new \Glpi\Toolbox\HttpClient($this->context, $this->options);
       try {
          $response = $client->request(strtoupper($method), $uri, $request);
       } catch (\Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface $e) {
