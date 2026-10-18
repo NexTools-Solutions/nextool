@@ -248,6 +248,13 @@ class PluginNextoolConfigViewState {
    /**
     * @return array{label:string,description:string,badgeClass:string}
     */
+   /**
+    * Nome do plano no idioma da sessão (ex.: DESENVOLVIMENTO -> "Desenvolvimento").
+    */
+   public static function getPlanLabel(string $licenseTier): string {
+      return self::resolvePlanPresentation($licenseTier)['label'];
+   }
+
    private static function resolvePlanPresentation(string $licenseTier): array {
       switch ($licenseTier) {
          case 'FREE':

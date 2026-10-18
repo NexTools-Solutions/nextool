@@ -91,29 +91,65 @@ class PluginNextoolModuleCatalog {
       if (!is_array($map) || $map === []) {
          return $fallback;
       }
+      $text = self::pickLocale($map, static fn($v): bool => is_string($v) && $v !== '');
+      return $text ?? $fallback;
+   }
+
+   /**
+    * Destaques do card no idioma da sessão: JSON {locale: [linhas]} (features_i18n), mesma ordem de
+    * idiomas do localized(); sem tradução usa $fallback (o features_json em pt_BR).
+    *
+    * @param array<int, string> $fallback
+    * @return array<int, string>
+    */
+   public static function localizedList($json, array $fallback): array {
+      if (!is_string($json) || $json === '') {
+         return $fallback;
+      }
+      $map = json_decode($json, true);
+      if (!is_array($map) || $map === []) {
+         return $fallback;
+      }
+      $lines = self::pickLocale($map, static fn($v): bool => is_array($v) && $v !== [] && array_is_list($v));
+      if ($lines === null) {
+         return $fallback;
+      }
+      return array_values(array_filter(array_map(
+         static fn($line): string => is_scalar($line) ? (string) $line : '',
+         $lines
+      ), static fn(string $line): bool => $line !== ''));
+   }
+
+   /**
+    * Ordem: idioma exato, mesma família (es_CO usa es_ES; a variante "xx_XX" vem antes das outras) e
+    * inglês (en_US, en_GB). Null = nenhum valor aceito por $valid.
+    *
+    * @param array<mixed> $map
+    */
+   private static function pickLocale(array $map, callable $valid) {
       $lang = (string) ($_SESSION['glpilanguage'] ?? ($GLOBALS['CFG_GLPI']['language'] ?? ''));
-      if ($lang !== '' && isset($map[$lang]) && is_string($map[$lang]) && $map[$lang] !== '') {
+      if ($lang !== '' && isset($map[$lang]) && $valid($map[$lang])) {
          return $map[$lang];
       }
       $prefix = strtolower(substr($lang, 0, 2));
       if ($prefix !== '') {
          $preferred = $prefix . '_' . strtoupper($prefix);
-         if (isset($map[$preferred]) && is_string($map[$preferred]) && $map[$preferred] !== '') {
+         if (isset($map[$preferred]) && $valid($map[$preferred])) {
             return $map[$preferred];
          }
-         foreach ($map as $locale => $text) {
-            if (is_string($locale) && strncmp($locale, $prefix . '_', 3) === 0 && is_string($text) && $text !== '') {
-               return $text;
+         foreach ($map as $locale => $value) {
+            if (is_string($locale) && strncmp($locale, $prefix . '_', 3) === 0 && $valid($value)) {
+               return $value;
             }
          }
       }
-      // Idioma sem tradução (de_DE, ru_RU, nl_NL...): inglês antes do original em pt_BR.
+      // Idioma sem tradução (nl_NL, uk_UA...): inglês antes do original em pt_BR.
       foreach (['en_US', 'en_GB'] as $english) {
-         if (isset($map[$english]) && is_string($map[$english]) && $map[$english] !== '') {
+         if (isset($map[$english]) && $valid($map[$english])) {
             return $map[$english];
          }
       }
-      return $fallback;
+      return null;
    }
 
    public static function all(): array {
@@ -163,7 +199,10 @@ class PluginNextoolModuleCatalog {
             'icon'         => isset($row['icon']) && $row['icon'] !== '' ? $row['icon'] : self::DEFAULT_ICON,
             'price_cents'  => isset($row['price_cents']) ? (int)$row['price_cents'] : null,
             'category'     => $row['category'] ?? null,
-            'features'     => !empty($row['features_json']) ? json_decode($row['features_json'], true) : [],
+            'features'     => self::localizedList(
+               $row['features_i18n'] ?? null,
+               !empty($row['features_json']) ? (array) json_decode($row['features_json'], true) : []
+            ),
             'screenshot_url' => isset($row['screenshot_url']) && $row['screenshot_url'] !== '' ? $row['screenshot_url'] : null,
             'download_count' => (int)($row['download_count'] ?? 0),
             'compat_glpi_majors' => isset($row['compat_glpi_majors']) && $row['compat_glpi_majors'] !== '' ? $row['compat_glpi_majors'] : null,

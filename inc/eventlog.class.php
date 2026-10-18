@@ -139,7 +139,8 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
          'massiveaction' => false,
          'linkfield'     => 'users_id',
       ];
-      $tab[] = $plain(8, 'message', __('Mensagem', 'nextool'), 'text', ['contains']);
+      // 'specific': a grade traduz a mensagem para o idioma de quem lê (PluginNextoolLogMessage).
+      $tab[] = $plain(8, 'message', __('Mensagem', 'nextool'), 'specific', ['contains']);
       $tab[] = $plain(9, 'details', __('Detalhes', 'nextool'), 'specific', ['contains']);
       $tab[] = $plain(10, 'origin', __('Origem', 'nextool'));
       $tab[] = $plain(11, 'section', __('Seção', 'nextool'));
@@ -177,6 +178,11 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
 
       if ($field === 'details') {
          return self::formatDetails($values['details'] ?? null);
+      }
+
+      if ($field === 'message') {
+         $message = PluginNextoolLogMessage::toSession(isset($values['message']) ? (string) $values['message'] : null);
+         return nl2br(PluginNextoolCompat::escape($message));
       }
 
       return parent::getSpecificValueToDisplay($field, $values, $options);
@@ -390,6 +396,12 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
       // pela rede de segurança do schema e a tabela aparece no request seguinte).
       if (!$DB->tableExists(self::TABLE)) {
          return false;
+      }
+
+      // Grava a frase original (msgid), não a tradução de quem fez a ação: a grade traduz
+      // para o idioma de quem lê.
+      if (isset($record['message']) && is_string($record['message'])) {
+         $record['message'] = PluginNextoolLogMessage::toSource($record['message']);
       }
 
       $log = new self();

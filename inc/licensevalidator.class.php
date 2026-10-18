@@ -165,6 +165,33 @@ class PluginNextoolLicenseValidator {
       return $out !== [] ? json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
    }
 
+   /**
+    * Igual ao i18nMapJson, para listas: {locale: [linha, ...]} (destaques do card). Até 10 linhas
+    * por idioma, cada uma cortada em $max; idioma sem linha válida sai do mapa.
+    */
+   private static function i18nListMapJson($value, int $max): ?string {
+      if (!is_array($value)) {
+         return null;
+      }
+      $out = [];
+      foreach ($value as $locale => $lines) {
+         if (!is_string($locale) || preg_match('/^[a-z]{2}_[A-Z]{2}$/', $locale) !== 1 || !is_array($lines)) {
+            continue;
+         }
+         $clean = [];
+         foreach (array_slice(array_values($lines), 0, 10) as $line) {
+            $line = is_scalar($line) ? trim(strip_tags((string) $line)) : '';
+            if ($line !== '') {
+               $clean[] = mb_substr($line, 0, $max);
+            }
+         }
+         if ($clean !== []) {
+            $out[$locale] = $clean;
+         }
+      }
+      return $out !== [] ? json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+   }
+
    private static function persistConfig(string $namespace, array $values, string $logLabel): void {
       try {
          // GLPI 10: os valores vêm do servidor (e-mail da conta, URL, JSON) e o Config::add/update não escapa; um
@@ -1331,9 +1358,18 @@ class PluginNextoolLicenseValidator {
          $m->addField($table, 'is_discontinued', 'bool', ['value' => 0, 'after' => 'is_available']);
          PluginNextoolMigrationHelper::runSilently($m);
       }
+      // Destaques do card por idioma (2026-10-18): JSON {locale: [linhas]}, par do features_json.
+      if (!$DB->fieldExists($table, 'features_i18n')) {
+         $m = new Migration(112);
+         $m->addField($table, 'features_i18n', 'text', [
+            'value' => null, 'after' => 'features_json', 'comment' => 'JSON {locale: [features]}',
+         ]);
+         PluginNextoolMigrationHelper::runSilently($m);
+      }
       // Sem cache: a coluna pode ter nascido agora, e o fieldExists em cache diria que não (o
       // primeiro sync depois da migração deixaria a flag para a validação seguinte).
       $hasDiscontinuedColumn = $DB->fieldExists($table, 'is_discontinued', false);
+      $hasFeaturesI18nColumn = $DB->fieldExists($table, 'features_i18n', false);
 
       if ($schemaUpdated) {
          PluginNextoolMigrationHelper::runSilently($migration);
@@ -1391,6 +1427,10 @@ class PluginNextoolLicenseValidator {
             if (!$DB->fieldExists($table, $i18nField)) {
                unset($i18nData[$i18nField]);
             }
+         }
+         // Destaques por idioma (2026-10-18). Mesma regra: chave ausente = servidor antigo, não mexe.
+         if (array_key_exists('features_i18n', $entry) && $hasFeaturesI18nColumn) {
+            $i18nData['features_i18n'] = self::i18nListMapJson($entry['features_i18n'], 255);
          }
          // Descontinuado (catálogo, 2026-10-14). Chave AUSENTE = servidor antigo: não mexe no gravado.
          if (array_key_exists('is_discontinued', $entry) && $hasDiscontinuedColumn) {
