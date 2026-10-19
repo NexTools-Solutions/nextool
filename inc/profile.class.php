@@ -85,6 +85,7 @@ trait PluginNextoolProfileBody {
       // 1) Super-direito global -- SO interface central. "Acesso total ao ecossistema"
       // e o maximo de administracao; nunca deve ser concedivel por perfil simplificado.
       if (!$isHelpdesk) {
+         $this->renderAdminGlobalNotice((int) ($this->fields['id'] ?? 0));
          $this->renderBlock(
             PluginNextoolPermissionManager::RIGHT_ADMIN_GLOBAL,
             __('Super-direito', 'nextool'),
@@ -179,6 +180,41 @@ trait PluginNextoolProfileBody {
    }
 
    /** CSS de familia + legenda (uso=azul, admin=ambar). */
+   /**
+    * Aviso quando o perfil tem o super-direito: com ele marcado, os blocos de modulo abaixo
+    * podem estar todos desmarcados e o perfil ainda assim acessa tudo (caso BEPI, nextool-dev#290:
+    * a migracao antiga deu o super-direito a perfis de atendimento sem ninguem perceber).
+    * Segunda linha quando o perfil nem tem config/UPDATE do GLPI, a marca daquele caso.
+    */
+   private function renderAdminGlobalNotice(int $profilesId): void {
+      if ($profilesId <= 0) {
+         return;
+      }
+      global $DB;
+      $rights = [];
+      foreach ($DB->request([
+         'SELECT' => ['name', 'rights'],
+         'FROM'   => 'glpi_profilerights',
+         'WHERE'  => [
+            'profiles_id' => $profilesId,
+            'name'        => [PluginNextoolPermissionManager::RIGHT_ADMIN_GLOBAL, Config::$rightname],
+         ],
+      ]) as $row) {
+         $rights[(string) $row['name']] = (int) $row['rights'];
+      }
+      $global = $rights[PluginNextoolPermissionManager::RIGHT_ADMIN_GLOBAL] ?? 0;
+      if (($global & PluginNextoolPermissionManager::GLOBAL_BIT) === 0) {
+         return;
+      }
+      echo '<div class="alert alert-info d-flex align-items-start gap-2 nextool-admin-global-notice">'
+         . '<i class="ti ti-shield-lock fs-2"></i><div>'
+         . __s('Este perfil tem o super-direito: acesso total ao NexTool, inclusive aos módulos desmarcados abaixo.', 'nextool');
+      if ((($rights[Config::$rightname] ?? 0) & UPDATE) === 0) {
+         echo '<br>' . __s('Este perfil não tem a permissão de configuração do GLPI. Confira se o acesso total ao NexTool é intencional.', 'nextool');
+      }
+      echo '</div></div>';
+   }
+
    private function renderPermLegend(bool $isHelpdesk = false): void {
       echo '<style>'
          . '.nextool-perms .nt-legend{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:4px 0 14px;font-size:.85rem}'

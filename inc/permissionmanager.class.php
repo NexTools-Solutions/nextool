@@ -41,6 +41,8 @@ class PluginNextoolPermissionManager {
 
    // ---- Bits do super-direito ----
    public const GLOBAL_BIT = 1; // READ em nextool_admin_global
+   /** Perfil Super-Admin do GLPI: o unico que recebe o super-direito ao criar o direito (#290). */
+   public const SUPER_ADMIN_PROFILE_ID = 4;
 
    // ---- Bits: Usabilidade (direito de modulo) ----
    public const ACCESS = 1;            // = READ. "Acessar o recurso"
@@ -377,11 +379,19 @@ class PluginNextoolPermissionManager {
    public static function installRights(): void {
       $migration = new Migration(plugin_version_nextool()['version'] ?? '1.0.0');
 
-      // Cria os direitos novos. admin_global e base herdam de quem tem config/UPDATE.
-      self::ensureRightExists(self::RIGHT_ADMIN_GLOBAL, $migration, [Config::$rightname => UPDATE], self::GLOBAL_BIT);
+      // Cria os direitos novos. A heranca declarada aqui NAO acontece: o addProfileRights do core
+      // grava a linha (rights=0) em todos os perfis e o Migration::addRight so herda para perfil
+      // SEM linha. A concessao inicial do super-direito e explicita (seedAdminGlobal), abaixo.
+      $adminGlobalCreated = self::ensureRightExists(self::RIGHT_ADMIN_GLOBAL, $migration, [Config::$rightname => UPDATE], self::GLOBAL_BIT);
       self::ensureRightExists(self::RIGHT_BASE, $migration, [Config::$rightname => UPDATE], self::BASE_MASK);
 
       PluginNextoolMigrationHelper::runSilently($migration);
+      // Super-direito: SO na criacao do direito (instalacao nova ou reinstalacao) e SO ao
+      // Super-Admin. Numa atualizacao o direito ja existe e a decisao do admin prevalece
+      // (nextool-dev#290: a migracao antiga religava em todo perfil com config/UPDATE).
+      if ($adminGlobalCreated) {
+         self::seedAdminGlobal();
+      }
       self::migrateLegacyRights();
       self::cleanHelpdeskProfileRights();
 
@@ -443,7 +453,8 @@ class PluginNextoolPermissionManager {
          if (isset(self::$syncedModuleRights[$rightName])) {
             continue;
          }
-         // Novos direitos de modulo herdam admin/uso de quem tem admin_global.
+         // A heranca declarada nao acontece (o addProfileRights do core ja grava rights=0 em todos
+         // os perfis): direito de modulo novo nasce em 0; quem tem o super-direito ja passa nos gates.
          $changes = self::ensureRightExists($rightName, $migration, [
             self::RIGHT_ADMIN_GLOBAL => self::GLOBAL_BIT,
             Config::$rightname       => UPDATE,
@@ -525,25 +536,40 @@ class PluginNextoolPermissionManager {
    }
 
    /**
+    * Concessao inicial do super-direito: SO ao Super-Admin do GLPI (perfil id 4). Chamada apenas
+    * quando o direito acabou de ser criado (installRights). Nenhum outro perfil recebe por padrao
+    * (decisao do owner, nextool-dev#290). Perfil 4 ausente ou de interface simplificada: ninguem
+    * recebe, e o admin concede pela aba NexTool do perfil.
+    */
+   private static function seedAdminGlobal(): void {
+      global $DB;
+      $profile = $DB->request([
+         'SELECT' => ['id', 'interface'],
+         'FROM'   => 'glpi_profiles',
+         'WHERE'  => ['id' => self::SUPER_ADMIN_PROFILE_ID],
+         'LIMIT'  => 1,
+      ])->current();
+      if ($profile === null || ($profile['interface'] ?? 'central') !== 'central') {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[rights] super-direito criado sem dono: perfil Super-Admin (id %d) ausente ou fora da interface central\n",
+            self::SUPER_ADMIN_PROFILE_ID
+         ));
+         return;
+      }
+      self::grantBit(self::SUPER_ADMIN_PROFILE_ID, self::RIGHT_ADMIN_GLOBAL, self::GLOBAL_BIT);
+   }
+
+   /**
     * Migracao dos direitos legados para o novo esquema (idempotente).
-    * - Concede nextool_admin_global a todo perfil com config/UPDATE (Super-Admin intacto).
     * - Migra plugin_nextool_admin/modules -> nextool_base (aproximado, conservador).
+    * - NAO concede o super-direito (ate a 6.44.0 o passo 1 dava nextool_admin_global a todo perfil
+    *   com config/UPDATE em TODA instalacao e atualizacao, e nada o retirava -- nextool-dev#290).
     * Os direitos de modulo NAO precisam migracao de bits (READ/UPDATE/PURGE reaproveitados).
     */
    public static function migrateLegacyRights(): void {
       global $DB;
       if (!$DB->tableExists('glpi_profilerights')) {
          return;
-      }
-
-      // 1) admin_global para quem tem config/UPDATE
-      $iterator = $DB->request([
-         'SELECT' => ['profiles_id'],
-         'FROM'   => 'glpi_profilerights',
-         'WHERE'  => ['name' => Config::$rightname, 'RAW' => ['(rights & ' . UPDATE . ')' => UPDATE]],
-      ]);
-      foreach ($iterator as $row) {
-         self::grantBit((int) $row['profiles_id'], self::RIGHT_ADMIN_GLOBAL, self::GLOBAL_BIT);
       }
 
       // 2) plugin_nextool_admin -> nextool_base (licenca/logs/core/contato)
