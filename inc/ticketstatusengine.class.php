@@ -179,7 +179,12 @@ class PluginNextoolTicketStatusEngine {
 
       self::enter($origin);
       try {
-         if (method_exists('Session', 'callAsSystem')) {
+         // Sem aninhar (nextool-mod-workflow#18): se quem chamou já está num
+         // callAsSystem (o motor de um módulo solucionando o chamado, que dispara
+         // este item_update), o `finally` do core religaria a checagem de direitos
+         // ao sair daqui, no meio do código de quem chamou.
+         $bypassAtivo = method_exists('Session', 'isRightChecksDisabled') && Session::isRightChecksDisabled();
+         if (method_exists('Session', 'callAsSystem') && !$bypassAtivo) {
             Session::callAsSystem(static fn() => $ticket->update($input));
          } else {
             $ticket->update($input);
