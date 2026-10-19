@@ -44,12 +44,48 @@ trait PluginNextoolHmacSignatureTrait {
       string $secret,
       string $method = 'POST'
    ): array {
-      $timestamp = (string) time();
+      require_once NEXTOOL_PHP_DIR . '/inc/clock.class.php';
+      // Relógio compensado: um servidor com o relógio do sistema errado (VM sem NTP) assina
+      // com o horário oficial aprendido do ContainerAPI (PluginNextoolClock).
+      $timestamp = (string) PluginNextoolClock::now();
       return [
          'X-Client-Identifier: ' . $clientIdentifier,
          'X-Timestamp: ' . $timestamp,
          'X-Signature: ' . self::buildHmacSignatureV2($method, $path, $body, $timestamp, $secret),
          'X-Signature-Version: 2',
       ];
+   }
+
+   /**
+    * Troca X-Timestamp/X-Signature de cabeçalhos já montados por buildHmacHeadersV2 (nova tentativa
+    * depois que o PluginNextoolClock aprendeu a diferença de horário). Os demais cabeçalhos ficam.
+    *
+    * @param array<int,string> $headers
+    * @return array<int,string>
+    */
+   protected static function resignHmacHeadersV2(
+      array $headers,
+      string $path,
+      string $body,
+      string $secret,
+      string $method = 'POST'
+   ): array {
+      $clientIdentifier = '';
+      $kept = [];
+      foreach ($headers as $line) {
+         $name = strtolower(trim((string) strstr((string) $line, ':', true)));
+         if ($name === 'x-client-identifier') {
+            $clientIdentifier = trim(substr((string) $line, strlen('X-Client-Identifier:')));
+            continue;
+         }
+         if (in_array($name, ['x-timestamp', 'x-signature', 'x-signature-version'], true)) {
+            continue;
+         }
+         $kept[] = $line;
+      }
+      if ($clientIdentifier === '') {
+         return $headers;
+      }
+      return array_merge($kept, self::buildHmacHeadersV2($clientIdentifier, $path, $body, $secret, $method));
    }
 }

@@ -35,7 +35,11 @@ class PluginNextoolEntitlementToken {
     * @return array{v:int,environment_id:string,plan:string,allowed_modules:array,iat:int,exp:int,kid:string}|null
     */
    public static function verify(string $token, string $expectedEnvironmentId, ?int $now = null): ?array {
-      $now = $now ?? time();
+      if ($now === null) {
+         // exp vem do relógio do ContainerAPI: compara com o horário oficial, não com o relógio local.
+         require_once NEXTOOL_PHP_DIR . '/inc/clock.class.php';
+         $now = PluginNextoolClock::now();
+      }
       $claims = self::decodeAndVerifySignature($token);
       if ($claims === null) {
          return null;

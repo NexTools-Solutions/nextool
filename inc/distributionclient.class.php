@@ -470,6 +470,15 @@ class PluginNextoolDistributionClient {
 
    private function performRequest(string $url, array $options = []): array {
       require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      // Relógio fora da janela (401): o helper aprende o horário oficial e repete com esta reassinatura.
+      if ($this->clientSecret !== '' && $this->baseUrl !== '' && str_starts_with($url, $this->baseUrl)) {
+         $path = substr($url, strlen($this->baseUrl));
+         $body = (string) ($options['body'] ?? '');
+         $method = (string) ($options['method'] ?? 'GET');
+         $secret = $this->clientSecret;
+         $options['resign'] = static fn (array $headers): array
+            => self::resignHmacHeadersV2($headers, $path, $body, $secret, $method);
+      }
       return PluginNextoolFileHelper::performHttpRequest($url, $options);
    }
 

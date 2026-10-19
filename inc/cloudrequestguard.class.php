@@ -84,7 +84,11 @@ class PluginNextoolCloudRequestGuard {
     *         no clock_skew, `glpi_time`) para o corpo da resposta. `reason` é só para o log interno.
     */
    public static function verify(array $headers, string $body, int $now = 0): array {
-      $now = $now > 0 ? $now : time();
+      if ($now <= 0) {
+         // A nuvem assina com o horário oficial: compara com o relógio compensado (VM sem NTP).
+         require_once NEXTOOL_PHP_DIR . '/inc/clock.class.php';
+         $now = PluginNextoolClock::now();
+      }
 
       if (strlen($body) > self::MAX_BODY_BYTES) {
          return self::recusa($now, 'payload_too_large', 'body_too_large', [], null, null);

@@ -119,14 +119,41 @@ class PluginNextoolFileHelper {
    /**
     * Executa uma requisição HTTP via cURL.
     *
+    * Com `resign` (callable que recebe os cabeçalhos e devolve os reassinados), um 401 de horário
+    * fora da janela ensina o PluginNextoolClock e a chamada é repetida UMA vez com timestamp novo.
+    *
     * @param string $url URL de destino
-    * @param array $options {method?: string, timeout?: int, body?: string, headers?: string[]}
+    * @param array $options {method?: string, timeout?: int, body?: string, headers?: string[], resign?: callable}
     * @return array{body: string, http_code: int}
     * @throws RuntimeException em caso de falha de comunicação
     */
    public static function performHttpRequest(string $url, array $options = []): array {
+      $response = self::performHttpRequestOnce($url, $options);
+      $resign = $options['resign'] ?? null;
+      if ($response['http_code'] === 401 && is_callable($resign) && !empty($options['headers'])) {
+         require_once NEXTOOL_PHP_DIR . '/inc/clock.class.php';
+         $data = json_decode($response['body'], true);
+         if (PluginNextoolClock::syncAfterRejection(401, is_array($data) ? $data : null, $url, $response['date'])) {
+            $options['headers'] = $resign($options['headers']);
+            $response = self::performHttpRequestOnce($url, $options);
+         }
+      }
+      return ['body' => $response['body'], 'http_code' => $response['http_code']];
+   }
+
+   /**
+    * @return array{body: string, http_code: int, date: ?string}
+    */
+   private static function performHttpRequestOnce(string $url, array $options): array {
       $method = strtoupper((string)($options['method'] ?? 'GET'));
+      $date = null;
       $ch = curl_init($url);
+      curl_setopt($ch, CURLOPT_HEADERFUNCTION, static function ($handle, string $line) use (&$date): int {
+         if (stripos($line, 'Date:') === 0) {
+            $date = trim(substr($line, 5));
+         }
+         return strlen($line);
+      });
 
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
       curl_setopt($ch, CURLOPT_TIMEOUT, (int)($options['timeout'] ?? 30));
@@ -155,6 +182,7 @@ class PluginNextoolFileHelper {
       return [
          'body' => (string)$body,
          'http_code' => $httpCode,
+         'date' => $date,
       ];
    }
 

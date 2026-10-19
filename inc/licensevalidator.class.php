@@ -1607,6 +1607,24 @@ class PluginNextoolLicenseValidator {
     * @return array|null
     */
    protected static function callDistributionLicenseAPI($apiEndpoint, $clientIdentifier, $clientSecret, array $payload, &$httpCode, &$responseTimeMs) {
+      $decoded = self::callDistributionLicenseAPIOnce($apiEndpoint, $clientIdentifier, $clientSecret, $payload, $httpCode, $responseTimeMs);
+      // Relógio deste servidor fora da janela do HMAC (VM sem NTP): aprende o horário oficial e
+      // repete UMA vez, já assinando com o relógio compensado (PluginNextoolClock).
+      if ($httpCode === 401) {
+         require_once NEXTOOL_PHP_DIR . '/inc/clock.class.php';
+         if (PluginNextoolClock::syncAfterRejection(401, is_array($decoded) ? $decoded : null, (string) $apiEndpoint)) {
+            $decoded = self::callDistributionLicenseAPIOnce($apiEndpoint, $clientIdentifier, $clientSecret, $payload, $httpCode, $responseTimeMs);
+         }
+      }
+      return $decoded;
+   }
+
+   /**
+    * Uma chamada assinada ao /api/licensing/validate (sem nova tentativa).
+    *
+    * @return array|null
+    */
+   private static function callDistributionLicenseAPIOnce($apiEndpoint, $clientIdentifier, $clientSecret, array $payload, &$httpCode, &$responseTimeMs) {
       $httpCode = null;
       $responseTimeMs = null;
 

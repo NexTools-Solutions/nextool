@@ -119,7 +119,8 @@ class PluginNextoolCloudClient {
          // Assinar e mandar um corpo vazio só produziria uma recusa sem explicação do outro lado.
          return ['fail' => self::fail(0, 'bad_body')];
       }
-      $ts    = (string) time();
+      require_once NEXTOOL_PHP_DIR . '/inc/clock.class.php';
+      $ts    = (string) PluginNextoolClock::now(); // relógio compensado (VM sem NTP)
       $nonce = 'n-' . bin2hex(random_bytes(16));
       $sig   = self::sign($path, $cred['ambiente'], $ts, $nonce, $json, $cred['outbound']);
 

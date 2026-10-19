@@ -144,6 +144,17 @@ class PluginNextoolConfigViewState {
          ];
       }
 
+      // 2a) Horário recusado mesmo depois da compensação automática (PluginNextoolClock): sem
+      // isto o admin só veria a falha genérica, sem pista de que o problema é o relógio.
+      if ($authStreak > 0 && $lastErrorCode === 'timestamp_skew' && $lastAuthFail > $lastCommOk) {
+         return [
+            'text'  => __('O servidor NexTool recusou o horário deste servidor. Sincronize a hora do servidor (NTP) e clique em Sincronizar.', 'nextool'),
+            'icon'  => 'ti-clock-exclamation',
+            'class' => 'text-warning fw-bold',
+            'level' => 'clock_rejected',
+         ];
+      }
+
       // 2b) Falha de auth genérica (401 sem code — servidor antigo): backoff ativo.
       if ($authStreak > 0 && $lastAuthFail > $lastCommOk) {
          $eta = ($suppression !== null && ($suppression['kind'] ?? 'auth') === 'auth')
@@ -174,6 +185,22 @@ class PluginNextoolConfigViewState {
             'icon'  => 'ti-plug-connected-x',
             'class' => 'text-warning fw-semibold',
             'level' => 'unreachable',
+         ];
+      }
+
+      // 3b) Relógio do sistema fora do horário oficial: a comunicação funciona porque o plugin
+      // compensa (PluginNextoolClock), mas o GLPI inteiro usa esse relógio -- o admin precisa saber.
+      require_once NEXTOOL_PHP_DIR . '/inc/clock.class.php';
+      $clockOffset = PluginNextoolClock::getOffset();
+      if ($clockOffset !== 0) {
+         $skew = PluginNextoolClock::humanize($clockOffset);
+         return [
+            'text'  => $clockOffset > 0
+               ? sprintf(__('O relógio deste servidor está %s atrasado em relação ao horário oficial. O NexTool compensou a diferença, mas sincronize a hora do servidor (NTP): chamados, SLAs e e-mails do GLPI usam esse relógio.', 'nextool'), $skew)
+               : sprintf(__('O relógio deste servidor está %s adiantado em relação ao horário oficial. O NexTool compensou a diferença, mas sincronize a hora do servidor (NTP): chamados, SLAs e e-mails do GLPI usam esse relógio.', 'nextool'), $skew),
+            'icon'  => 'ti-clock-exclamation',
+            'class' => 'text-warning fw-semibold',
+            'level' => 'clock_skew',
          ];
       }
 
