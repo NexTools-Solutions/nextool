@@ -412,6 +412,16 @@ abstract class PluginNextoolBaseModule {
    abstract public function getAuthor();
 
    /**
+    * Criador original, quando o módulo nasceu de um trabalho de terceiro (aba Sobre: linha "Baseado em").
+    * Opcional: a autoria e a manutenção continuam no getAuthor().
+    *
+    * @return array{name?: string, url?: string} vazio = sem linha
+    */
+   public function getOriginalAuthor(): array {
+      return [];
+   }
+
+   /**
     * Retorna o billing tier para fins de licenciamento (FREE/PAID/...).
     *
     * @return string

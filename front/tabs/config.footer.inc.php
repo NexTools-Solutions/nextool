@@ -7,6 +7,8 @@ declare(strict_types=1);
  * Autossuficiente: não depende das variáveis do config.form.php (as abas de módulo não passam por ele).
  * Quem não tem acesso às abas administrativas (perfil só de módulo) não vê o código do ambiente nem
  * o link "Minhas licenças", que leva a uma aba que ele não abre.
+ * mt-3: a linha separadora precisa de distância do que vem antes. Nas abas da base o conteúdo já termina com
+ * margem (colapsa, nada muda); nas abas de módulo ele termina no card, e sem isso a linha some colada nele.
  *
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
@@ -24,7 +26,7 @@ $nextoolFooterAdmin = PluginNextoolPermissionManager::canAccessAdminTabs();
 $nextoolFooterWeb   = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1&forcetab=';
 $nextoolFooterGlpi  = defined('GLPI_VERSION') ? (string) GLPI_VERSION : '-';
 ?>
-<div class="nextool-config-footer d-flex flex-wrap align-items-center gap-3 text-muted small border-top pt-3 mx-3 mb-3">
+<div class="nextool-config-footer d-flex flex-wrap align-items-center gap-3 text-muted small border-top pt-3 mt-3 mx-3 mb-3">
    <span><i class="ti ti-tool me-1"></i>NexTool <strong>v<?php echo $nextoolFooterEsc(PLUGIN_NEXTOOL_VERSION); ?></strong></span>
    <span><i class="ti ti-server me-1"></i>GLPI <strong><?php echo $nextoolFooterEsc($nextoolFooterGlpi); ?></strong> · PHP <?php echo $nextoolFooterEsc(PHP_VERSION); ?></span>
    <?php if ($nextoolFooterAdmin):

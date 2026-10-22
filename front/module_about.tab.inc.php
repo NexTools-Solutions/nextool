@@ -87,6 +87,24 @@ $statusBadge = $module->isEnabled()
                   }
                ?></td>
             </tr>
+            <?php
+            // Criador original (módulo nascido de trabalho de terceiro): só aparece quando o módulo informa.
+            $original = method_exists($module, 'getOriginalAuthor') ? (array) $module->getOriginalAuthor() : [];
+            $origName = trim((string) ($original['name'] ?? ''));
+            $origUrl  = trim((string) ($original['url'] ?? ''));
+            if ($origName !== ''):
+            ?>
+            <tr>
+               <th><?php echo __('Baseado em', 'nextool'); ?></th>
+               <td><?php
+                  $label = PluginNextoolCompat::escape($origName);
+                  if ($origUrl !== '' && preg_match('#^https://#i', $origUrl)) {
+                     $label = '<a href="' . PluginNextoolCompat::escape($origUrl) . '" target="_blank" rel="noopener" class="text-decoration-underline">' . $label . '</a>';
+                  }
+                  echo sprintf(PluginNextoolCompat::escape(__('Trabalho original de %s', 'nextool')), $label);
+               ?></td>
+            </tr>
+            <?php endif; ?>
             <tr>
                <th><?php echo __('Tier de cobrança', 'nextool'); ?></th>
                <td><?php echo $tierBadge; ?></td>
