@@ -154,6 +154,16 @@ class PluginNextoolHookDispatcher {
                $e->getTraceAsString()
             ));
          }
+         // Um módulo abortou a criação (input = false, ex.: mailanalyzer ao recusar o e-mail):
+         // os demais não rodam -- com o input ainda manipulável, um deles poderia reabrir a
+         // criação -- e o core recebe [] em vez de false. [] também aborta (`if ($this->input
+         // && is_array(...))`), mas não quebra plugins que rodam depois neste hook (Fields faz
+         // array_key_exists no input e estourava TypeError com false). Mesmo sinal do
+         // dispatchPreItemUpdate.
+         if (is_object($out) && property_exists($out, 'input') && $out->input === false) {
+            $out->input = [];
+            break;
+         }
       }
       return $out;
    }

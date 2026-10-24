@@ -157,6 +157,12 @@ class PluginNextoolModuleManager {
     * <módulo>.sig (assinatura do erro), .count, .next (epoch da próxima tentativa), .to, .error.
     */
    public const UPGRADE_STATE_CONTEXT = 'plugin:nextool_upgrade_state';
+   /**
+    * State das CronTasks de cada módulo no momento em que foi desativado (nextool-dev#293): o
+    * enable devolve esse state em vez de religar tudo. Um valor por módulo, JSON
+    * {"<itemtype>::<name>": 0|1}. Sem migração SQL, mesmo padrão do UPGRADE_STATE_CONTEXT.
+    */
+   public const CRON_STATE_CONTEXT = 'plugin:nextool_cron_state';
    /** Escada de retentativa (s): 1min, 5min, 15min, 1h, 6h. Continua tentando; nunca desiste. */
    private const UPGRADE_RETRY_LADDER = [60, 300, 900, 3600, 21600];
    /** Falhas iguais consecutivas antes de avisar o admin na aba Novidades. */
@@ -827,20 +833,44 @@ class PluginNextoolModuleManager {
          PluginNextoolMainConfig::clearModuleConfigTabsCache();
       }
 
-      // Cron tasks: SIMÉTRICO ao ciclo do módulo. Ao DESABILITAR, desliga (state=0) as crons do
-      // módulo (evita "função indefinida" quando o cron dispara com o módulo off). Ao REABILITAR,
-      // RELIGA (state=1 / WAITING) -- senão um módulo desativado e reativado ficaria com as crons
-      // mortas para sempre (o CronTask::register do install é idempotente e NÃO recupera o state).
+      // Cron tasks: SIMÉTRICO ao ciclo do módulo. Ao DESABILITAR, guarda o state de cada cron e
+      // desliga todas (evita "função indefinida" quando o cron dispara com o módulo off). Ao
+      // REABILITAR, devolve o state guardado: cron que o admin tinha desligado continua desligada
+      // (nextool-dev#293). Cron sem state guardado (registrada depois do disable, ou módulo
+      // desativado antes desta versão) volta ao padrão do registro, STATE_WAITING -- senão ficaria
+      // morta para sempre (o CronTask::register do install é idempotente e NÃO recupera o state).
+      // Chave itemtype::name, não o id: reinstalar recria a linha com outro id.
       // Casa o itemtype por 'PluginNextool<Modulekey>%'. Só grava quando o state muda.
-      $cronState = $enabled ? 1 : 0; // 1 = CronTask::STATE_WAITING, 0 = STATE_DISABLED
+      $savedCronStates = $enabled ? $this->readCronStates($moduleKey) : [];
+      $cronSnapshot = [];
       $cronIterator = $DB->request([
-         'FROM'  => 'glpi_crontasks',
-         'WHERE' => ['itemtype' => ['LIKE', 'PluginNextool' . ucfirst($moduleKey) . '%']]
+         'SELECT' => ['id', 'itemtype', 'name', 'state'],
+         'FROM'   => 'glpi_crontasks',
+         'WHERE'  => ['itemtype' => ['LIKE', 'PluginNextool' . ucfirst($moduleKey) . '%']]
       ]);
       foreach ($cronIterator as $cronRow) {
-         if ((int)$cronRow['state'] !== $cronState) {
-            $DB->update('glpi_crontasks', ['state' => $cronState], ['id' => $cronRow['id']]);
+         $cronKey = $cronRow['itemtype'] . '::' . $cronRow['name'];
+         $current = (int)$cronRow['state'];
+         if ($enabled) {
+            if ($current === CronTask::STATE_RUNNING) {
+               continue; // não mexe em execução em curso
+            }
+            $target = $savedCronStates[$cronKey] ?? CronTask::STATE_WAITING;
+         } else {
+            // RUNNING no momento do disable conta como ligada.
+            $cronSnapshot[$cronKey] = $current === CronTask::STATE_DISABLE
+               ? CronTask::STATE_DISABLE
+               : CronTask::STATE_WAITING;
+            $target = CronTask::STATE_DISABLE;
          }
+         if ($current !== $target) {
+            $DB->update('glpi_crontasks', ['state' => $target], ['id' => $cronRow['id']]);
+         }
+      }
+      if ($enabled) {
+         $this->clearCronStates($moduleKey);
+      } else {
+         $this->writeCronStates($moduleKey, $cronSnapshot);
       }
 
       // Hook do módulo
@@ -872,6 +902,58 @@ class PluginNextoolModuleManager {
          $enabled ? __('Módulo ativado com sucesso', 'nextool')
                   : __('Módulo desativado com sucesso', 'nextool'),
          $baseContext);
+   }
+
+   /**
+    * State guardado das CronTasks do módulo (nextool-dev#293).
+    *
+    * @return array<string,int> "<itemtype>::<name>" => CronTask::STATE_DISABLE|STATE_WAITING
+    */
+   private function readCronStates(string $moduleKey): array {
+      try {
+         $values = Config::getConfigurationValues(self::CRON_STATE_CONTEXT, [$moduleKey]);
+      } catch (\Throwable $e) {
+         return [];
+      }
+      $decoded = json_decode((string)($values[$moduleKey] ?? ''), true);
+      if (!is_array($decoded)) {
+         return [];
+      }
+      $out = [];
+      foreach ($decoded as $cronKey => $state) {
+         $state = (int)$state;
+         if (is_string($cronKey)
+             && ($state === CronTask::STATE_DISABLE || $state === CronTask::STATE_WAITING)) {
+            $out[$cronKey] = $state;
+         }
+      }
+      return $out;
+   }
+
+   /** Guarda o state das CronTasks no disable. Falha aqui só degrada para o religar-tudo antigo. */
+   private function writeCronStates(string $moduleKey, array $states): void {
+      if ($states === []) {
+         $this->clearCronStates($moduleKey);
+         return;
+      }
+      try {
+         Config::setConfigurationValues(
+            self::CRON_STATE_CONTEXT,
+            PluginNextoolDbCompat::row([$moduleKey => json_encode($states)])
+         );
+      } catch (\Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            'Falha ao guardar o state das ações automáticas de %s: %s', $moduleKey, $e->getMessage()
+         ));
+      }
+   }
+
+   private function clearCronStates(string $moduleKey): void {
+      try {
+         Config::deleteConfigurationValues(self::CRON_STATE_CONTEXT, [$moduleKey]);
+      } catch (\Throwable $e) {
+         // Sobra inofensiva: o próximo disable sobrescreve.
+      }
    }
 
    /**
@@ -2589,6 +2671,8 @@ class PluginNextoolModuleManager {
                'date_mod'     => date('Y-m-d H:i:s'),
             ], ['module_key' => $moduleKey]);
          }
+         // Apagar dados = começar do zero: a próxima instalação usa o state padrão das crons.
+         $this->clearCronStates($moduleKey);
          $this->clearCache();
          $this->refreshModules();
          self::invalidateSessionMenu();
