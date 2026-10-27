@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.47.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.48.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -549,6 +549,28 @@ function plugin_init_nextool() {
                if (($_SESSION['nextool_menu_sig'] ?? '') !== $nxMenuSig) {
                   PluginNextoolModuleManager::invalidateSessionMenu();
                   $_SESSION['nextool_menu_sig'] = $nxMenuSig;
+               }
+            }
+
+            // API v2 dos módulos (nextool-dev#291; GLPI 11+, no 10 as listas saem vazias). Declarado em
+            // TODA requisição: o cache de rotas do core é global e pode ser montado por um webhook ou
+            // cron; sem o hook ali, as rotas sumiriam por até 5 min. Só os controllers dos módulos
+            // ATIVOS que passam na validação; em requisição de API, o cache que cita controller que
+            // não vale mais é descartado antes de o Router hidratá-lo (hint velho = API v2 inteira em 500).
+            $apiRegistryFile = NEXTOOL_PHP_DIR . '/inc/apiregistry.class.php';
+            if (file_exists($apiRegistryFile)) {
+               try {
+                  require_once $apiRegistryFile;
+                  plugin_nextool_prof_start('api_registry');
+                  $nxApiControllers = PluginNextoolApiRegistry::controllersForHook($manager->getActiveModules());
+                  if ($nxApiControllers !== []) {
+                     $PLUGIN_HOOKS['api_controllers']['nextool'] = $nxApiControllers;
+                     $PLUGIN_HOOKS['api_middleware']['nextool'] = PluginNextoolApiRegistry::middlewaresForHook();
+                  }
+                  PluginNextoolApiRegistry::healStaleRouteCache();
+                  plugin_nextool_prof_stop('api_registry');
+               } catch (\Throwable $e) {
+                  error_log('[NexTool] registro da API v2 falhou: ' . $e->getMessage());
                }
             }
 

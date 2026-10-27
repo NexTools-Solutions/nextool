@@ -838,6 +838,8 @@ class PluginNextoolModuleManager {
       if (class_exists('PluginNextoolMainConfig')) {
          PluginNextoolMainConfig::clearModuleConfigTabsCache();
       }
+      // Rotas de API do módulo entram/saem já na próxima chamada (este caminho não passa pelo clearCache()).
+      self::invalidateApiRouteCache();
 
       // Cron tasks: SIMÉTRICO ao ciclo do módulo. Ao DESABILITAR, guarda o state de cada cron e
       // desliga todas (evita "função indefinida" quando o cron dispara com o módulo off). Ao
@@ -3322,6 +3324,8 @@ class PluginNextoolModuleManager {
       $this->blockedModules = [];
       $this->legacyModules  = [];
       @unlink($this->cachePath . '/' . self::LEGACY_CACHE_FILE);
+      // install, uninstall, update e apagar dados passam por aqui: as rotas de API acompanham.
+      self::invalidateApiRouteCache();
 
       $ok = true;
       if (file_exists($path)) {
@@ -3331,6 +3335,19 @@ class PluginNextoolModuleManager {
          plugin_nextool_boot_manifest(true);
       }
       return $ok;
+   }
+
+   /**
+    * Apaga o cache de rotas da API v2 do core (nextool-dev#291). O core nunca o invalida sozinho: sem
+    * isto, uma rota de módulo desativado/removido continuaria no cache por até 5 min, e um hint para
+    * classe que sumiu derruba a API v2 inteira. Fail-silent; no GLPI 10 não faz nada de útil.
+    */
+   public static function invalidateApiRouteCache(): void {
+      $file = NEXTOOL_PHP_DIR . '/inc/apiregistry.class.php';
+      if (is_file($file)) {
+         require_once $file;
+         PluginNextoolApiRegistry::invalidateRouteCache();
+      }
    }
 
    /**

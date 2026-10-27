@@ -777,6 +777,41 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Controllers de API do módulo (API v2 do GLPI 11+; nextool-dev#291). A base os registra no hook
+    * `api_controllers` quando o módulo está ativo e o controller passa no
+    * PluginNextoolApiRegistry::validate(); a rota fica em `/api.php/v2.3/Nextool/<module_key>/...`.
+    *
+    * Contrato resumido (detalhe em PluginNextoolApiController e na KB): a classe estende
+    * PluginNextoolApiController, tem #[Route('/Nextool/<module_key>')] e cada método com #[Route]
+    * declara #[RouteVersion] e #[PluginNextoolApiRight]. A API de módulo PAID exige licença vigente.
+    *
+    * @return class-string[] Ex.: ['PluginNextoolSsologinApiController']
+    */
+   public function getApiControllers(): array {
+      return [];
+   }
+
+   /**
+    * Registro de uma chamada de API do módulo (portão ou resultado). Padrão: arquivo de log do
+    * módulo. Módulo com aba Logs sobrescreve para gravar lá. O evento só tem chaves (LGPD): nunca
+    * corpo da requisição nem valores devolvidos.
+    *
+    * @param array{phase: string, verb: string, route: string, status: int, reason: string, target: ?int, users_id: int} $event
+    */
+   public function logApiCall(array $event): void {
+      Toolbox::logInFile('plugin_nextool_' . $this->getModuleKey(), sprintf(
+         "[api] %s %s %s -> %d%s (usuário %d%s)\n",
+         $event['phase'] ?? '',
+         $event['verb'] ?? '',
+         $event['route'] ?? '',
+         (int) ($event['status'] ?? 0),
+         ($event['reason'] ?? '') !== '' ? ' ' . $event['reason'] : '',
+         (int) ($event['users_id'] ?? 0),
+         isset($event['target']) ? ', alvo ' . (int) $event['target'] : ''
+      ));
+   }
+
+   /**
     * Retorna registro de menu para o plugin base registrar no GLPI (hook menu_toadd).
     * Módulos que desejam adicionar um menu na barra principal devem sobrescrever e
     * retornar ['key' => string, 'class' => string]. A classe deve implementar

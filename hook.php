@@ -302,6 +302,21 @@ function plugin_nextool_install() {
       }
    }
 
+   // Install e update da base: o cache de rotas da API v2 pode citar controllers da versão anterior.
+   PluginNextoolModuleManager::invalidateApiRouteCache();
+
+   return true;
+}
+
+/**
+ * Hook de desativação (chamado pelo core em Plugin::unactivate). Sem a base ativa, os controllers
+ * de API dos módulos deixam de ser carregáveis: o cache de rotas do core não pode continuar citando-os
+ * (hint para classe inexistente = API v2 inteira em 500 por até 5 min).
+ */
+function plugin_nextool_deactivate() {
+   if (class_exists('PluginNextoolModuleManager')) {
+      PluginNextoolModuleManager::invalidateApiRouteCache();
+   }
    return true;
 }
 
