@@ -131,7 +131,8 @@ trait PluginNextoolProfileBody {
                }
                $this->renderBlock(
                   PluginNextoolPermissionManager::getModuleRightName((string) $mk),
-                  sprintf(__('Modulo: %s', 'nextool'), $mod->getName()),
+                  // Nome do catálogo no idioma da sessão (#289); getName() fica só de reserva.
+                  sprintf(__('Modulo: %s', 'nextool'), $manager->getDisplayName((string) $mk, $mod->getName())),
                   $declared,
                   $canEdit
                );

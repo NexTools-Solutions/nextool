@@ -600,7 +600,6 @@ class PluginNextoolModuleManager {
       $row = $existing->current();
       if ($row !== null) {
          $updateData = [
-            'name'               => $module->getName(),
             'version'            => $module->getVersion(),
             'billing_tier'       => $this->getBillingTier($moduleKey),
             'is_installed'       => 1,
@@ -612,6 +611,13 @@ class PluginNextoolModuleManager {
             'date_mod'     => date('Y-m-d H:i:s'),
          ];
          
+         // O nome vem do catálogo (name/name_i18n, gravados pelo Sincronizar): instalar ou
+         // atualizar não o troca pelo getName() do código, que sai no idioma de quem clicou e em
+         // alguns módulos é fixo em português (#289). Só preenche quando a linha não tem nome.
+         if (trim((string) ($row['name'] ?? '')) === '') {
+            $updateData['name'] = $module->getName();
+         }
+
          // Só atualiza available_version se ainda não existir (primeiro install)
          // Caso contrário, mantém a versão do catálogo oficial
          if (empty($row['available_version'])) {
