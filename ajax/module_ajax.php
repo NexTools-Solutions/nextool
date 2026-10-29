@@ -40,27 +40,11 @@ if (!function_exists('__')) {
 
 require_once dirname(__DIR__) . '/inc/modulespath.inc.php';
 
-// Detecta módulo e arquivo usando PATH_INFO (preferencial) ou query string
-// PATH_INFO é mais confiável com Symfony, mas query string funciona como fallback
-$moduleKey = '';
-$filename = '';
-
-// Tenta usar PATH_INFO primeiro (formato: /module_ajax.php/[module]/[file])
-if (isset($_SERVER['PATH_INFO']) && !empty($_SERVER['PATH_INFO'])) {
-   $pathInfo = trim($_SERVER['PATH_INFO'], '/');
-   $parts = explode('/', $pathInfo, 2);
-   
-   if (count($parts) >= 2) {
-      $moduleKey = $parts[0];
-      $filename = $parts[1];
-   }
-}
-
-// Se não encontrou via PATH_INFO, tenta query string
-if (empty($moduleKey) || empty($filename)) {
-   $moduleKey = $_GET['module'] ?? '';
-   $filename = $_GET['file'] ?? '';
-}
+// O fallback lê somente a rota da URL original quando o rewrite perde $_GET/PATH_INFO.
+require_once NEXTOOL_PHP_DIR . '/inc/ajaxroute.inc.php';
+$nxAjaxRoute = plugin_nextool_ajax_route($_SERVER, $_GET);
+$moduleKey = $nxAjaxRoute['module'];
+$filename = $nxAjaxRoute['file'];
 
 if (empty($moduleKey) || empty($filename)) {
    http_response_code(400);
@@ -347,4 +331,3 @@ PluginNextoolModuleManager::sessionModuleGate($moduleKey, $filename, 'json');
 
 // Carrega o arquivo do módulo
 include($filePath);
-

@@ -249,27 +249,26 @@ final class PluginNextoolApiRegistry {
    }
 
    /**
-    * Licença da API do módulo (decisão do owner, 2026-10-27): FREE sempre; PAID só com direito
-    * vigente (a régua única PluginNextoolCloudCreds::entitled: status `active` dentro da graça
-    * offline); DEV com direito vigente ou no plano Desenvolvimento. A TELA segue a regra própria
-    * (módulo com histórico de licença continua ativo): esta restrição é só da API.
+    * Acesso à API do módulo (decisões do owner, 2026-10-27/28): TODO módulo (FREE, PAID ou DEV) só responde
+    * pela API com o CLOUD LINK vigente para ele -- o vínculo `nextool_cloud` do ambiente ativo E o direito
+    * ao produto pela licença (`getCloudLicenseKey()`, ou a chave do módulo). A régua é a mesma das funções
+    * de nuvem (`PluginNextoolBaseModule::hasCloudProductLink()`), para a tela e a API nunca discordarem do
+    * que é "vigente". A TELA segue a regra própria (módulo com histórico de licença continua ativo): esta
+    * restrição é só da API. Fail-closed: erro ao avaliar = sem acesso.
+    *
+    * @return string|null motivo da recusa (CLOUD_LINK_REQUIRED | LICENSE_INACTIVE) ou null = liberado
     */
-   public static function licenseAllows(PluginNextoolModuleManager $manager, PluginNextoolBaseModule $module): bool {
-      $moduleKey = (string) $module->getModuleKey();
-      $tier = $manager->getBillingTier($moduleKey);
-      if ($tier === 'FREE') {
-         return true;
+   public static function accessDenyReason(PluginNextoolBaseModule $module): ?string {
+      try {
+         if ($module->hasCloudProductLink()) {
+            return null;
+         }
+         require_once NEXTOOL_PHP_DIR . '/inc/cloudcreds.class.php';
+         $cred = PluginNextoolCloudCreds::get();
+         return ($cred === null || !PluginNextoolCloudCreds::isActive($cred)) ? 'CLOUD_LINK_REQUIRED' : 'LICENSE_INACTIVE';
+      } catch (Throwable $e) {
+         return 'LICENSE_INACTIVE';
       }
-      require_once NEXTOOL_PHP_DIR . '/inc/cloudcreds.class.php';
-      $licenseKey = $module->getCloudLicenseKey() ?? $moduleKey;
-      if (PluginNextoolCloudCreds::entitled($licenseKey)) {
-         return true;
-      }
-      if ($tier === 'DEV' && class_exists('PluginNextoolLicenseConfig') && class_exists('PluginNextoolLicenseValidator')) {
-         $config = PluginNextoolLicenseConfig::getDefaultConfig();
-         return PluginNextoolLicenseValidator::normalizePlan($config['plan'] ?? null) === 'DESENVOLVIMENTO';
-      }
-      return false;
    }
 
    /**
