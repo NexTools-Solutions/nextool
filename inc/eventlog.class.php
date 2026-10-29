@@ -37,6 +37,7 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
    public const TYPE_VALIDATION = 'validation';
    public const TYPE_CONFIG     = 'config';
    public const TYPE_MODULE     = 'module';
+   public const TYPE_MODULE_ERROR = 'module_error';
 
    /**
     * Tabelas antigas absorvidas pela tabela única. A remoção só acontece depois que todas as
@@ -98,6 +99,7 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
          self::TYPE_VALIDATION => __('Validação de licença', 'nextool'),
          self::TYPE_CONFIG     => __('Configuração', 'nextool'),
          self::TYPE_MODULE     => __('Módulo', 'nextool'),
+         self::TYPE_MODULE_ERROR => __('Falha técnica de módulo', 'nextool'),
       ];
    }
 
@@ -168,6 +170,7 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
             self::TYPE_VALIDATION => 'bg-blue-lt',
             self::TYPE_CONFIG     => 'bg-indigo-lt',
             self::TYPE_MODULE     => 'bg-teal-lt',
+            self::TYPE_MODULE_ERROR => 'bg-red-lt',
          ][$type] ?? 'bg-secondary-lt';
          return "<span class='badge " . $class . "'>" . PluginNextoolCompat::escape($label) . "</span>";
       }
@@ -383,6 +386,28 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
       );
 
       return $result;
+   }
+
+   /**
+    * Falha técnica de módulo (PluginNextoolModuleError, que já sanitizou tudo). NÃO espelha no
+    * histórico do GLPI (glpi_logs não segue a retenção de 30 dias) e não grava IP (minimização).
+    * A data vai explícita: o limite por minuto compara com o relógio do PHP.
+    *
+    * @param array $data module_key, action, http_code, message, details (array)
+    */
+   public static function logModuleError(array $data) {
+      return self::write([
+         'log_type'   => self::TYPE_MODULE_ERROR,
+         'date'       => date('Y-m-d H:i:s'),
+         'action'     => self::truncate($data['action'] ?? null, 64),
+         'module_key' => self::truncate($data['module_key'] ?? null, 100),
+         'origin'     => self::truncate($data['origin'] ?? null, 64),
+         'result'     => 0,
+         'message'    => $data['message'] ?? null,
+         'users_id'   => (int) (self::resolveUserId(null) ?? 0),
+         'http_code'  => isset($data['http_code']) ? (int) $data['http_code'] : null,
+         'details'    => self::jsonEncodeIfArray($data['details'] ?? null),
+      ]);
    }
 
    /**

@@ -98,11 +98,34 @@ abstract class PluginNextoolBaseObservability {
          require_once NEXTOOL_PHP_DIR . '/inc/basemodule.class.php';
          $moduleClass = static::moduleClass();
          $cfg   = (new $moduleClass())->getConfig();
-         $debug = (($cfg['log_level'] ?? 'padrao') === 'debug');
+         $debug = self::diagnosticActive(is_array($cfg) ? $cfg : []);
       } catch (\Throwable $e) {
          // sem config legível (install/boot): permanece no perfil padrão
       }
       return $cache[$key] = $debug;
+   }
+
+   /**
+    * Modo diagnóstico efetivamente ligado: `log_level=debug` e dentro do prazo. Sem
+    * `diagnostic_until` (ligado antes desta versão, ou gravado fora do saveConfig) vale
+    * como ligado; a manutenção de logs dá o prazo de 24 h na próxima passada.
+    */
+   public static function diagnosticActive(array $cfg): bool {
+      if (($cfg['log_level'] ?? 'padrao') !== 'debug') {
+         return false;
+      }
+      $until = self::diagnosticUntil($cfg);
+      return $until === null || $until > time();
+   }
+
+   /** Fim do modo diagnóstico (timestamp) ou null quando não há prazo gravado. */
+   public static function diagnosticUntil(array $cfg): ?int {
+      $raw = $cfg['diagnostic_until'] ?? null;
+      if (!is_string($raw) || $raw === '') {
+         return null;
+      }
+      $ts = strtotime($raw);
+      return $ts === false ? null : $ts;
    }
 
    public static function isLevelLogged(string $level): bool {
@@ -233,7 +256,37 @@ abstract class PluginNextoolBaseObservability {
       // webhook_token, evolution_api_key, client_secret etc.).
       $texto = preg_replace('/(\w*api[_-]?key[ \t]*[:=][ \t]*)\S+/i', '$1<oculto>', $texto);
       $texto = preg_replace('/(\w*token[ \t]*[:=][ \t]*)\S+/i', '$1<oculto>', $texto);
-      $texto = preg_replace('/(\w*(?:senha|password|secret)[ \t]*[:=][ \t]*)\S+/i', '$1<oculto>', $texto);
+      $texto = preg_replace('/(\w*(?:senha|password|passwd|secret)[ \t]*[:=][ \t]*)\S+/i', '$1<oculto>', $texto);
+      // JSON/array: "password":"x" e 'token' => 'x' (as aspas antes do ':' furavam os padrões
+      // acima). Nome de chave INTEIRO e de lista fechada: "module_key"/"http_code" não são segredo.
+      $texto = preg_replace('/(["\'](?:senha|password|passwd|pwd|pass|secret|client_secret|token|access_token|refresh_token|id_token|api_key|apikey|api-key|key|code|sig|signature|hash|auth|authorization)["\'][ \t]*(?::|=>)[ \t]*)("[^"]*"|\'[^\']*\'|[^,}\s]+)/i', '$1"<oculto>"', $texto);
+      // JWT solto, chave "sk-..." sem rótulo e cabeçalho de assinatura.
+      $texto = preg_replace('/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{5,}/', '<oculto>', $texto);
+      $texto = preg_replace('/\bsk-[A-Za-z0-9_-]{16,}/', '<oculto>', $texto);
+      $texto = preg_replace('/((?:X-[\w-]*)?Signature:[ \t]*)\S+/i', '$1<oculto>', $texto);
+      // Parâmetros de URL/query curtos que carregam segredo.
+      $texto = preg_replace('/([?&](?:key|pass|pwd|code|sig|signature|hash|auth)=)[^&\s]+/i', '$1<oculto>', $texto);
+      // Token de bot do Telegram (bot<id>:<segredo>) e credencial embutida em URL (user:senha@host).
+      $texto = preg_replace('/\bbot\d{5,}:[A-Za-z0-9_-]{20,}/', 'bot<oculto>', $texto);
+      $texto = preg_replace('#(\b[a-z][a-z0-9+.-]*://)[^\s/:@]+:[^\s/@]+@#i', '$1<oculto>@', $texto);
+      // Cookie e identificador de sessão.
+      $texto = preg_replace('/(Cookie:[ \t]*).*/i', '$1<oculto>', $texto);
+      $texto = preg_replace('/\b((?:glpi|PHPSESSID|sess)_?[A-Za-z0-9]*=)[A-Za-z0-9,\-]{16,}/', '$1<oculto>', $texto);
+      return (string) $texto;
+   }
+
+   /**
+    * Dado pessoal fora do diagnóstico (LGPD): e-mail, CPF/CNPJ, telefone e IP viram marcadores.
+    * Aplicado DEPOIS do stripSecretsFromText em todo texto livre que entra no painel.
+    */
+   public static function maskPersonalData(string $texto): string {
+      $texto = preg_replace('/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/', '<email>', $texto);
+      // Só no formato com separador: número puro de 10/11 dígitos costuma ser id ou timestamp.
+      $texto = preg_replace('/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/', '<cnpj>', $texto);
+      $texto = preg_replace('/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/', '<cpf>', $texto);
+      $texto = preg_replace('/(?:\+?55[ \t]?)?\(\d{2}\)[ \t]?9?\d{4}[ \t-]?\d{4}(?!\d)|\b\d{2}[ \t]9?\d{4}-\d{4}\b/', '<telefone>', $texto);
+      $texto = preg_replace('/\b(?:\d{1,3}\.){3}\d{1,3}\b/', '<ip>', $texto);
+      $texto = preg_replace('/\b(?:[0-9a-f]{1,4}:){4,7}[0-9a-f]{1,4}\b/i', '<ip>', $texto);
       return (string) $texto;
    }
 
@@ -265,18 +318,172 @@ abstract class PluginNextoolBaseObservability {
             ? 'URL inteira (fora do padrão: revisar fastcgi_param PATH_INFO no servidor web)'
             : 'ok';
          $dados['modulo_ativo'] = $module->isEnabled() ? 'sim' : 'nao';
+         $cfg = is_array($cfg) ? $cfg : [];
+         // Mantido por compatibilidade: módulos que sobrescrevem snapshot() reescrevem esta
+         // chave com a config própria (ex.: mailanalyzer lê de glpi_configs).
          $dados['nivel_log']    = (string) ($cfg['log_level'] ?? 'padrao');
+         $until = self::diagnosticUntil($cfg);
+         if (self::diagnosticActive($cfg)) {
+            $dados['modo_diagnostico'] = $until !== null ? 'ligado até ' . date('d/m/Y H:i', $until) : 'ligado';
+         } else {
+            $dados['modo_diagnostico'] = (($cfg['log_level'] ?? '') === 'debug') ? 'expirado' : 'desligado';
+         }
 
          foreach (static::camposExtras($cfg) as $chave => $valor) {
             $dados[$chave] = $valor;
          }
 
-         $dados['ultimos_erros'] = static::ultimosErros(5);
+         require_once NEXTOOL_PHP_DIR . '/inc/moduleerror.class.php';
+         $dados['falhas_24h']    = (string) PluginNextoolModuleError::countRecent(static::moduleKey(), 24);
+         $dados['ultimos_erros'] = static::errosRecentes(15);
       } catch (\Throwable $e) {
-         $dados['erro_ao_montar'] = $e->getMessage();
+         require_once NEXTOOL_PHP_DIR . '/inc/moduleerror.class.php';
+         $dados['erro_ao_montar'] = get_class($e) . ': ' . PluginNextoolModuleError::sanitize($e->getMessage());
       }
 
       return $dados;
+   }
+
+   /**
+    * Resumo SEM nenhuma linha de log nem mensagem de erro: é o que vai no corpo da URL do
+    * portal (fica em histórico do navegador, proxy e log de acesso). Linhas de log só saem
+    * pelo "Copiar diagnóstico", com a prévia na tela.
+    */
+   public static function snapshotResumoAsText(): string {
+      $dados = static::snapshot();
+      unset($dados['ultimos_erros'], $dados['erro_ao_montar']);
+      $linhas = ['=== Diagnostico ' . static::moduleKey() . ' (NexTool, resumo) ==='];
+      require_once NEXTOOL_PHP_DIR . '/inc/moduleerror.class.php';
+      foreach ($dados as $k => $v) {
+         if (is_scalar($v)) {
+            // camposExtras e snapshot() sobrescrito também vão na URL: sanitiza tudo.
+            $linhas[] = $k . ': ' . PluginNextoolModuleError::sanitize((string) $v);
+         }
+      }
+      $linhas[] = 'detalhes: use "Copiar diagnóstico" no GLPI e cole aqui';
+      return implode("\n", $linhas);
+   }
+
+   /**
+    * Últimos erros de TODAS as fontes, mais recente primeiro: falhas que a base capturou
+    * (roteador, exceção, fatal), os ERROs que o próprio módulo gravou e as entradas dos logs do
+    * PHP que citam o módulo. Tudo já sem segredo nem dado pessoal.
+    *
+    * @return string[]
+    */
+   public static function errosRecentes(int $limite = 15): array {
+      // O painel monta o diagnóstico mais de uma vez por página: lê banco e logs uma vez só.
+      static $memo = [];
+      $memoKey = static::moduleKey() . ':' . $limite;
+      if (isset($memo[$memoKey])) {
+         return $memo[$memoKey];
+      }
+      $itens = [];
+      try {
+         require_once NEXTOOL_PHP_DIR . '/inc/moduleerror.class.php';
+         foreach (PluginNextoolModuleError::latest(static::moduleKey(), $limite) as $f) {
+            $itens[] = [$f['date'], sprintf(
+               '%s [%s%s] %s%s',
+               $f['date'],
+               $f['kind'] !== '' ? $f['kind'] : 'falha',
+               $f['http_code'] > 0 ? ' HTTP ' . $f['http_code'] : '',
+               $f['text'],
+               $f['count'] > 1 ? ' (x' . $f['count'] . ')' : ''
+            )];
+         }
+      } catch (\Throwable $e) {
+      }
+      try {
+         foreach (static::ultimosErros(5) as $linha) {
+            // O módulo só tira segredo; dado pessoal (e-mail, CPF...) sai aqui, ponto único.
+            $linha = PluginNextoolModuleError::sanitize((string) $linha, 500);
+            $itens[] = [substr($linha, 0, 19), '[módulo] ' . $linha];
+         }
+      } catch (\Throwable $e) {
+      }
+      foreach (static::serverLogEntries(10) as $entry) {
+         $itens[] = [$entry['date'], $entry['date'] . ' [log PHP ' . $entry['level'] . '] ' . $entry['text']];
+      }
+      usort($itens, static fn(array $a, array $b): int => strcmp($b[0], $a[0]));
+      return $memo[$memoKey] = array_slice(array_map(static fn(array $i): string => $i[1], $itens), 0, $limite);
+   }
+
+   protected const SERVER_LOG_TAIL_BYTES = 65536;
+
+   /**
+    * Entradas dos logs do PHP que citam este módulo: o log do PHP-FPM (`error_log` do ini,
+    * para onde vão os error_log() dos módulos) e o php-errors.log do GLPI (exceções, com o
+    * caminho do módulo nos frames do backtrace). Lê só o fim de cada arquivo. Da entrada fica
+    * data, nível, o primeiro `arquivo:linha` do módulo e a mensagem sanitizada; os frames e
+    * a mensagem de banco (SQL com valores) ficam de fora.
+    *
+    * @return array<int, array{date: string, level: string, text: string}>
+    */
+   public static function serverLogEntries(int $limite = 10): array {
+      $key = static::moduleKey();
+      $files = [];
+      $ini = (string) ini_get('error_log');
+      if ($ini !== '' && $ini !== 'syslog') {
+         $files[] = $ini;
+      }
+      if (defined('GLPI_LOG_DIR')) {
+         $files[] = GLPI_LOG_DIR . '/php-errors.log';
+      }
+      $out = [];
+      require_once NEXTOOL_PHP_DIR . '/inc/moduleerror.class.php';
+      foreach (array_unique($files) as $file) {
+         try {
+            if (!is_file($file) || !is_readable($file)) {
+               continue;
+            }
+            $size = (int) @filesize($file);
+            $fh = @fopen($file, 'rb');
+            if ($fh === false) {
+               continue;
+            }
+            if ($size > static::SERVER_LOG_TAIL_BYTES) {
+               fseek($fh, -static::SERVER_LOG_TAIL_BYTES, SEEK_END);
+            }
+            $chunk = (string) stream_get_contents($fh);
+            fclose($fh);
+            // Entrada = linha que começa com "[data]" + as linhas de continuação (backtrace).
+            $entries = preg_split('/\n(?=\[)/', $chunk) ?: [];
+            foreach ($entries as $entry) {
+               $hasPath = str_contains($entry, '/modules/' . $key . '/');
+               $hasTag  = preg_match('/\[NEXTOOL[^\]]*\][^\n]*\b' . preg_quote($key, '/') . '\b/i', $entry) === 1;
+               if (!$hasPath && !$hasTag) {
+                  continue;
+               }
+               if (preg_match('/^\[([^\]]+)\]\s*(.*)$/m', $entry, $m) !== 1) {
+                  continue;
+               }
+               $ts = strtotime(preg_replace('/\s+[A-Za-z_]+\/[A-Za-z_]+$/', '', $m[1]) ?? $m[1]);
+               $header = $m[2];
+               $level = 'erro';
+               if (preg_match('/(?:glpi\.)?(CRITICAL|ERROR|WARNING|NOTICE|Fatal error|Warning|Notice|Deprecated)/i', $header, $lv) === 1) {
+                  $level = strtolower($lv[1]);
+               }
+               $where = '';
+               // Formatos: "arquivo.php:43" (backtrace do GLPI), "arquivo.php(43)" e
+               // "arquivo.php on line 43" (mensagem padrão do PHP-FPM).
+               if (preg_match('#/modules/' . preg_quote($key, '#') . '/[^\s:()]+(?::\d+|\(\d+\)|(?: on)? line \d+)?#', $entry, $w) === 1) {
+                  $where = PluginNextoolModuleError::relativePath(str_replace([' on line ', ' line ', '(', ')'], [':', ':', ':', ''], $w[0]));
+               }
+               $msg = preg_match('/\b(SQL|SELECT|INSERT|UPDATE|DELETE|mysqli|PDO)\b/', $header) === 1
+                  ? '[mensagem de banco omitida]'
+                  : PluginNextoolModuleError::sanitize($header);
+               $out[] = [
+                  'date'  => $ts !== false ? date('Y-m-d H:i:s', $ts) : '',
+                  'level' => $level,
+                  'text'  => trim(($where !== '' ? $where . ' ' : '') . $msg),
+               ];
+            }
+         } catch (\Throwable $e) {
+            // log ilegível: o diagnóstico segue sem ele
+         }
+      }
+      usort($out, static fn(array $a, array $b): int => strcmp($b['date'], $a['date']));
+      return array_slice($out, 0, $limite);
    }
 
    /**
@@ -293,7 +500,13 @@ abstract class PluginNextoolBaseObservability {
          if (!$DB->tableExists($table)) {
             return $saida;
          }
-         $where = $DB->fieldExists($table, 'level') ? ['level' => static::LEVEL_ERROR] : [];
+         // Sem coluna de nível não há como separar erro de atividade: listar a tabela inteira
+         // mostrava "salvou configuração" como erro (cliente em 28/10/2026). O módulo com
+         // esquema próprio sobrescreve este método.
+         if (!$DB->fieldExists($table, 'level')) {
+            return $saida;
+         }
+         $where = ['level' => static::LEVEL_ERROR];
          foreach ($DB->request([
             'FROM'  => $table,
             'WHERE' => $where,
@@ -329,7 +542,11 @@ abstract class PluginNextoolBaseObservability {
       return implode("\n", $linhas);
    }
 
-   /** URL do portal NexTool para abrir chamado já com o diagnóstico no corpo. */
+   /**
+    * URL do portal NexTool para abrir chamado com o RESUMO do diagnóstico no corpo.
+    * O `$diagnostico` dos chamadores antigos é ignorado de propósito: o texto completo traz
+    * linhas de log, e a query string fica em histórico do navegador, proxy e log de acesso.
+    */
    public static function urlAbrirChamado(string $assunto, ?string $diagnostico = null): string {
       $params = [
          'categoria' => 'modulos',
@@ -337,7 +554,7 @@ abstract class PluginNextoolBaseObservability {
          'assunto'   => $assunto,
       ];
 
-      $corpo = $diagnostico ?? static::snapshotAsText();
+      $corpo = static::snapshotResumoAsText();
       if ($corpo !== '') {
          $params['corpo'] = static::truncarParaUrl($corpo);
       }

@@ -1111,6 +1111,44 @@ abstract class PluginNextoolBaseModule {
       return self::$configCache[$moduleKey] = array_merge($defaults, $config);
    }
 
+   /** Duração máxima do modo diagnóstico (log_level=debug) a cada ativação. */
+   public const DIAGNOSTIC_WINDOW_SECONDS = 86400;
+
+   /**
+    * Prazo do modo diagnóstico, aplicado no ÚNICO ponto de gravação da config: quem liga o
+    * debug (select da aba, botão rápido) ganha 24 h; quem salva a config com o debug JÁ ligado
+    * não renova o prazo (a tela antiga ainda mostra "Debug" depois de vencer); voltar ao Padrão
+    * apaga o prazo. Só age quando o save mexe em `log_level`.
+    *
+    * @param array<string,mixed> $incoming
+    * @param array<string,mixed>|null $row linha atual de glpi_plugin_nextool_main_modules
+    * @return array<string,mixed>
+    */
+   private static function applyDiagnosticWindow(array $incoming, ?array $row): array {
+      if (!array_key_exists('log_level', $incoming)) {
+         return $incoming;
+      }
+      $persisted = json_decode((string) ($row['config'] ?? ''), true);
+      $persisted = is_array($persisted) ? $persisted : [];
+      if ($incoming['log_level'] !== 'debug') {
+         $incoming['diagnostic_until'] = '';
+         return $incoming;
+      }
+      $max = time() + self::DIAGNOSTIC_WINDOW_SECONDS;
+      $asked = isset($incoming['diagnostic_until']) && is_string($incoming['diagnostic_until'])
+         ? strtotime($incoming['diagnostic_until']) : false;
+      if ($asked !== false && $asked !== null && $asked > time()) {
+         $incoming['diagnostic_until'] = date('Y-m-d H:i:s', min($asked, $max));
+         return $incoming;
+      }
+      // "Já estava ligado" = debug com prazo NO FUTURO: depois de vencer, escolher Debug de novo religa.
+      $wasOn = ($persisted['log_level'] ?? '') === 'debug'
+         && is_string($persisted['diagnostic_until'] ?? null) && $persisted['diagnostic_until'] !== ''
+         && (int) strtotime($persisted['diagnostic_until']) > time();
+      $incoming['diagnostic_until'] = $wasOn ? $persisted['diagnostic_until'] : date('Y-m-d H:i:s', $max);
+      return $incoming;
+   }
+
    /**
     * Salva configuração do módulo.
     *
@@ -1157,6 +1195,9 @@ abstract class PluginNextoolBaseModule {
       // defaults e o save seguinte, com merge sobre `[]`, apagava as outras chaves. Agora o que chega é desfeito
       // para o formato cru (o que está no banco já é cru) e a linha final é escapada. No GLPI 11 nada muda.
       $config = PluginNextoolDbCompat::unescapeIncoming($config);
+      if (is_array($config)) {
+         $config = self::applyDiagnosticWindow($config, count($iterator) ? $iterator->current() : null);
+      }
 
       $now = date('Y-m-d H:i:s');
       if (count($iterator)) {

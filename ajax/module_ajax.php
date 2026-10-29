@@ -46,7 +46,20 @@ $nxAjaxRoute = plugin_nextool_ajax_route($_SERVER, $_GET);
 $moduleKey = $nxAjaxRoute['module'];
 $filename = $nxAjaxRoute['file'];
 
+// Falha técnica do roteador: grava (com limite, ver PluginNextoolModuleError) e marca a
+// resposta com X-NexTool-Error, que é o ÚNICO sinal que o aviso do navegador observa.
+// Roda antes da sessão de propósito: o defeito de servidor (ex.: PATH_INFO do nginx em
+// 28/10/2026) acontece justamente aqui.
+require_once NEXTOOL_PHP_DIR . '/inc/moduleerror.class.php';
+$nxRouterFailure = static function (string $module, string $file, int $code, string $reason): void {
+   // Sem sessão válida (robô, URL inventada): cota própria e só "rota_ausente" é gravada.
+   PluginNextoolModuleError::record($module, PluginNextoolModuleError::KIND_ROUTER, $code, $reason, ['file' => $file],
+      !PluginNextoolModuleError::hasValidSession());
+   PluginNextoolModuleError::sendHeader(PluginNextoolModuleError::KIND_ROUTER, $module);
+};
+
 if (empty($moduleKey) || empty($filename)) {
+   $nxRouterFailure('', '', 400, 'rota_ausente');
    http_response_code(400);
    header('Content-Type: application/json; charset=UTF-8');
    echo json_encode([
@@ -65,6 +78,7 @@ $filename = basename($filename); // Remove caminhos
 // reais (ex.: aiassist.chat.boot.inc.php), nunca endpoints próprios. Servi-los pelo
 // roteador executaria lógica de boot fora de contexto e furaria o gate de permissão.
 if (preg_match('/\.inc\.php$/', $filename)) {
+   $nxRouterFailure($moduleKey, $filename, 404, 'parcial_bloqueado');
    http_response_code(404);
    header('Content-Type: application/json; charset=UTF-8');
    echo json_encode([
@@ -79,7 +93,9 @@ $modulePath = NEXTOOL_MODULES_BASE . '/' . $moduleKey;
 $filePath = $modulePath . '/ajax/' . $filename;
 
 if (!file_exists($filePath)) {
-   error_log("[NEXTOOL] module_ajax: file not found – {$moduleKey}/{$filename}");
+   // O nome vem da URL (pode ser anônimo): sem caractere de controle, senão forja linha de log.
+   error_log('[NEXTOOL] module_ajax: file not found – ' . preg_replace('/[^A-Za-z0-9_.\/-]/', '?', $moduleKey . '/' . $filename));
+   $nxRouterFailure($moduleKey, $filename, 404, 'arquivo_inexistente');
    http_response_code(404);
    header('Content-Type: application/json; charset=UTF-8');
    echo json_encode([
@@ -93,6 +109,7 @@ if (!file_exists($filePath)) {
 // Verifica extensão do arquivo (apenas PHP)
 $extension = pathinfo($filename, PATHINFO_EXTENSION);
 if ($extension !== 'php') {
+   $nxRouterFailure($moduleKey, $filename, 400, 'tipo_invalido');
    http_response_code(400);
    header('Content-Type: application/json; charset=UTF-8');
    echo json_encode([
@@ -329,5 +346,47 @@ if (in_array($method, ['GET', 'HEAD'], true) && session_status() === PHP_SESSION
 require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
 PluginNextoolModuleManager::sessionModuleGate($moduleKey, $filename, 'json');
 
-// Carrega o arquivo do módulo
-include($filePath);
+// Carrega o arquivo do módulo.
+// Falha técnica do arquivo vira registro (PluginNextoolModuleError) + cabeçalho X-NexTool-Error.
+// Exceção HTTP, redirect e sessão expirada SOBEM intactas: são a resposta certa (403, 302...).
+// Só este include autenticado é protegido; o ramo stateless acima (webhook anônimo) não grava.
+$nxRequestId = PluginNextoolModuleError::newRequestId();
+$nxObLevel = ob_get_level();
+register_shutdown_function(static function () use ($moduleKey, $filename, $nxRequestId): void {
+   // Só fatal cujo arquivo é do módulo (o do core/kernel depois do include não conta).
+   if (PluginNextoolModuleError::recordFatal($moduleKey, $filename, error_get_last(), $nxRequestId)) {
+      PluginNextoolModuleError::sendHeader(PluginNextoolModuleError::KIND_FATAL, $moduleKey, $nxRequestId);
+   }
+});
+try {
+   include($filePath);
+} catch (\Throwable $nxException) {
+   if (PluginNextoolModuleError::mustRethrow($nxException)) {
+      throw $nxException;
+   }
+   PluginNextoolModuleError::logToCore($nxException);
+   PluginNextoolModuleError::recordThrowable($moduleKey, $filename, $nxException, $nxRequestId);
+   // Descarta o que o arquivo do módulo já tinha impresso (só os buffers abertos por ele).
+   while (ob_get_level() > $nxObLevel) {
+      @ob_end_clean();
+   }
+   // No G11 o arquivo roda dentro do buffer do LegacyFileLoadController (nível $nxObLevel):
+   // a saída parcial do módulo fica nele e o JSON sairia colado depois. O roteador não
+   // imprime nada antes do include, então limpar este nível só tira o que o módulo escreveu.
+   if ($nxObLevel > 0 && ob_get_level() === $nxObLevel) {
+      @ob_clean();
+   }
+   if (!headers_sent()) {
+      PluginNextoolModuleError::sendHeader(PluginNextoolModuleError::KIND_EXCEPTION, $moduleKey, $nxRequestId);
+      http_response_code(500);
+      header('Content-Type: application/json; charset=UTF-8');
+   }
+   echo json_encode([
+      'error'      => true,
+      'success'    => false,
+      'title'      => __('Erro interno', 'nextool'),
+      'message'    => __('Não foi possível concluir a operação.', 'nextool'),
+      'request_id' => $nxRequestId,
+   ]);
+   exit;
+}

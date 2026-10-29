@@ -53,6 +53,21 @@ $i18n = [
    'reload'  => __('Recarregar', 'nextool'),
    'dismiss' => __('Agora não', 'nextool'),
 ];
+
+// Aviso de falha técnica de módulo (window.NexToolDiag, abaixo).
+$diagI18n = [
+   'title'     => __('Falha no módulo', 'nextool'),
+   'failed'    => __('Não foi possível concluir a operação (HTTP %s). Ative o modo diagnóstico e envie o diagnóstico ao suporte.', 'nextool'),
+   'enable'    => __('Ativar modo diagnóstico', 'nextool'),
+   'enabling'  => __('Ativando...', 'nextool'),
+   'active'    => __('Modo diagnóstico ativo até %s. Repita a operação e envie o diagnóstico ao suporte.', 'nextool'),
+   'ask_admin' => __('Peça a um administrador do módulo para ativar o modo diagnóstico.', 'nextool'),
+   'open'      => __('Abrir diagnóstico do módulo', 'nextool'),
+   'code'      => __('Código: %s', 'nextool'),
+   'error'     => __('Não foi possível alterar o modo diagnóstico.', 'nextool'),
+   'close'     => __('Fechar', 'nextool'),
+];
+$diagEndpoint = PluginNextoolCompat::webDir() . '/ajax/module_diagnostic.php';
 ?>
 (function () {
    'use strict';
@@ -223,4 +238,191 @@ $i18n = [
          };
       }
    };
+})();
+
+/*
+ * window.NexToolDiag -- aviso de falha TÉCNICA de módulo.
+ * Só reage ao cabeçalho X-NexTool-Error, que o SERVIDOR manda (roteador dos módulos:
+ * rota não resolvida, exceção, erro fatal). Resposta 4xx de regra de negócio (409, 422,
+ * 403 de permissão...) não tem o cabeçalho e nunca vira aviso. Observa jQuery e fetch sem
+ * alterar a resposta: o fetch devolve a MESMA Promise. O navegador não grava nada; quem
+ * grava é o servidor. Texto sempre por textContent.
+ */
+(function () {
+   'use strict';
+
+   if (window.NexToolDiag) {
+      return;
+   }
+
+   var I18N = <?php echo json_encode($diagI18n, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+   var ENDPOINT = <?php echo json_encode($diagEndpoint, JSON_UNESCAPED_SLASHES); ?>;
+   var MAX_PER_PAGE = 3;
+   var shown = 0;
+   var lastByModule = {};
+
+   function fmt(tpl, value) {
+      return String(tpl).replace('%s', String(value));
+   }
+
+   function post(data, done) {
+      var $ = window.jQuery;
+      if (!$ || !$.ajax) { done(null); return; }
+      // jQuery: o core injeta o token CSRF no G10/G11 (o G12 valida por cabeçalho).
+      $.ajax({ url: ENDPOINT, method: 'POST', data: data, dataType: 'json' })
+         .done(function (resp) { done(resp || null); })
+         .fail(function (xhr) { done((xhr && xhr.responseJSON) || { success: false }); });
+   }
+
+   function el(tag, css, text) {
+      var n = document.createElement(tag);
+      if (css) { n.style.cssText = css; }
+      if (text !== undefined) { n.textContent = text; }
+      return n;
+   }
+
+   function show(status, moduleKey, requestId) {
+      if (!document.body || shown >= MAX_PER_PAGE) { return; }
+      var now = Date.now();
+      if (lastByModule[moduleKey] && now - lastByModule[moduleKey] < 60000) { return; }
+      lastByModule[moduleKey] = now;
+      shown++;
+
+      var box = el('div', [
+         'position:fixed', 'right:1.25rem', 'bottom:' + (1.25 + (shown - 1) * 7) + 'rem',
+         'z-index:2147483000', 'display:flex', 'gap:.75rem', 'align-items:flex-start',
+         'max-width:min(30rem,calc(100vw - 2rem))', 'padding:.75rem 1rem',
+         'border-radius:.5rem', 'border:1px solid rgba(214,57,57,.35)',
+         'background:#fff5f5', 'color:#4a1c1c', 'box-shadow:0 .5rem 1.5rem rgba(0,0,0,.18)',
+         'font-size:.875rem', 'line-height:1.35'
+      ].join(';'));
+      box.className = 'nextool-diag-banner';
+      box.setAttribute('role', 'alert');
+      box.setAttribute('data-nextool-diag', moduleKey || 'desconhecido');
+
+      var icon = el('i', 'font-size:1.25rem;color:#d63939;flex-shrink:0');
+      icon.className = 'ti ti-alert-triangle';
+      var body = el('div', 'flex:1 1 auto');
+      body.appendChild(el('strong', '', I18N.title));
+      var msg = el('div', 'margin-top:.15rem', fmt(I18N.failed, status || '?'));
+      body.appendChild(msg);
+      if (requestId) {
+         body.appendChild(el('div', 'margin-top:.25rem;opacity:.75;font-size:.8rem', fmt(I18N.code, requestId)));
+      }
+      var actions = el('div', 'display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem');
+      body.appendChild(actions);
+
+      var close = el('button', 'flex-shrink:0', '×');
+      close.type = 'button';
+      close.className = 'btn btn-sm btn-ghost-secondary';
+      close.setAttribute('aria-label', I18N.close);
+      close.addEventListener('click', function () {
+         if (box.parentNode) { box.parentNode.removeChild(box); }
+      });
+
+      box.appendChild(icon);
+      box.appendChild(body);
+      box.appendChild(close);
+      document.body.appendChild(box);
+
+      if (!moduleKey || moduleKey === 'desconhecido') { return; }
+
+      function renderActive(resp) {
+         msg.textContent = fmt(I18N.active, resp.until || '');
+         actions.textContent = '';
+         if (resp.config_url) {
+            var link = el('a', '', I18N.open);
+            link.className = 'btn btn-sm btn-outline-danger';
+            link.href = resp.config_url;
+            actions.appendChild(link);
+         }
+      }
+
+      post({ action: 'status', module: moduleKey }, function (resp) {
+         if (!resp || !resp.success) { return; }
+         if (resp.active) { renderActive(resp); return; }
+         if (!resp.supported) { return; }
+         if (!resp.can_enable) {
+            actions.appendChild(el('div', '', I18N.ask_admin));
+            return;
+         }
+         var btn = el('button', '', I18N.enable);
+         btn.type = 'button';
+         btn.className = 'btn btn-sm btn-danger';
+         btn.addEventListener('click', function () {
+            btn.disabled = true;
+            btn.textContent = I18N.enabling;
+            post({ action: 'enable', module: moduleKey }, function (r) {
+               if (r && r.success) { renderActive(r); return; }
+               btn.disabled = false;
+               btn.textContent = I18N.enable;
+               msg.textContent = (r && r.message) ? r.message : I18N.error;
+            });
+         });
+         actions.appendChild(btn);
+      });
+   }
+
+   // Só respostas do próprio GLPI para o NexTool: cabeçalho vindo de outra origem não vale
+   // (e ler cabeçalho "não exposto" de outra origem gera erro no console do Chrome).
+   function fromNexTool(url) {
+      try {
+         var u = new URL(String(url || ''), window.location.href);
+         return u.origin === window.location.origin && u.pathname.indexOf('/plugins/nextool/') !== -1;
+      } catch (e) { return false; }
+   }
+
+   function inspect(status, getHeader) {
+      var kind = '';
+      try { kind = getHeader('X-NexTool-Error') || ''; } catch (e) { return; }
+      if (!kind) { return; }
+      var moduleKey = '', requestId = '';
+      try { moduleKey = getHeader('X-NexTool-Module') || ''; } catch (e) { /* opcional */ }
+      try { requestId = getHeader('X-NexTool-Request') || ''; } catch (e) { /* opcional */ }
+      if (!/^[a-z0-9_-]{0,64}$/.test(moduleKey)) { moduleKey = ''; }
+      if (!/^[a-f0-9]{0,32}$/.test(requestId)) { requestId = ''; }
+      var run = function () { show(status, moduleKey, requestId); };
+      if (document.readyState === 'loading') {
+         document.addEventListener('DOMContentLoaded', run);
+      } else {
+         run();
+      }
+   }
+
+   // fetch: observa a resposta e devolve a MESMA Promise ao chamador.
+   if (typeof window.fetch === 'function') {
+      var originalFetch = window.fetch;
+      window.fetch = function () {
+         var p = originalFetch.apply(this, arguments);
+         try {
+            p.then(function (r) {
+               try {
+                  if (r && r.headers && fromNexTool(r.url)) {
+                     inspect(r.status, function (h) { return r.headers.get(h); });
+                  }
+               } catch (e) { /* o aviso nunca vira rejeição não tratada */ }
+            }, function () { /* falha de rede: não é falha do módulo */ });
+         } catch (e) { /* nunca interfere na chamada original */ }
+         return p;
+      };
+   }
+
+   // jQuery: ajaxComplete pega sucesso e erro (o cabeçalho decide).
+   function bindJquery() {
+      var $ = window.jQuery;
+      if (!$ || !$.fn || window.__nextoolDiagJq) { return; }
+      window.__nextoolDiagJq = true;
+      $(document).ajaxComplete(function (ev, xhr, settings) {
+         try {
+            if (!xhr || typeof xhr.getResponseHeader !== 'function' || !fromNexTool(settings && settings.url)) { return; }
+            inspect(xhr.status, function (h) { return xhr.getResponseHeader(h); });
+         } catch (e) { /* idem */ }
+      });
+   }
+   bindJquery();
+   if (!window.__nextoolDiagJq) {
+      document.addEventListener('DOMContentLoaded', bindJquery);
+   }
+
+   window.NexToolDiag = { inspect: inspect };
 })();

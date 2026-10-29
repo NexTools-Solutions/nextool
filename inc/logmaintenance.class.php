@@ -70,6 +70,22 @@ class PluginNextoolLogMaintenance {
          }
       }
 
+      // LGPD (política de log: 30 dias). Falhas técnicas de módulo e as linhas DEBUG das
+      // tabelas de log dos módulos não seguem os 120 dias acima; registros operacionais e
+      // as retenções configuradas em cada módulo continuam como estão.
+      $logThreshold = date('Y-m-d H:i:s', time() - (self::DIAGNOSTIC_RETENTION_DAYS * 86400));
+      if ($DB->tableExists('glpi_plugin_nextool_main_logs')
+          && $DB->delete('glpi_plugin_nextool_main_logs', ['log_type' => 'module_error', 'date' => ['<', $logThreshold]])) {
+         $affected += PluginNextoolCompat::affectedRows($DB);
+      }
+      $affected += self::purgeModuleDebugRows($logThreshold);
+      try {
+         require_once __DIR__ . '/modulediagnostic.class.php';
+         PluginNextoolModuleDiagnostic::expireWindows();
+      } catch (\Throwable $e) {
+         // a expiração também vale pelo isDebug(); a regravação fica para a próxima passada
+      }
+
       if ($affected > 0) {
          Toolbox::logInFile('plugin_nextool', sprintf(
             'LogMaintenance: removidos %d registros antigos (retention=%d dias)',
@@ -79,6 +95,57 @@ class PluginNextoolLogMaintenance {
       }
 
       return true;
+   }
+
+   const DIAGNOSTIC_RETENTION_DAYS = 30;
+
+   /**
+    * Linhas DEBUG (modo diagnóstico) das tabelas de LOG dos módulos mais velhas que o limite.
+    * Só tabelas `*_log`/`*_logs` com `level` de TEXTO: há tabela de módulo com `level` numérico
+    * (azuredevops_classifications), onde `level IN ('DEBUG')` vira `level = 0` ou erro no modo
+    * estrito. Uma consulta só ao information_schema; falha numa tabela não para as outras.
+    */
+   private static function purgeModuleDebugRows(string $threshold): int {
+      global $DB;
+      $affected = 0;
+      try {
+         $iterator = $DB->request([
+            'SELECT' => ['TABLE_NAME'],
+            'FROM'   => 'information_schema.COLUMNS',
+            'WHERE'  => [
+               'TABLE_SCHEMA' => $DB->dbdefault,
+               'COLUMN_NAME'  => 'level',
+               'DATA_TYPE'    => ['varchar', 'char'],
+               'TABLE_NAME'   => ['LIKE', 'glpi\\_plugin\\_nextool\\_%'],
+            ],
+         ]);
+         $tables = [];
+         foreach ($iterator as $row) {
+            $tables[] = (string) ($row['TABLE_NAME'] ?? '');
+         }
+      } catch (\Throwable $e) {
+         return 0;
+      }
+      foreach ($tables as $table) {
+         if (preg_match('/^glpi_plugin_nextool_[a-z0-9_]+_logs?$/', $table) !== 1 || $table === 'glpi_plugin_nextool_main_logs') {
+            continue;
+         }
+         try {
+            $dateCol = null;
+            foreach (['date_creation', 'log_date', 'date'] as $col) {
+               if ($DB->fieldExists($table, $col)) {
+                  $dateCol = $col;
+                  break;
+               }
+            }
+            if ($dateCol !== null && $DB->delete($table, ['level' => ['DEBUG', 'debug'], $dateCol => ['<', $threshold]])) {
+               $affected += PluginNextoolCompat::affectedRows($DB);
+            }
+         } catch (\Throwable $e) {
+            // segue para a próxima tabela
+         }
+      }
+      return $affected;
    }
 
    private static function getCacheDir() {

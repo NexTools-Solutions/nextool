@@ -135,5 +135,19 @@ PluginNextoolModuleManager::helpdeskAdminSurfaceGate($moduleKey, $filename);
 // Carrega o arquivo do módulo
 // O arquivo do módulo será executado no contexto atual (variáveis globais já estão disponíveis)
 // Cada arquivo do módulo é responsável por suas próprias verificações de permissão e validações
-include($filePath);
+// Falha técnica vira registro no diagnóstico do módulo (PluginNextoolModuleError). A tela de
+// erro continua sendo a do GLPI: a exceção é registrada e relançada sem alteração.
+require_once NEXTOOL_PHP_DIR . '/inc/moduleerror.class.php';
+$nxRequestId = PluginNextoolModuleError::newRequestId();
+register_shutdown_function(static function () use ($moduleKey, $filename, $nxRequestId): void {
+   PluginNextoolModuleError::recordFatal($moduleKey, $filename, error_get_last(), $nxRequestId);
+});
+try {
+   include($filePath);
+} catch (\Throwable $nxException) {
+   if (!PluginNextoolModuleError::mustRethrow($nxException)) {
+      PluginNextoolModuleError::recordThrowable($moduleKey, $filename, $nxException, $nxRequestId);
+   }
+   throw $nxException;
+}
 
