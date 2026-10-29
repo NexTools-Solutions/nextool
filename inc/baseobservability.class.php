@@ -257,6 +257,13 @@ abstract class PluginNextoolBaseObservability {
             ? PluginNextoolConfig::getPluginVersion() : '?';
          $dados['glpi']         = defined('GLPI_VERSION') ? GLPI_VERSION : '?';
          $dados['php']          = PHP_VERSION;
+         // Servidor web que repassa PATH_INFO = URL inteira quebrava os popups e assets dos
+         // módulos sem deixar rastro no módulo (cliente em 28/10/2026).
+         require_once NEXTOOL_PHP_DIR . '/inc/ajaxroute.inc.php';
+         $dados['servidor_web'] = (string) ($_SERVER['SERVER_SOFTWARE'] ?? '?');
+         $dados['path_info']    = plugin_nextool_path_info_is_full_uri($_SERVER)
+            ? 'URL inteira (fora do padrão: revisar fastcgi_param PATH_INFO no servidor web)'
+            : 'ok';
          $dados['modulo_ativo'] = $module->isEnabled() ? 'sim' : 'nao';
          $dados['nivel_log']    = (string) ($cfg['log_level'] ?? 'padrao');
 

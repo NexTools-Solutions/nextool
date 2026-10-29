@@ -11,7 +11,7 @@ declare(strict_types=1);
  * que intercepta URLs diretas para arquivos dentro de modules/[nome]/front/.
  * 
  * Formato de URL aceito (2 formas):
- * 1. PATH_INFO: /plugins/nextool/front/module_assets.php/[module_key]/[file]
+ * 1. Caminho: /plugins/nextool/front/module_assets.php/[module_key]/[file] (lido da URL, nunca de $_SERVER['PATH_INFO'])
  *    Exemplo: /plugins/nextool/front/module_assets.php/[module_key]/[module_key].css.php
  * 
  * 2. Query String: /plugins/nextool/front/module_assets.php?module=[module_key]&file=[file]
@@ -33,26 +33,12 @@ if (!defined('GLPI_ROOT')) {
    define('GLPI_ROOT', dirname(__FILE__, 4));
 }
 
-// Detecta módulo e arquivo usando PATH_INFO (preferencial) ou query string
-$moduleKey = '';
-$filename = '';
-
-// Tenta usar PATH_INFO primeiro (formato: /module_assets.php/[module]/[file])
-if (isset($_SERVER['PATH_INFO']) && !empty($_SERVER['PATH_INFO'])) {
-   $pathInfo = trim($_SERVER['PATH_INFO'], '/');
-   $parts = explode('/', $pathInfo, 2);
-   
-   if (count($parts) >= 2) {
-      $moduleKey = $parts[0];
-      $filename = $parts[1];
-   }
-}
-
-// Se não encontrou via PATH_INFO, tenta query string
-if (empty($moduleKey) || empty($filename)) {
-   $moduleKey = $_GET['module'] ?? '';
-   $filename = $_GET['file'] ?? '';
-}
+// Query primeiro; depois a URL original (forma de caminho ou rewrite que perde $_GET).
+// PATH_INFO não é lido: há nginx que o preenche com a URL inteira (ver ajaxroute.inc.php).
+require_once dirname(__DIR__) . '/inc/ajaxroute.inc.php';
+$nxAssetRoute = plugin_nextool_ajax_route($_SERVER, $_GET, 'front/module_assets.php');
+$moduleKey = $nxAssetRoute['module'];
+$filename = $nxAssetRoute['file'];
 
 // Valida parâmetros
 if (empty($moduleKey) || empty($filename)) {

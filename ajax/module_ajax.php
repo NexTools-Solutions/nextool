@@ -40,7 +40,7 @@ if (!function_exists('__')) {
 
 require_once dirname(__DIR__) . '/inc/modulespath.inc.php';
 
-// O fallback lê somente a rota da URL original quando o rewrite perde $_GET/PATH_INFO.
+// Query primeiro; depois a URL original (rewrite que perde $_GET). PATH_INFO não é lido.
 require_once NEXTOOL_PHP_DIR . '/inc/ajaxroute.inc.php';
 $nxAjaxRoute = plugin_nextool_ajax_route($_SERVER, $_GET);
 $moduleKey = $nxAjaxRoute['module'];
