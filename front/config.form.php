@@ -151,7 +151,9 @@ foreach ($catalogMeta as $moduleKey => $meta) {
 if ($requiresPolicyAcceptance) {
    $heroNotice = '';
 } elseif (!$modulesUnlocked) {
-   $heroNotice = __('As Políticas de Uso já foram aceitas. Clique em Sincronizar para atualizar o catálogo oficial de módulos.', 'nextool');
+   // Sem citar as Políticas de Uso: no fluxo vínculo-first o aceite acontece no portal, e o usuário
+   // nunca viu política nenhuma nesta tela.
+   $heroNotice = __('O catálogo de módulos ainda não foi carregado. Clique em Sincronizar para buscar os módulos disponíveis.', 'nextool');
 } elseif ($licenseStatusCode === 'SUSPENDED' && !$isFreeTier) {
    $heroNotice = __('Licença suspensa: renove seu contrato para continuar com acesso a suporte e atualizações.', 'nextool');
 } else {

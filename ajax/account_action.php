@@ -24,6 +24,17 @@ PluginNextoolAjaxBootstrap::start([
 require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/distributionclient.class.php';
 
+/** Há ao menos um módulo liberado no catálogo local (mesmo critério do $modulesUnlocked da tela)? */
+function plugin_nextool_account_catalog_has_modules(): bool {
+   require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
+   foreach (PluginNextoolModuleCatalog::all() as $meta) {
+      if (!empty($meta['is_available'])) {
+         return true;
+      }
+   }
+   return false;
+}
+
 $action = isset($_POST['action']) ? trim((string) $_POST['action']) : '';
 $allowed = ['generate_link_code', 'refresh_status', 'unlink'];
 if (!in_array($action, $allowed, true)) {
@@ -58,7 +69,7 @@ if ($action === 'generate_link_code' && ($identifier === '' || $secret === '')) 
    // e NAO e pre-requisito para emitir o link-code. Encadea-la entre o enroll e o requestLinkCode
    // tornava a 1a instalacao lenta/fragil (enroll + validate + link-code numa unica requisicao) --
    // o reload "resolvia" justamente por pular este bloco inteiro. O catalogo/licenca sincroniza no
-   // fluxo normal de validate (refresh_status pos-vinculo, botao Sincronizar ou proximo load).
+   // refresh_status que confirma o vinculo (ver abaixo) ou no botao Sincronizar.
    // O aceite FORMAL dos termos e registrado no PORTAL.
    require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
    PluginNextoolLicenseConfig::resetCache(['policies_accepted_at' => date('Y-m-d H:i:s')]);
@@ -144,6 +155,8 @@ try {
       case 'refresh_status':
          $data = $callSigned(static fn(PluginNextoolDistributionClient $c) => $c->getLinkStatus());
          $isLinked = (bool) ($data['linked'] ?? false);
+         $previousLinkState = Config::getConfigurationValues('plugin:nextool_account_link');
+         $wasLinked = ($previousLinkState['linked'] ?? '0') === '1';
          // Atualiza o estado persistido (cards FREE + rótulo do hero) já no refresh, sem esperar o
          // próximo /validate. Vinculado => link_required=0 (download FREE liberado de imediato).
          $persist = ['linked' => $isLinked ? '1' : '0', 'email' => (string) ($data['portal_email'] ?? '')];
@@ -151,11 +164,40 @@ try {
          // GLPI 10: portal_email vem do servidor e o Config não escapa (apóstrofo no e-mail = gravação perdida);
          // os valores já gravados também são relidos crus e regravados aqui.
          Config::setConfigurationValues('plugin:nextool_account_link', PluginNextoolDbCompat::row(array_merge(
-            Config::getConfigurationValues('plugin:nextool_account_link'), $persist
+            $previousLinkState, $persist
          )));
+         // Vínculo recém-confirmado (ou vinculado com o catálogo ainda vazio): sincroniza o catálogo
+         // AQUI, uma vez, para o "Recarregar agora" do modal já mostrar os módulos. No fluxo
+         // vínculo-first o generate_link_code não sincroniza (enroll + validate + link-code numa
+         // requisição só deixava a 1ª instalação lenta), e sem isto a lista ficava vazia até o
+         // primeiro clique em Sincronizar. Falha aqui não desfaz o vínculo: o Sincronizar resolve.
+         $catalogSynced = null;
+         if ($isLinked && (!$wasLinked || !plugin_nextool_account_catalog_has_modules())) {
+            $catalogSynced = false;
+            try {
+               require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+               require_once NEXTOOL_PHP_DIR . '/inc/licenseconfig.class.php';
+               require_once NEXTOOL_PHP_DIR . '/inc/licensevalidator.class.php';
+               $manager = PluginNextoolModuleManager::getInstance();
+               $manager->clearCache();
+               $manager->refreshModules();
+               PluginNextoolLicenseConfig::resetCache();
+               $syncResult = PluginNextoolLicenseValidator::validateLicense([
+                  'force_refresh' => true,
+                  'context'       => [
+                     'origin'            => 'account_link',
+                     'requested_modules' => ['catalog_bootstrap'],
+                  ],
+               ]);
+               $catalogSynced = !empty($syncResult['valid']) || plugin_nextool_account_catalog_has_modules();
+            } catch (Throwable $syncError) {
+               $catalogSynced = false;
+            }
+         }
          echo json_encode([
             'success'        => true,
             'linked'         => $isLinked,
+            'catalog_synced' => $catalogSynced,
             'portal_email'   => $data['portal_email'] ?? null,
             'linked_at'      => $data['linked_at'] ?? null,
             'environment_id' => $identifier,

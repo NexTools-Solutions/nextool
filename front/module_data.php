@@ -50,7 +50,7 @@ Html::header(
 echo "<div class='card m-3'>";
 echo "<div class='card-header d-flex justify-content-between align-items-center'>";
 echo "<h3 class='mb-0'>" . PluginNextoolCompat::escape($catalog['name']) . "</h3>";
-echo "<span class='badge bg-secondary'>" . PluginNextoolCompat::escape($moduleKey) . "</span>";
+echo "<span class='badge bg-secondary text-white'>" . PluginNextoolCompat::escape($moduleKey) . "</span>";
 echo "</div>";
 
 echo "<div class='card-body'>";
@@ -73,9 +73,9 @@ if (empty($tables)) {
       echo "<td><code>" . PluginNextoolCompat::escape($table) . "</code></td>";
       if ($DB->tableExists($table)) {
          $count = countElementsInTable($table);
-         echo "<td class='text-end'><span class='badge bg-primary'>" . (int)$count . "</span></td>";
+         echo "<td class='text-end'><span class='badge bg-primary text-white'>" . (int)$count . "</span></td>";
       } else {
-         echo "<td class='text-end'><span class='badge bg-secondary'>" . __('Inexistente', 'nextool') . "</span></td>";
+         echo "<td class='text-end'><span class='badge bg-secondary text-white'>" . __('Inexistente', 'nextool') . "</span></td>";
       }
       echo "</tr>";
    }

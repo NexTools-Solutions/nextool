@@ -183,7 +183,7 @@ declare(strict_types=1);
                                     <?php if (($accountEmail ?? '') !== ''): ?><span class="fw-semibold"><?php echo PluginNextoolCompat::escape($accountEmail); ?></span><?php endif; ?>
                                     <div class="form-text"><?php echo __('Este ambiente está vinculado a uma conta do portal NexTool. Abra "Conta" no topo para ver detalhes ou desvincular.', 'nextool'); ?></div>
                                  <?php else: ?>
-                                    <span class="badge bg-secondary me-2"><i class="ti ti-user-off me-1"></i><?php echo __('Não vinculada', 'nextool'); ?></span>
+                                    <span class="badge bg-secondary text-white me-2"><i class="ti ti-user-off me-1"></i><?php echo __('Não vinculada', 'nextool'); ?></span>
                                     <button type="button" class="btn btn-sm btn-outline-primary ms-1" data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal" onclick="nextoolRefreshLinkStatus();">
                                        <i class="ti ti-user-check me-1"></i><?php echo __('Vincular conta', 'nextool'); ?>
                                     </button>

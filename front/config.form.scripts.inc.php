@@ -727,11 +727,11 @@ function nextoolUpdateAllSetRow(row, state, message) {
       migrating:   ['bg-info', 'ti ti-loader-2'],
       ok:          ['bg-success', 'ti ti-check'],
       failed:      ['bg-danger', 'ti ti-x'],
-      skipped:     ['bg-warning text-dark', 'ti ti-player-skip-forward']
+      skipped:     ['bg-warning', 'ti ti-player-skip-forward']
    };
    var st = styles[state] || styles.waiting;
    var badge = row.querySelector('.nextool-update-all-state');
-   badge.className = 'badge ' + st[0] + ' nextool-update-all-state';
+   badge.className = 'badge text-white ' + st[0] + ' nextool-update-all-state';
    badge.innerHTML = '<i class="' + st[1] + ' me-1"></i>';
    badge.appendChild(document.createTextNode(NEXTOOL_UPDATE_ALL_I18N[state] || state));
    var msg = row.querySelector('.nextool-update-all-msg');
@@ -744,7 +744,7 @@ function nextoolUpdateAllRow(listEl, name) {
    li.className = 'list-group-item px-0';
    li.innerHTML = '<div class="d-flex justify-content-between align-items-center gap-2">'
       + '<span class="fw-medium nextool-update-all-name"></span>'
-      + '<span class="badge bg-secondary nextool-update-all-state"></span></div>'
+      + '<span class="badge bg-secondary text-white nextool-update-all-state"></span></div>'
       + '<div class="small text-muted mt-1 d-none nextool-update-all-msg"></div>';
    li.querySelector('.nextool-update-all-name').textContent = name;
    listEl.appendChild(li);
@@ -957,6 +957,14 @@ function nextoolInitCoreUpdateModal() {
    var currentStep = -1; // -1=not started, 0=preflight done, 1=download done
 
    var LABEL_DONE  = '<i class="ti ti-check me-1"></i>' + <?php echo json_encode(__('Concluído! Recarregando...', 'nextool')); ?>;
+   // Estado final: verde com texto branco e sem o esmaecido do disabled (o btn-primary desabilitado
+   // virava fundo claro com texto cinza). A página recarrega em seguida, então não há reset.
+   function nextoolMarkUpdateDone(btn) {
+      btn.disabled = true;
+      btn.className = 'btn btn-success text-white';
+      btn.style.opacity = '1';
+      btn.innerHTML = LABEL_DONE;
+   }
    var LABEL_RETRY = '<i class="ti ti-refresh me-1"></i>' + <?php echo json_encode(__('Tentar novamente', 'nextool')); ?>;
 
    // Backup / Restore labels
@@ -994,7 +1002,7 @@ function nextoolInitCoreUpdateModal() {
       STEPS.forEach(function(step, i) {
          var badge = document.getElementById(step.badge);
          var status = document.getElementById(step.status);
-         if (badge) { badge.className = 'badge bg-secondary rounded-pill me-2'; badge.textContent = String(i + 1); }
+         if (badge) { badge.className = 'badge bg-secondary text-white rounded-pill me-2'; badge.textContent = String(i + 1); }
          if (status) status.innerHTML = '';
       });
 
@@ -1010,7 +1018,7 @@ function nextoolInitCoreUpdateModal() {
    function setStepActive(i) {
       var badge = document.getElementById(STEPS[i].badge);
       if (badge) {
-         badge.className = 'badge bg-primary rounded-pill me-2';
+         badge.className = 'badge bg-primary text-white rounded-pill me-2';
          badge.innerHTML = '<i class="ti ti-loader-2 ti-spin" style="font-size:.75rem"></i>';
       }
    }
@@ -1018,14 +1026,14 @@ function nextoolInitCoreUpdateModal() {
    function setStepOk(i) {
       var badge = document.getElementById(STEPS[i].badge);
       var status = document.getElementById(STEPS[i].status);
-      if (badge) { badge.className = 'badge bg-success rounded-pill me-2'; badge.innerHTML = '<i class="ti ti-check" style="font-size:.75rem"></i>'; }
+      if (badge) { badge.className = 'badge bg-success text-white rounded-pill me-2'; badge.innerHTML = '<i class="ti ti-check" style="font-size:.75rem"></i>'; }
       if (status) status.innerHTML = '<i class="ti ti-check text-success"></i>';
    }
 
    function setStepError(i, message) {
       var badge = document.getElementById(STEPS[i].badge);
       var status = document.getElementById(STEPS[i].status);
-      if (badge) { badge.className = 'badge bg-danger rounded-pill me-2'; badge.innerHTML = '<i class="ti ti-x" style="font-size:.75rem"></i>'; }
+      if (badge) { badge.className = 'badge bg-danger text-white rounded-pill me-2'; badge.innerHTML = '<i class="ti ti-x" style="font-size:.75rem"></i>'; }
       if (status) status.innerHTML = '<i class="ti ti-x text-danger"></i>';
 
       if (message && alertEl) {
@@ -1230,7 +1238,7 @@ function nextoolInitCoreUpdateModal() {
          // After apply success with needs_reload - reload the current page (#264).
          // redirect_url continua respeitado se o backend algum dia voltar a envia-lo.
          if (stepIndex === 2 && payload && payload.data && payload.data.needs_reload) {
-            if (actionBtn) { actionBtn.disabled = true; actionBtn.innerHTML = LABEL_DONE; }
+            if (actionBtn) { nextoolMarkUpdateDone(actionBtn); }
             if (alertEl) {
                alertEl.className = 'alert alert-success mb-2';
                alertEl.textContent = payload.message || <?php echo json_encode(__('Atualização aplicada com sucesso.', 'nextool')); ?>;
@@ -1264,7 +1272,7 @@ function nextoolInitCoreUpdateModal() {
             }
          } else {
             // All done (safety fallback)
-            if (actionBtn) { actionBtn.disabled = true; actionBtn.innerHTML = LABEL_DONE; }
+            if (actionBtn) { nextoolMarkUpdateDone(actionBtn); }
             wasStarted = false;
          }
          isRunning = false;
@@ -1384,9 +1392,9 @@ function nextoolInitCoreUpdateModal() {
             var dateStr = bk.created_at ? new Date(bk.created_at).toLocaleString() : '?';
             html += '<div class="d-flex align-items-center justify-content-between p-2 rounded border mb-1' + (i === 0 ? '' : ' opacity-75') + '">';
             html += '<div>';
-            html += '<span class="badge bg-secondary me-1">v' + (bk.version || '?') + '</span>';
+            html += '<span class="badge bg-secondary text-white me-1">v' + (bk.version || '?') + '</span>';
             html += '<span class="small text-muted">' + dateStr + '</span>';
-            if (i === 0) html += ' <span class="badge bg-azure-lt ms-1">' + LABEL_LATEST + '</span>';
+            if (i === 0) html += ' <span class="badge bg-azure text-white ms-1">' + LABEL_LATEST + '</span>';
             html += '</div>';
             html += '<button type="button" class="btn btn-sm btn-outline-warning nextool-restore-btn" data-backup-id="' + (bk.backup_id || '') + '" data-backup-version="' + (bk.version || '?') + '">';
             html += '<i class="ti ti-history me-1"></i>' + LABEL_RESTORE;

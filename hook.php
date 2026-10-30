@@ -411,6 +411,15 @@ function plugin_nextool_uninstall() {
    // (LGPD -- credencial não fica em banco de plugin desinstalado). São re-entregues pelo
    // servidor no primeiro Sincronizar após reinstalar.
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_managed_services']);
+   // #292: o feed de novidades que o plugin cadastrou em Ferramentas > Feeds RSS sai junto (só o que ele
+   // criou, pelo id guardado; feeds cadastrados à mão ficam).
+   try {
+      require_once NEXTOOL_PHP_DIR . '/inc/newsfeed.class.php';
+      PluginNextoolNewsFeed::disable();
+   } catch (\Throwable $e) {
+      Toolbox::logInFile('plugin_nextool', 'Uninstall: falha ao remover o feed de novidades: ' . $e->getMessage());
+   }
+   $DB->delete('glpi_configs', ['context' => 'plugin:nextool_news_feed']);
    // Direito local por item pago (`modules_entitlement`), que também libera as funções de nuvem:
    // sai junto com a credencial. Até a 6.24.1 ficava, e reinstalar trazia de volta o direito antigo
    // sem nenhum /validate (auditoria de 2026-09-24, ME-11). Volta no primeiro Sincronizar.

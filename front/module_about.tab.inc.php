@@ -40,7 +40,7 @@ if (!$module) {
 $billingTier = strtoupper($manager->getBillingTier($moduleKey)) ?: '-';
 $tierBadge = $billingTier === 'FREE'
    ? '<span class="badge bg-success text-white">FREE</span>'
-   : '<span class="badge bg-warning text-dark">' . PluginNextoolCompat::escape($billingTier) . '</span>';
+   : '<span class="badge bg-warning text-white">' . PluginNextoolCompat::escape($billingTier) . '</span>';
 $statusBadge = $module->isEnabled()
    ? '<span class="badge bg-success text-white">' . __('Ativo', 'nextool') . '</span>'
    : '<span class="badge bg-secondary text-white">' . __('Inativo', 'nextool') . '</span>';

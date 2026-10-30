@@ -299,6 +299,9 @@ class PluginNextoolJobDispatcher {
          if (class_exists('Toolbox')) {
             Toolbox::logInFile('plugin_nextool', sprintf("jobs: %s/%s falhou: %s\n", $job['module_key'], $job['key'], $erro));
          }
+         // Painel de diagnóstico do módulo (module_error, motivo `rotina`); a rodada segue como antes.
+         require_once __DIR__ . '/moduleerror.class.php';
+         PluginNextoolModuleError::recordCaught($e, 'rotina', (string) $job['module_key']);
       } finally {
          self::unlock($trava);
       }

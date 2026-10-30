@@ -250,6 +250,55 @@ class PluginNextoolModuleError {
       return true;
    }
 
+   /**
+    * Exceção capturada FORA dos roteadores, onde a base engole a falha para o GLPI seguir (hooks do
+    * HookDispatcher, rotinas do JobDispatcher): grava para o painel do módulo, sem mudar o fluxo.
+    * Sem `$moduleKey`, o módulo dono sai do trace (primeiro arquivo em /modules/<chave>/); falha
+    * que não passou por código de módulo não é gravada. Exceções que são resposta (403, redirect,
+    * sessão expirada) não contam. Nunca lança.
+    *
+    * @param string $reason motivo fixo (`hook`, `rotina`)
+    */
+   public static function recordCaught(\Throwable $e, string $reason, string $moduleKey = ''): void {
+      try {
+         if (self::mustRethrow($e)) {
+            return;
+         }
+         $where = $e->getFile() . ':' . $e->getLine();
+         if ($moduleKey === '') {
+            [$moduleKey, $where] = self::moduleFrameOf($e);
+            if ($moduleKey === '') {
+               return;
+            }
+         }
+         $isDb = $e instanceof \PDOException || $e instanceof \mysqli_sql_exception
+            || preg_match('/DB|Database|Statement|Sql/i', get_class($e)) === 1
+            || self::looksLikeSql($e->getMessage());
+         self::record($moduleKey, self::KIND_MODULE, 0, $reason, [
+            'class'   => get_class($e),
+            'where'   => $where,
+            'message' => $isDb ? '' : $e->getMessage(),
+         ]);
+      } catch (\Throwable $ignored) {
+      }
+   }
+
+   /**
+    * Primeiro ponto do trace (começando pelo lugar da exceção) dentro de /modules/<chave>/.
+    *
+    * @return array{0:string, 1:string} [chave do módulo ou '', "arquivo:linha"]
+    */
+   private static function moduleFrameOf(\Throwable $e): array {
+      $frames = array_merge([['file' => $e->getFile(), 'line' => $e->getLine()]], $e->getTrace());
+      foreach ($frames as $frame) {
+         $file = (string) ($frame['file'] ?? '');
+         if (preg_match('#/modules/([a-z0-9_-]{1,64})/#', $file, $m) === 1) {
+            return [$m[1], $file . ':' . (int) ($frame['line'] ?? 0)];
+         }
+      }
+      return ['', ''];
+   }
+
    public static function looksLikeSql(string $text): bool {
       return preg_match('/\b(SQL|SELECT|INSERT|UPDATE|DELETE|mysqli|PDO)\b/', $text) === 1;
    }

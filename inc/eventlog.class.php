@@ -167,11 +167,11 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
          $type = (string) ($values['log_type'] ?? '');
          $label = self::getLogTypes()[$type] ?? $type;
          $class = [
-            self::TYPE_VALIDATION => 'bg-blue-lt',
-            self::TYPE_CONFIG     => 'bg-indigo-lt',
-            self::TYPE_MODULE     => 'bg-teal-lt',
-            self::TYPE_MODULE_ERROR => 'bg-red-lt',
-         ][$type] ?? 'bg-secondary-lt';
+            self::TYPE_VALIDATION => 'bg-blue text-white',
+            self::TYPE_CONFIG     => 'bg-indigo text-white',
+            self::TYPE_MODULE     => 'bg-teal text-white',
+            self::TYPE_MODULE_ERROR => 'bg-red text-white',
+         ][$type] ?? 'bg-secondary text-white';
          return "<span class='badge " . $class . "'>" . PluginNextoolCompat::escape($label) . "</span>";
       }
 

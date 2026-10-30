@@ -4,7 +4,7 @@ declare(strict_types=1);
  * Aba Módulos do Nextool.
  * Contexto/variáveis esperadas: $nextool_is_standalone, $nextool_standalone_output_tab,
  * $canViewAnyModule, $firstTabKey, $nextool_hero_standalone, $stats, $canManageModules,
- * $requiresPolicyAcceptance, $canManageAdminTabs, $modulesState.
+ * $requiresPolicyAcceptance, $canManageAdminTabs, $modulesState, $modulesUnlocked.
  *
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
@@ -54,6 +54,16 @@ declare(strict_types=1);
                      <?php endif; ?>
                   </div>
                </div>
+            <?php elseif (empty($modulesState) && empty($modulesUnlocked)): ?>
+               <?php // Catálogo local ainda vazio (nunca sincronizou): não é falta de acesso do perfil. ?>
+               <div class="alert alert-info mb-0">
+                  <i class="ti ti-refresh me-2"></i>
+                  <?php if ($canManageModules): ?>
+                     <?php echo __('O catálogo de módulos ainda não foi carregado neste ambiente. Clique em Sincronizar para buscar os módulos disponíveis.', 'nextool'); ?>
+                  <?php else: ?>
+                     <?php echo __('O catálogo de módulos ainda não foi carregado neste ambiente. Peça a quem administra o NexTool para clicar em Sincronizar.', 'nextool'); ?>
+                  <?php endif; ?>
+               </div>
             <?php elseif (empty($modulesState)): ?>
                <div class="alert alert-info mb-0">
                   <i class="ti ti-info-circle me-2"></i>
@@ -85,11 +95,11 @@ declare(strict_types=1);
 
                   // Filtros de estado ordenados por contagem (desc), ocultar zeros
                   $stateChips = [
-                     ['key' => 'enabled',  'label' => __('Ativado', 'nextool'),     'icon' => 'ti ti-player-play',    'btn' => 'btn-outline-success', 'badge' => 'bg-success',   'count' => $fc['enabled']],
-                     ['key' => 'disabled', 'label' => __('Desativado', 'nextool'),   'icon' => 'ti ti-player-pause',   'btn' => 'btn-outline-warning', 'badge' => 'bg-warning text-dark', 'count' => $fc['disabled']],
-                     ['key' => 'download', 'label' => __('Download', 'nextool'),     'icon' => 'ti ti-cloud-download', 'btn' => 'btn-outline-secondary', 'badge' => 'bg-secondary', 'count' => $fc['download']],
-                     ['key' => 'install',  'label' => __('Instalar', 'nextool'),     'icon' => 'ti ti-download',       'btn' => 'btn-outline-primary', 'badge' => 'bg-primary',   'count' => $fc['install']],
-                     ['key' => 'update',   'label' => __('Atualização', 'nextool'),  'icon' => 'ti ti-arrow-up',       'btn' => 'btn-outline-info',    'badge' => 'bg-info',      'count' => $fc['update']],
+                     ['key' => 'enabled',  'label' => __('Ativado', 'nextool'),     'icon' => 'ti ti-player-play',    'btn' => 'btn-outline-success', 'badge' => 'bg-success text-white', 'count' => $fc['enabled']],
+                     ['key' => 'disabled', 'label' => __('Desativado', 'nextool'),   'icon' => 'ti ti-player-pause',   'btn' => 'btn-outline-warning', 'badge' => 'bg-warning text-white', 'count' => $fc['disabled']],
+                     ['key' => 'download', 'label' => __('Download', 'nextool'),     'icon' => 'ti ti-cloud-download', 'btn' => 'btn-outline-secondary', 'badge' => 'bg-secondary text-white', 'count' => $fc['download']],
+                     ['key' => 'install',  'label' => __('Instalar', 'nextool'),     'icon' => 'ti ti-download',       'btn' => 'btn-outline-primary', 'badge' => 'bg-primary text-white', 'count' => $fc['install']],
+                     ['key' => 'update',   'label' => __('Atualização', 'nextool'),  'icon' => 'ti ti-arrow-up',       'btn' => 'btn-outline-info',    'badge' => 'bg-info text-white', 'count' => $fc['update']],
                   ];
                   usort($stateChips, function($a, $b) { return $b['count'] - $a['count']; });
 
@@ -164,7 +174,7 @@ declare(strict_types=1);
                      href="#nextool-major-readiness-body" role="button" aria-expanded="false" aria-controls="nextool-major-readiness-body">
                      <i class="ti ti-chevron-down nextool-collapse-indicator"></i>
                      <strong><?php echo PluginNextoolCompat::escape(sprintf(__('Compatibilidade com o GLPI %d', 'nextool'), $rdTarget)); ?></strong>
-                     <span class="badge bg-warning text-dark"><?php echo PluginNextoolCompat::escape(PluginNextoolMajorReadiness::summaryLabel($nextoolReadiness)); ?></span>
+                     <span class="badge bg-warning text-white"><?php echo PluginNextoolCompat::escape(PluginNextoolMajorReadiness::summaryLabel($nextoolReadiness)); ?></span>
                   </a>
                   <div class="collapse mt-2" id="nextool-major-readiness-body">
                      <div class="alert alert-warning mb-0">

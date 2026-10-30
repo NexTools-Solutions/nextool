@@ -148,6 +148,7 @@ class PluginNextoolHookDispatcher {
             // para impedir a criação/atualização do item). Rethrow sem log.
             throw $e;
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] pre_item_add Ticket: %s - %s',
                $e->getMessage(),
@@ -185,6 +186,7 @@ class PluginNextoolHookDispatcher {
          } catch (PluginNextoolValidationException $e) {
             throw $e;
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_add %s: %s - %s',
                $itemType,
@@ -207,6 +209,7 @@ class PluginNextoolHookDispatcher {
          } catch (PluginNextoolValidationException $e) {
             throw $e;
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_update %s: %s - %s',
                $itemType,
@@ -244,6 +247,7 @@ class PluginNextoolHookDispatcher {
             $item->input = [];
             return $item;
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] pre_item_update %s: %s - %s',
                $itemType,
@@ -265,6 +269,7 @@ class PluginNextoolHookDispatcher {
          try {
             call_user_func($cb, $item);
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_purge %s: %s - %s',
                $itemType,
@@ -285,6 +290,7 @@ class PluginNextoolHookDispatcher {
          try {
             call_user_func($cb, $item);
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] item_delete %s: %s - %s',
                $itemType,
@@ -338,6 +344,7 @@ class PluginNextoolHookDispatcher {
             $item->input = [];
             return $item;
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] pre_item_add %s: %s', $itemType, $e->getMessage()
             ));
@@ -433,6 +440,7 @@ class PluginNextoolHookDispatcher {
             // para impedir a criação/atualização do item). Rethrow sem log.
             throw $e;
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] post_show_item %s: %s',
                $itemType,
@@ -495,6 +503,7 @@ class PluginNextoolHookDispatcher {
                $actions = array_merge($actions, $ret);
             }
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] getRuleActions %s: %s',
                $itemtype,
@@ -618,6 +627,7 @@ class PluginNextoolHookDispatcher {
                $merged = array_merge($merged, $ret);
             }
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] %s %s: %s',
                $label,
@@ -670,6 +680,7 @@ class PluginNextoolHookDispatcher {
                $actions = array_merge($actions, $ret);
             }
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] timeline_answer_actions: %s',
                $e->getMessage()
@@ -714,6 +725,7 @@ class PluginNextoolHookDispatcher {
                   $actions = array_merge($actions, $legacy);
                }
             } catch (Throwable $e) {
+               self::recordModuleFailure($e);
                Toolbox::logInFile('plugin_nextool', sprintf(
                   '[HookDispatcher] timeline_answer_actions (legado): %s',
                   $e->getMessage()
@@ -773,6 +785,7 @@ class PluginNextoolHookDispatcher {
          try {
             call_user_func($provider, $params);
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] timeline_items: %s',
                $e->getMessage()
@@ -847,6 +860,7 @@ class PluginNextoolHookDispatcher {
             try {
                call_user_func($existing, $params);
             } catch (Throwable $e) {
+               self::recordModuleFailure($e);
                Toolbox::logInFile('plugin_nextool', sprintf(
                   '[HookDispatcher] timeline_items (legado): %s',
                   $e->getMessage()
@@ -902,6 +916,16 @@ class PluginNextoolHookDispatcher {
    }
 
    /**
+    * Falha de hook de módulo -> painel de diagnóstico do módulo (`module_error`, motivo `hook`).
+    * O hook segue engolindo a falha como antes (o GLPI não cai); isto só a torna visível. O módulo
+    * dono sai do trace da exceção; falha fora de código de módulo não é gravada.
+    */
+   private static function recordModuleFailure(Throwable $e): void {
+      require_once __DIR__ . '/moduleerror.class.php';
+      PluginNextoolModuleError::recordCaught($e, 'hook');
+   }
+
+   /**
     * Executa um callback que ECOA, isolado num buffer de saída: só o que ele produziu por
     * inteiro chega ao chamador; em exceção, a saída parcial é descartada e o nível de buffer
     * volta ao que era (nunca `ob_end_clean()` cego: o chamador pode estar dentro do Twig).
@@ -919,6 +943,7 @@ class PluginNextoolHookDispatcher {
             echo ob_get_clean();
          }
       } catch (Throwable $e) {
+         self::recordModuleFailure($e);
          while (ob_get_level() > $level) {
             ob_end_clean();
          }
@@ -1016,6 +1041,7 @@ class PluginNextoolHookDispatcher {
          try {
             call_user_func($provider, $phase, $target);
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] notificação %s (%s): %s',
                $phase,
@@ -1058,6 +1084,7 @@ class PluginNextoolHookDispatcher {
                   try {
                      call_user_func($existing, $target);
                   } catch (Throwable $e) {
+                     self::recordModuleFailure($e);
                      Toolbox::logInFile('plugin_nextool', sprintf('[HookDispatcher] %s (legado): %s', $hook, $e->getMessage()));
                   }
                }
@@ -1100,6 +1127,7 @@ class PluginNextoolHookDispatcher {
          try {
             call_user_func($cb, $params);
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] post_item_form %s: %s',
                $item::getType(),
@@ -1147,6 +1175,7 @@ class PluginNextoolHookDispatcher {
          try {
             call_user_func($cb, $params);
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] pre_itil_info_section %s: %s',
                $item::getType(),
@@ -1200,6 +1229,7 @@ class PluginNextoolHookDispatcher {
                $options += $ret;
             }
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] getAddSearchOptions %s: %s',
                $itemType,
@@ -1243,6 +1273,7 @@ class PluginNextoolHookDispatcher {
                $out[$itemtype] = sprintf('%s - %s', (string) $module->getName(), (string) $label);
             }
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf('[HookDispatcher] getDropdown %s: %s', $moduleKey, $e->getMessage()));
          }
       }
@@ -1432,6 +1463,7 @@ class PluginNextoolHookDispatcher {
          }
          return self::dispatchNotification($payload);
       } catch (Throwable $e) {
+         self::recordModuleFailure($e);
          Toolbox::logInFile(
             $module !== '' ? 'plugin_nextool_' . $module : 'plugin_nextool',
             sprintf("[NOTIFIER] Falha ao publicar \"%s\": %s\n", $sourceKey !== '' ? $sourceKey : '?', $e->getMessage())
@@ -1499,6 +1531,7 @@ class PluginNextoolHookDispatcher {
             call_user_func($sink, $notification);
             $delivered++;
          } catch (Throwable $e) {
+            self::recordModuleFailure($e);
             Toolbox::logInFile('plugin_nextool', sprintf(
                '[HookDispatcher] notification sink falhou (%s): %s',
                $notification['source_key'],

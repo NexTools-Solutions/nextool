@@ -249,7 +249,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
 // Verificação de permissão depende da ação
 $action = $_POST['action'] ?? '';
 
-$validActions = ['', 'validate_license', 'accept_policies', 'unlink_environment', 'save_uninstall_mode', 'job_run_now', 'job_resume'];
+$validActions = ['', 'validate_license', 'accept_policies', 'unlink_environment', 'save_uninstall_mode', 'save_news_feed', 'job_run_now', 'job_resume'];
 if (!in_array($action, $validActions, true)) {
    http_response_code(400);
    die(json_encode(['success' => false, 'message' => __('Ação inválida.', 'nextool')]));
@@ -355,6 +355,42 @@ if ($action === 'save_uninstall_mode') {
       $mode === 'purge_all' ? WARNING : INFO
    );
 
+   plugin_nextool_redirect_after_action();
+   exit;
+}
+
+if ($action === 'save_news_feed') {
+   // #292: novidades da NexTool na página inicial do GLPI (opt-in, aba Novidades).
+   require_once NEXTOOL_PHP_DIR . '/inc/newsfeed.class.php';
+   $wantOn = !empty($_POST['news_feed_enabled']);
+   if ($wantOn) {
+      $res = PluginNextoolNewsFeed::enable();
+      $ok  = $res['ok'];
+      if (!$ok) {
+         $msg   = __('Não foi possível cadastrar o feed de novidades no GLPI.', 'nextool');
+         $level = ERROR;
+      } elseif ($res['have_error']) {
+         $msg   = __('Feed de novidades cadastrado, mas este servidor não conseguiu baixá-lo. Confira o acesso do servidor à internet e o proxy do GLPI (Configurar > Geral > Proxy). Quando o acesso for liberado, as novidades passam a aparecer sozinhas.', 'nextool');
+         $level = WARNING;
+      } else {
+         $msg   = __('Novidades da NexTool ligadas: elas aparecem na aba "Feeds RSS" da página inicial do GLPI.', 'nextool');
+         $level = INFO;
+      }
+   } else {
+      $ok    = PluginNextoolNewsFeed::disable();
+      $msg   = $ok
+         ? __('Novidades da NexTool desligadas: o feed foi removido do GLPI.', 'nextool')
+         : __('Não foi possível remover o feed de novidades do GLPI.', 'nextool');
+      $level = $ok ? INFO : ERROR;
+   }
+
+   PluginNextoolConfigAudit::log([
+      'section' => 'general',
+      'action'  => 'save_news_feed',
+      'result'  => $ok ? 1 : 0,
+      'message' => $wantOn ? 'news_feed=on' : 'news_feed=off',
+   ]);
+   Session::addMessageAfterRedirect($msg, false, $level);
    plugin_nextool_redirect_after_action();
    exit;
 }

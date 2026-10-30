@@ -35,7 +35,7 @@ class PluginNextoolLogLevels {
       return match (strtoupper($level)) {
          'FATAL', 'ERROR', 'CRITICAL' => 'bg-red text-white',
          'WARN', 'WARNING'            => 'bg-orange text-white',
-         'INFO'                       => 'bg-blue-lt',
+         'INFO'                       => 'bg-blue text-white',
          'DEBUG'                      => 'bg-secondary text-white',
          default                      => 'bg-secondary text-white',
       };

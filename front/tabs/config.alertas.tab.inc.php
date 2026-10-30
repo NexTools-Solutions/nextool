@@ -58,9 +58,9 @@ $alertsEndpoint = PluginNextoolCompat::webDir() . '/ajax/alerts.php';
                                  <?php echo PluginNextoolCompat::escape(ucfirst($alert['alert_type'])); ?>
                               </span>
                               <?php if ($isExpired): ?>
-                              <span class="badge bg-secondary" style="font-size: 0.6rem;"><?php echo __('Expirado', 'nextool'); ?></span>
+                              <span class="badge bg-secondary text-white" style="font-size: 0.6rem;"><?php echo __('Expirado', 'nextool'); ?></span>
                               <?php elseif ($isUnread): ?>
-                              <span class="badge bg-warning text-dark" style="font-size: 0.6rem;"><?php echo __('Novo', 'nextool'); ?></span>
+                              <span class="badge bg-warning text-white" style="font-size: 0.6rem;"><?php echo __('Novo', 'nextool'); ?></span>
                               <?php endif; ?>
                            </div>
                            <div class="small text-muted mb-1">
@@ -84,6 +84,54 @@ $alertsEndpoint = PluginNextoolCompat::webDir() . '/ajax/alerts.php';
                <?php endforeach; ?>
             </div>
          <?php endif; ?>
+      </div>
+   </div>
+
+   <?php
+   // #292: novidades da NexTool na página inicial do GLPI (opt-in, desligado por padrão).
+   require_once NEXTOOL_PHP_DIR . '/inc/newsfeed.class.php';
+   $nextoolNewsFeed = PluginNextoolNewsFeed::getState();
+   ?>
+   <div class="card shadow-sm nextool-tab-card">
+      <div class="card-header">
+         <h4 class="card-title mb-0">
+            <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-purple s-1">
+               <i class="fs-2x ti ti-rss"></i>
+            </div>
+            <span class="ms-5"><?php echo __('Novidades na página inicial do GLPI', 'nextool'); ?></span>
+         </h4>
+      </div>
+      <div class="card-body">
+         <form method="post" action="<?php echo PluginNextoolCompat::webDir() . '/front/config.save.php'; ?>">
+            <?php if (!PluginNextoolCompat::csrfTokenless()) { echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); } ?>
+            <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$4' : 'PluginNextoolSetup$1']); ?>
+            <?php echo Html::hidden('action', ['value' => 'save_news_feed']); ?>
+            <label class="form-check form-switch mb-2">
+               <input class="form-check-input" type="checkbox" name="news_feed_enabled" value="1"
+                      <?php echo $nextoolNewsFeed['enabled'] ? 'checked' : ''; ?> <?php echo $canManageAdminTabs ? '' : 'disabled'; ?>>
+               <span class="form-check-label fw-semibold"><?php echo __('Mostrar as novidades da NexTool na página inicial do GLPI', 'nextool'); ?></span>
+            </label>
+            <p class="text-muted mb-2">
+               <?php echo __('Cadastra o blog da NexTool (guias, novidades do GLPI e alertas) em Ferramentas > Feeds RSS, no idioma padrão do GLPI. Ele aparece na aba "Feeds RSS" da página inicial para os perfis da interface central; o self-service não vê. Desligar remove o feed.', 'nextool'); ?>
+            </p>
+            <?php if ($nextoolNewsFeed['enabled'] && $nextoolNewsFeed['have_error']): ?>
+               <div class="alert alert-warning mb-2">
+                  <span><i class="ti ti-alert-triangle me-1"></i><?php echo __('Este servidor não conseguiu baixar o feed. Confira o acesso à internet e o proxy do GLPI (Configurar > Geral > Proxy); quando o acesso for liberado, as novidades passam a aparecer sozinhas.', 'nextool'); ?></span>
+               </div>
+            <?php endif; ?>
+            <?php if ($nextoolNewsFeed['enabled']): ?>
+               <p class="small text-muted mb-2">
+                  <i class="ti ti-link me-1"></i>
+                  <a href="<?php echo PluginNextoolCompat::escape(RSSFeed::getFormURLWithID($nextoolNewsFeed['id'])); ?>"><?php echo __('Ver o feed em Ferramentas > Feeds RSS', 'nextool'); ?></a>
+                  <span class="ms-1">(<?php echo PluginNextoolCompat::escape($nextoolNewsFeed['url']); ?>)</span>
+               </p>
+            <?php endif; ?>
+            <?php if ($canManageAdminTabs): ?>
+               <button type="submit" class="btn btn-sm btn-primary">
+                  <i class="ti ti-device-floppy me-1"></i><?php echo __('Salvar', 'nextool'); ?>
+               </button>
+            <?php endif; ?>
+         </form>
       </div>
    </div>
 </div>

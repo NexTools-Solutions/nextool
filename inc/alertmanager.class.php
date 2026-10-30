@@ -432,7 +432,7 @@ class PluginNextoolAlertManager {
 
    public static function getTypeBadgeClass(string $type): string {
       return match ($type) {
-         'warning'  => 'bg-warning text-dark',
+         'warning'  => 'bg-warning text-white',
          'promo'    => 'bg-purple text-white',
          'critical' => 'bg-danger text-white',
          default    => 'bg-info text-white',

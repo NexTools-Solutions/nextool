@@ -54,7 +54,7 @@ class PluginNextoolModuleCardHelper {
                'btn btn-sm btn-warning module-action', 'ti ti-arrow-up'
             );
          } else {
-            $primary = self::renderBadge(__('Aguardando atualização compatível', 'nextool'), 'badge bg-warning text-dark me-1');
+            $primary = self::renderBadge(__('Aguardando atualização compatível', 'nextool'), 'badge bg-warning text-white me-1');
          }
          $secondary = [];
          self::appendExternalLinks($state, $secondary);
@@ -137,7 +137,7 @@ class PluginNextoolModuleCardHelper {
       if ($state['requires_remote_download']) {
 
          if ($isSuspended && $state['is_paid']) {
-            $primary = self::renderBadge(__('Download bloqueado: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
+            $primary = self::renderBadge(__('Download bloqueado: licença suspensa', 'nextool'), 'badge bg-warning text-white me-1');
          } else {
             $canDownload = !empty($state['can_download_module'] ?? $state['can_use_module']) && $canInstallMod;
             // Gate de versão mínima do plugin base - mesmo critério do caminho de
@@ -161,7 +161,7 @@ class PluginNextoolModuleCardHelper {
                $primary = self::renderBadge(sprintf(__('Pré-requisito: extensão PHP ausente (%s)', 'nextool'), implode(', ', (array) $state['missing_package_extensions'])), 'badge bg-danger text-white me-1');
             } elseif ($dlBlocked) {
                $msg = sprintf(__('Nextool %s necessário para baixar', 'nextool'), $dlMinVer);
-               $primary = '<span class="badge bg-warning text-dark me-1">' . PluginNextoolCompat::escape($msg) . '</span>';
+               $primary = '<span class="badge bg-warning text-white me-1">' . PluginNextoolCompat::escape($msg) . '</span>';
             } else {
                $primary = self::renderActionForm(
                   $state, 'download', __('Download', 'nextool'),
@@ -202,7 +202,7 @@ class PluginNextoolModuleCardHelper {
             } elseif (!empty($state['missing_package_extensions'])) {
                $primary = self::renderBadge(sprintf(__('Atualização indisponível: extensão PHP ausente (%s)', 'nextool'), implode(', ', (array) $state['missing_package_extensions'])), 'badge bg-danger text-white me-1');
             } elseif ($isSuspended && $state['is_paid']) {
-               $primary = self::renderBadge(__('Atualização bloqueada: licença suspensa', 'nextool'), 'badge bg-warning text-dark me-1');
+               $primary = self::renderBadge(__('Atualização bloqueada: licença suspensa', 'nextool'), 'badge bg-warning text-white me-1');
             } else {
                $pluginVersion = $state['plugin_version'] ?? '';
                $minVerNextool = isset($state['min_version_nextools']) && $state['min_version_nextools'] !== '' && $state['min_version_nextools'] !== null
@@ -210,7 +210,7 @@ class PluginNextoolModuleCardHelper {
                $blocked = $minVerNextool !== null && ($pluginVersion === '' || version_compare($pluginVersion, $minVerNextool, '<'));
                if ($blocked) {
                   $msg = sprintf(__('Nextool %s necessário para atualizar', 'nextool'), $minVerNextool);
-                  $primary = '<span class="badge bg-warning text-dark me-1">' . PluginNextoolCompat::escape($msg) . '</span>';
+                  $primary = '<span class="badge bg-warning text-white me-1">' . PluginNextoolCompat::escape($msg) . '</span>';
                } else {
                   $canDl = !empty($state['can_download_module'] ?? $state['can_use_module']) && $canUpdateMod;
                   $primary = self::renderActionForm(
@@ -464,7 +464,7 @@ class PluginNextoolModuleCardHelper {
       );
    }
 
-   private static function renderBadge(string $label, string $classes = 'badge bg-secondary'): string {
+   private static function renderBadge(string $label, string $classes = 'badge bg-secondary text-white'): string {
       return sprintf("<span class='%s me-1'>%s</span>", $classes, $label);
    }
 

@@ -1130,6 +1130,16 @@ abstract class PluginNextoolBaseModule {
       }
       $persisted = json_decode((string) ($row['config'] ?? ''), true);
       $persisted = is_array($persisted) ? $persisted : [];
+      // Eco da config lida no começo do request (handler que regrava a config inteira: aiassist,
+      // glpisync, subtaskflow, workflow, whatsappbot, smartassign): nível e prazo iguais aos
+      // gravados não são pedido de ligar nem de desligar. Sem isto, um prazo já vencido (antes da
+      // limpeza do cron) ganhava mais 24 h só por salvar outra aba. Devolve como veio (os valores já
+      // são os gravados): seguro também no save com `replace`, que não pode perder as chaves.
+      if (array_key_exists('diagnostic_until', $incoming)
+          && ($persisted['log_level'] ?? null) === $incoming['log_level']
+          && (string) ($persisted['diagnostic_until'] ?? '') === (string) $incoming['diagnostic_until']) {
+         return $incoming;
+      }
       if ($incoming['log_level'] !== 'debug') {
          $incoming['diagnostic_until'] = '';
          return $incoming;

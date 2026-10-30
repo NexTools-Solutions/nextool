@@ -158,17 +158,17 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
 
             <div class="list-group list-group-flush mb-3">
                <div class="list-group-item d-flex align-items-center" id="nextool-modal-step-1">
-                  <span class="badge bg-secondary rounded-pill me-2" id="nextool-modal-step-1-badge">1</span>
+                  <span class="badge bg-secondary text-white rounded-pill me-2" id="nextool-modal-step-1-badge">1</span>
                   <?php echo __('Verificação', 'nextool'); ?>
                   <span class="ms-auto" id="nextool-modal-step-1-status"></span>
                </div>
                <div class="list-group-item d-flex align-items-center" id="nextool-modal-step-2">
-                  <span class="badge bg-secondary rounded-pill me-2" id="nextool-modal-step-2-badge">2</span>
+                  <span class="badge bg-secondary text-white rounded-pill me-2" id="nextool-modal-step-2-badge">2</span>
                   <?php echo __('Download', 'nextool'); ?>
                   <span class="ms-auto" id="nextool-modal-step-2-status"></span>
                </div>
                <div class="list-group-item d-flex align-items-center" id="nextool-modal-step-3">
-                  <span class="badge bg-secondary rounded-pill me-2" id="nextool-modal-step-3-badge">3</span>
+                  <span class="badge bg-secondary text-white rounded-pill me-2" id="nextool-modal-step-3-badge">3</span>
                   <?php echo __('Aplicar', 'nextool'); ?>
                   <span class="ms-auto" id="nextool-modal-step-3-status"></span>
                </div>

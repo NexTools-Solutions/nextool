@@ -15,8 +15,9 @@
  * Diferenças tratadas aqui:
  *  - o Symfony recusa opção desconhecida: as opções do Guzzle são convertidas por
  *    LISTA FECHADA (`timeout` -> `max_duration`, `connect_timeout` -> `timeout`,
- *    `allow_redirects=false` -> `max_redirects=0`); `stream`, `http_errors`, `curl`
- *    e `verify` nunca passam (TLS fica no padrão do Symfony: verificado);
+ *    `allow_redirects=false` -> `max_redirects=0`, `verify=false` -> `verify_peer`/`verify_host`
+ *    desligados); `stream`, `http_errors` e `curl` nunca passam, e qualquer `verify` que não seja
+ *    `false` mantém o TLS no padrão do Symfony (verificado);
  *  - o wrapper do core lança em 3xx/4xx/5xx já no `request()`: a exceção é capturada
  *    e a resposta devolvida, como `http_errors => false` fazia no Guzzle;
  *  - toda leitura usa `getHeaders(false)`/`getContent(false)`/`toStream(false)`, que
@@ -93,6 +94,13 @@ final class PluginNextoolHttpClientAdapter {
       }
       if (isset($guzzle['headers']) && is_array($guzzle['headers'])) {
          $out['headers'] = $guzzle['headers'];
+      }
+      if (array_key_exists('verify', $guzzle) && $guzzle['verify'] === false) {
+         // Só o `false` EXPLÍCITO desliga a verificação de TLS (#288): é o que um módulo manda quando o
+         // admin desmarca "verificar TLS" no conector (zabbix, vaultsend). `true`, ausente ou caminho de
+         // CA em string mantêm o padrão do Symfony (verificado), como antes.
+         $out['verify_peer'] = false;
+         $out['verify_host'] = false;
       }
       return $out;
    }

@@ -91,3 +91,20 @@ header('Cache-Control: public, max-age=3600');
    background-color: rgba(0, 0, 0, 0.06);
    cursor: pointer;
 }
+
+/*
+ * Cartões de escolha do modo de IA (front/ai_mode_cards.inc.php): "Gerenciado pela NexTool" x "Sua chave", o mesmo
+ * desenho da aba Modo de IA do AI Assist. O cartão escolhido ganha borda e sombra da cor primária.
+ */
+.nextool-ai-mode .nextool-ai-mode-card {
+   cursor: pointer;
+   background: var(--tblr-bg-surface-secondary, #f6f8fb);
+   border: 2px solid var(--tblr-border-color, #e6e7e9);
+   transition: border-color .15s ease, box-shadow .15s ease;
+}
+.nextool-ai-mode .nextool-ai-mode-card:hover { border-color: rgba(var(--tblr-primary-rgb, 32, 107, 196), .45); }
+.nextool-ai-mode .nextool-ai-mode-card.is-selected {
+   background: var(--tblr-bg-surface, #fff);
+   border-color: var(--tblr-primary, #206bc4);
+   box-shadow: 0 0 0 3px rgba(var(--tblr-primary-rgb, 32, 107, 196), .15);
+}
