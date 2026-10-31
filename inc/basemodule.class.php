@@ -784,8 +784,7 @@ abstract class PluginNextoolBaseModule {
     * Contrato resumido (detalhe em PluginNextoolApiController e na KB): a classe estende
     * PluginNextoolApiController, tem #[Route('/Nextool/<module_key>')] e cada método com #[Route]
     * declara #[RouteVersion] e #[PluginNextoolApiRight]. Toda rota (de módulo FREE, PAID ou DEV) só responde
-    * com o cloud link vigente para o módulo: o vínculo `nextool_cloud` do ambiente E a licença do produto
-    * (`hasCloudProductLink()`).
+    * com a licença do módulo ativa (`getCloudLicenseKey()`, ou a chave do módulo); o cloud link não é exigido.
     *
     * @return class-string[] Ex.: ['PluginNextoolSsologinApiController']
     */

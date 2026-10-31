@@ -8,8 +8,8 @@
  * padrão do core, entra no log do módulo e interrompe a cadeia (não chama $next):
  *  1. controller registrado neste boot e dono da rota (senão 404);
  *  2. módulo ativo (senão 404: não revela que a rota existe);
- *  3. cloud link vigente para o módulo (vínculo nextool_cloud + licença do produto,
- *     PluginNextoolApiRegistry::accessDenyReason; senão 403 CLOUD_LINK_REQUIRED ou LICENSE_INACTIVE);
+ *  3. licença do módulo ativa (PluginNextoolApiRegistry::accessDenyReason; senão 403 LICENSE_INACTIVE;
+ *     o cloud link não é exigido);
  *  4. #[PluginNextoolApiRight] do método: ausente -> 403 (o registro já barra; defesa em
  *     profundidade); cada bit exigido via PermissionManager -> falta -> 403 ERROR_RIGHT_MISSING.
  *
@@ -69,11 +69,10 @@ final class PluginNextoolApiGuardMiddleware extends AbstractMiddleware implement
 
       $denied = PluginNextoolApiRegistry::accessDenyReason($module);
       if ($denied !== null) {
-         $title = $denied === 'CLOUD_LINK_REQUIRED'
-            ? __('Este ambiente não está vinculado à NexTool: a API dos módulos exige o vínculo ativo e a licença do módulo.', 'nextool')
-            : __('A licença deste módulo não está ativa: a API do módulo exige licença vigente.', 'nextool');
          $this->deny($input, $moduleKey, $denied, new JSONResponse(AbstractController::getErrorResponseBody(
-            AbstractController::ERROR_RIGHT_MISSING, $title, $denied
+            AbstractController::ERROR_RIGHT_MISSING,
+            __('A licença deste módulo não está ativa: a API do módulo exige licença vigente.', 'nextool'),
+            $denied
          ), 403));
          return;
       }

@@ -249,23 +249,21 @@ final class PluginNextoolApiRegistry {
    }
 
    /**
-    * Acesso à API do módulo (decisões do owner, 2026-10-27/28): TODO módulo (FREE, PAID ou DEV) só responde
-    * pela API com o CLOUD LINK vigente para ele -- o vínculo `nextool_cloud` do ambiente ativo E o direito
-    * ao produto pela licença (`getCloudLicenseKey()`, ou a chave do módulo). A régua é a mesma das funções
-    * de nuvem (`PluginNextoolBaseModule::hasCloudProductLink()`), para a tela e a API nunca discordarem do
-    * que é "vigente". A TELA segue a regra própria (módulo com histórico de licença continua ativo): esta
-    * restrição é só da API. Fail-closed: erro ao avaliar = sem acesso.
+    * Acesso à API do módulo (decisão do owner, 2026-10-31): TODO módulo (FREE, PAID ou DEV) responde pela API
+    * quando a LICENÇA DO MÓDULO está ativa (`getCloudLicenseKey()`, ou a chave do módulo, com o entitlement
+    * sincronizado dentro da graça offline). O vínculo `nextool_cloud` NÃO é exigido: ele serve às funções de
+    * nuvem (`hasCloudProductLink()`), e a API do módulo é do GLPI do cliente. A TELA segue a regra própria
+    * (módulo com histórico de licença continua ativo): esta restrição é só da API. Fail-closed: erro ao
+    * avaliar = sem acesso.
     *
-    * @return string|null motivo da recusa (CLOUD_LINK_REQUIRED | LICENSE_INACTIVE) ou null = liberado
+    * @return string|null motivo da recusa (LICENSE_INACTIVE) ou null = liberado
     */
    public static function accessDenyReason(PluginNextoolBaseModule $module): ?string {
       try {
-         if ($module->hasCloudProductLink()) {
-            return null;
-         }
          require_once NEXTOOL_PHP_DIR . '/inc/cloudcreds.class.php';
-         $cred = PluginNextoolCloudCreds::get();
-         return ($cred === null || !PluginNextoolCloudCreds::isActive($cred)) ? 'CLOUD_LINK_REQUIRED' : 'LICENSE_INACTIVE';
+         return PluginNextoolCloudCreds::entitled($module->getCloudLicenseKey() ?? $module->getModuleKey())
+            ? null
+            : 'LICENSE_INACTIVE';
       } catch (Throwable $e) {
          return 'LICENSE_INACTIVE';
       }
