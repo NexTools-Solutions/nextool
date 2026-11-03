@@ -143,8 +143,17 @@ class PluginNextoolTicketStatusEngine {
     * Aplica o status pendente, se houver. Pode ser chamado por mais de um gancho
     * (o fim do drain do motor e o item_update[Ticket]): os dois consomem a MESMA
     * intenção e quem chegar primeiro ganha.
+    *
+    * $origin: só aplica (e só consome) a intenção daquele motor. O item_update[Ticket]
+    * de cada módulo passa a própria origem: sem isso, o gancho de um módulo aplicava a
+    * intenção do outro no meio da cascata dele, antes da regra de negócio, e ela se
+    * perdia (workflow#51, com o approvalflow ativo). null = qualquer origem (o shutdown).
     */
-   public static function applyPendingStatus(int $ticketId): void {
+   public static function applyPendingStatus(int $ticketId, ?string $origin = null): void {
+      if ($origin !== null && isset(self::$pending[$ticketId])
+          && (string) (self::$pending[$ticketId]['origin'] ?? '') !== $origin) {
+         return;
+      }
       $intent = self::takePendingStatus($ticketId);
       $status = $intent['status'];
       if ($status <= 0) {
