@@ -225,7 +225,15 @@ class PluginNextoolOfferBanner {
             'utm_campaign' => (string) ($offer['module'] ?? ''),
             'utm_content'  => (string) ($offer['origin'] ?? ''),
          ]));
-         $url .= (strpos($url, '?') === false ? '?' : '&') . $utm;
+         // A query vai ANTES do #âncora: depois dele o UTM viraria parte do fragmento (não chega ao servidor nem ao
+         // GA4) e a âncora deixaria de casar com a seção da página.
+         $hash = '';
+         $pos  = strpos($url, '#');
+         if ($pos !== false) {
+            $hash = substr($url, $pos);
+            $url  = substr($url, 0, $pos);
+         }
+         $url .= (strpos($url, '?') === false ? '?' : '&') . $utm . $hash;
       }
       return $url;
    }
@@ -281,10 +289,11 @@ class PluginNextoolOfferBanner {
 @media (max-width:991.98px){.nxo-grid-3,.nxo-grid-2{grid-template-columns:minmax(0,1fr)}}
 .nxo-plan{display:flex;flex-direction:column;gap:10px;height:100%;padding:20px 22px;border-radius:14px;background:var(--nxo-surface);border:1px solid var(--nxo-line)}
 .nxo-plan-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;min-height:22px}
-.nxo-plan .nxo-btn{margin-top:6px}
+.nxo-plan .nxo-checks{margin-bottom:6px}
+.nxo-plan .nxo-btn{margin-top:auto}
 .nxo-plan h4{margin:0;font-size:1.05rem;font-weight:700;color:var(--nxo-ink)}
 .nxo-kind{font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--nxo-muted)}
-.nxo-plan.nxo-hot{padding:20px 22px;border:0;border-radius:16px;box-shadow:0 22px 48px rgba(15,22,41,.35);background:radial-gradient(120% 90% at 100% 0,var(--nxo-night-1) 0,var(--nxo-night-2) 55%,var(--nxo-night-3) 100%)}
+.nxo-plan.nxo-hot{padding:20px 22px;border:1px solid transparent;border-radius:16px;box-shadow:0 22px 48px rgba(15,22,41,.35);background:radial-gradient(120% 90% at 100% 0,var(--nxo-night-1) 0,var(--nxo-night-2) 55%,var(--nxo-night-3) 100%)}
 .nxo-hot h4{font-family:var(--nxo-serif);font-weight:400;font-size:1.35rem;line-height:1.15;color:var(--nxo-cream)}
 .nxo-hot .nxo-kind{color:var(--nxo-gold)}
 .nxo-hot .nxo-checks{color:var(--nxo-mist)}

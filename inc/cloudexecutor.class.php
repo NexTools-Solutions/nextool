@@ -151,6 +151,20 @@ class PluginNextoolCloudExecutor {
     * @param array $payload corpo decodificado: {request_id, service, tool, args, actor}
     * @return array resposta do contrato (sempre serializável por encode())
     */
+   /** @var array{service: string, tool: string, users_id: int}|null pedido do cérebro em execução agora (currentCall) */
+   private static ?array $emCurso = null;
+
+   /**
+    * Pedido do cérebro em execução neste instante, ou null fora dele: o serviço (módulo do canal, ex.
+    * `whatsappbot`), a ferramenta e o usuário do GLPI que está agindo. Leitura pura, para o módulo do canal decidir,
+    * dentro do mesmo request, não notificar pelo canal o ator do que ele mesmo acabou de fazer por ele (03/11/2026).
+    *
+    * @return array{service: string, tool: string, users_id: int}|null
+    */
+   public static function currentCall(): ?array {
+      return self::$emCurso;
+   }
+
    public static function run(array $payload): array {
       try {
          return self::pipeline($payload);
@@ -329,7 +343,7 @@ class PluginNextoolCloudExecutor {
             $result   = $handler($args, $atorSemVinculo);
             $response = ['ok' => true, 'result' => is_array($result) ? $result : ['value' => $result]];
          } else {
-         $response = PluginNextoolCloudSession::runAs($usersId, static function () use ($service, $tool, $spec, $args, &$comecou) {
+         $response = PluginNextoolCloudSession::runAs($usersId, static function () use ($service, $tool, $spec, $args, &$comecou, $usersId) {
             $bit = self::toolBit($spec);
             if ($bit === null) {
                self::logInvalidBit($service, $tool);
@@ -341,7 +355,15 @@ class PluginNextoolCloudExecutor {
 
             $handler = $spec['handler'];
             $comecou = true;
-            $result  = $handler($args);
+            // Pedido em curso (currentCall()): o módulo do canal não avisa o ator daquilo que ele acabou de fazer
+            // pelo próprio canal (o bot já confirma na conversa). Vale só durante a ferramenta, que é síncrona.
+            $antes = self::$emCurso;
+            self::$emCurso = ['service' => $service, 'tool' => $tool, 'users_id' => $usersId];
+            try {
+               $result = $handler($args);
+            } finally {
+               self::$emCurso = $antes;
+            }
             return ['ok' => true, 'result' => is_array($result) ? $result : ['value' => $result]];
          });
          }
