@@ -517,8 +517,10 @@ class PluginNextoolPermissionManager {
             } catch (\Throwable $e) {
                $module = null;
             }
+            // Máscara FIXA do módulo (getHelpdeskRightsMask), não a do momento: o getHelpdeskRights() de
+            // módulo de nuvem some sem o vínculo, e um upgrade nessa hora zerava os bits para sempre.
             $new = $module !== null
-               ? ($current & self::helpdeskUsableMask($moduleKey))
+               ? ($current & self::helpdeskStorableMask($module))
                : ($current & ~$adminMask);
          }
          if ($new !== $current) {
@@ -767,6 +769,22 @@ class PluginNextoolPermissionManager {
          return true;
       }
       return self::haveModuleRight($moduleKey, self::moduleViewMask($moduleKey));
+   }
+
+   /**
+    * Bits que o perfil helpdesk pode guardar para o módulo (getHelpdeskRightsMask), sem administração.
+    * Usado só pelo saneamento: o gate usa helpdeskUsableMask (o que vale agora).
+    */
+   private static function helpdeskStorableMask(object $module): int {
+      $adminMask = self::CONFIGURE | self::MANAGE_ITEMS | self::TOGGLE | self::MOD_UPDATE
+         | self::UNINSTALL | self::VIEW_LOGS | self::PURGE_DATA | self::MODULE_ADMIN_EXTRA_MASK;
+      try {
+         $mask = method_exists($module, 'getHelpdeskRightsMask') ? (int) $module->getHelpdeskRightsMask() : 0;
+      } catch (\Throwable $e) {
+         // Sem saber o que o módulo declara, não se apaga uso legítimo: só a administração sai.
+         return ~$adminMask;
+      }
+      return $mask & ~$adminMask;
    }
 
    /**

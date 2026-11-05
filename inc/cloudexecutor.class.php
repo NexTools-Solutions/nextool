@@ -116,6 +116,8 @@ class PluginNextoolCloudExecutor {
 
    /** Códigos de erro do contrato. */
    public const E_PERMISSION = 'permission_denied';
+   /** Motivos aceitos no `reason` da recusa do ator (`resolveCloudActor`). */
+   public const ACTOR_REASONS = ['not_found', 'ambiguous'];
    public const E_NOT_FOUND  = 'not_found';
    public const E_VALIDATION = 'validation';
    public const E_EXECUTION  = 'execution_error';
@@ -305,7 +307,14 @@ class PluginNextoolCloudExecutor {
          // A recusa fica gravada, sem conteúdo, para contar no teto do ambiente: sem isso, sondar quais
          // chats estão vinculados (o `resolve_actor` não tem bit) não tinha limite nenhum.
          self::insertRow($linha + ['code' => self::E_PERMISSION]);
-         return self::error(self::E_PERMISSION, __('Usuário não vinculado.', 'nextool'), false);
+         $recusa = self::error(self::E_PERMISSION, __('Usuário não vinculado.', 'nextool'), false);
+         // Motivo da recusa (whatsappbot#33): o cérebro orienta "cadastre o celular" ou "número em mais de um
+         // usuário". Só valores da lista fechada saem daqui.
+         $motivo = is_array($resolved) ? (string) ($resolved['reason'] ?? '') : '';
+         if (in_array($motivo, self::ACTOR_REASONS, true)) {
+            $recusa['error']['reason'] = $motivo;
+         }
+         return $recusa;
       }
 
       // Reserva ANTES de executar. Quem perder a corrida pela PK é um retry concorrente: responde com o

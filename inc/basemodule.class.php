@@ -102,8 +102,12 @@ abstract class PluginNextoolBaseModule {
     * pseudônimo do ator, que é o balde do limite por ator e a amarração do `request_id`. Sem ela vale o
     * identificador cru do corpo, e `0123` e `123` contam em baldes separados.
     *
+    * Recusa com motivo (nextool-mod-whatsappbot#33): `['users_id' => 0, 'reason' => 'not_found'|'ambiguous']`.
+    * A base repassa o `reason` ao cérebro no erro `permission_denied`, para a conversa explicar o motivo (ex.: o
+    * mesmo número em dois usuários). `null` segue valendo como recusa sem motivo.
+    *
     * @param array $actor `{kind, external_id}` como veio do cérebro
-    * @return array{users_id:int, external_id?:string, language?:string, display_name?:string}|null
+    * @return array{users_id:int, external_id?:string, language?:string, display_name?:string, reason?:string}|null
     * @since 6.23.0
     */
    public function resolveCloudActor(array $actor): ?array {
@@ -944,6 +948,24 @@ abstract class PluginNextoolBaseModule {
     */
    public function getHelpdeskRights(): array {
       return [];
+   }
+
+   /**
+    * Bits que um perfil helpdesk pode GUARDAR no banco, independentemente do estado de agora.
+    *
+    * O saneamento do upgrade (`PluginNextoolPermissionManager::cleanHelpdeskProfileRights()`) apaga o
+    * que fica fora desta máscara. Default: as chaves de getHelpdeskRights(). Módulo cujo
+    * getHelpdeskRights() depende de estado (vínculo com a nuvem, licença) sobrescreve com a máscara
+    * FIXA: senão um upgrade num instante sem vínculo zera os bits de todos os perfis helpdesk, e
+    * nada os devolve (whatsappbot na JMBA, 2026-11-05). O gate (canUse) segue usando o
+    * getHelpdeskRights() do momento.
+    */
+   public function getHelpdeskRightsMask(): int {
+      $mask = 0;
+      foreach (array_keys($this->getHelpdeskRights()) as $bit) {
+         $mask |= (int) $bit;
+      }
+      return $mask;
    }
 
    /**
