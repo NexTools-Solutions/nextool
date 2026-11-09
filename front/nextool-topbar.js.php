@@ -14,7 +14,7 @@
  *    h.setBadge(3); h.setDot('#206bc4'); h.pulse();
  *
  * A POSIÇÃO de cada ícone é da base (tabela ORDER abaixo), não do módulo. Chave fora da tabela entra
- * no fim do grupo, antes do bloco do usuário.
+ * antes do último da lista (o status de disponibilidade fica sempre colado no bloco do usuário).
  *
  * Servido sem query string (o GLPI 10 valida o path do hook com file_exists): vale nos 3 majors.
  * Registrado em setup.php ANTES do loadActiveModules, então existe quando o JS dos módulos roda.
@@ -46,8 +46,9 @@ $nxTopbarI18n = [
    var I18N = <?php echo json_encode($nxTopbarI18n, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;
 
    // Posição de cada ícone (esquerda -> direita, terminando no menu do usuário). Decisão do owner
-   // (2026-11-08, nextool-dev#297): trabalho, avisos, apoio. Só a base mexe nesta lista.
-   var ORDER = ['smartassign', 'livechat', 'smartnotify', 'aiassist', 'accessibility'];
+   // (2026-11-09): acessibilidade na ponta oposta, depois conversas, avisos e IA; a disponibilidade é o
+   // status do usuário e fica colada no nome dele (como no Teams/Slack). Só a base mexe nesta lista.
+   var ORDER = ['accessibility', 'livechat', 'smartnotify', 'aiassist', 'smartassign'];
    var WIDTHS = {sm: 380, md: 460, lg: 560};
    // Transição: ícones de módulos que ainda não migraram para a barra. Eles entram sozinhos antes do bloco
    // do usuário; a barra fica DEPOIS deles para não inverter a ordem. Sai desta lista quem migrar.
@@ -65,7 +66,8 @@ $nxTopbarI18n = [
       return n;
    }
    function visible(n) { return !!n && n.offsetWidth > 0 && n.offsetHeight > 0; }
-   function rank(key) { var i = ORDER.indexOf(key); return i < 0 ? ORDER.length : i; }
+   // Chave fora da tabela entra antes do último (o status), nunca entre ele e o bloco do usuário.
+   function rank(key) { var i = ORDER.indexOf(key); return i < 0 ? ORDER.length - 1.5 : i; }
 
    function injectStyle() {
       if (styleDone) { return; }
@@ -73,6 +75,11 @@ $nxTopbarI18n = [
       var css = ''
          + '.nx-topbar{display:flex;align-items:center;align-self:center;gap:1rem;margin:0 1rem}'
          + '.nx-topbar.nav-item{margin:0 .25rem;gap:.5rem}'
+         // O bloco do usuário do GLPI tem margem própria (ms-md-4 = 1.5rem) que somava à da barra: o vão à direita
+         // ficava ~2.5x o da esquerda. Colada nele, a barra assume o espaçamento e o .75rem compensa o p-1 do link
+         // do perfil, para os dois vãos visuais ficarem iguais.
+         + '.nx-topbar:not(.nav-item):not(:empty){margin-right:.75rem}'
+         + '.nx-topbar:not(.nav-item):not(:empty) + *{margin-left:0 !important}'
          // Transição: o sino antigo tem 1rem fixo à direita e não pareia; colada nele, a barra não soma margem.
          + '.smartnotify-bell-wrapper + .nx-topbar{margin-left:0 !important}'
          + '.nx-topbar:empty{display:none}'

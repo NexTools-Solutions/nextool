@@ -629,6 +629,74 @@ function plugin_nextool_module_menu_class($module): ?string {
    return class_exists($class) && method_exists($class, 'getMenuContent') ? $class : null;
 }
 
+/**
+ * Insere um menu de primeiro nível na posição pedida pelo módulo (getRedefineMenuItems()['position']).
+ *
+ * Aceita 'first', 'before:<menu_key>' e 'after:<menu_key>'. Ausente, inválida ou com alvo que não
+ * existe no menu: vai para o FIM, como antes da chave existir (nextool-dev#296).
+ */
+function plugin_nextool_menu_insert(array $menu, string $key, array $item, ?string $position): array {
+   unset($menu[$key]);
+   $position = trim((string) $position);
+   $target = null;
+   $after = false;
+   if ($position === 'first') {
+      $target = array_key_first($menu);
+   } elseif (preg_match('/^(before|after):(.+)$/', $position, $m) === 1) {
+      $target = $m[2];
+      $after = $m[1] === 'after';
+   }
+   if ($target === null || !array_key_exists($target, $menu)) {
+      $menu[$key] = $item;
+      return $menu;
+   }
+   $ordered = [];
+   foreach ($menu as $k => $v) {
+      if ($k === $target && !$after) {
+         $ordered[$key] = $item;
+      }
+      $ordered[$k] = $v;
+      if ($k === $target && $after) {
+         $ordered[$key] = $item;
+      }
+   }
+   return $ordered;
+}
+
+/**
+ * Ordena os subitens de um menu: as chaves de $pinned primeiro (na ordem dada) e o resto pelo
+ * título exibido, ignorando acento e caixa, com a regra de ordenação do idioma do usuário.
+ */
+function plugin_nextool_menu_sort_content(array $content, array $pinned = []): array {
+   $ordered = [];
+   foreach ($pinned as $k) {
+      if (isset($content[$k])) {
+         $ordered[$k] = $content[$k];
+         unset($content[$k]);
+      }
+   }
+
+   $collator = null;
+   if (class_exists('Collator')) {
+      $collator = new \Collator((string) ($_SESSION['glpilanguage'] ?? 'en_GB'));
+      $collator->setStrength(\Collator::PRIMARY); // "Á" = "a": ignora acento e caixa
+   }
+   $fold = static function (string $s): string {
+      $t = function_exists('transliterator_transliterate')
+         ? transliterator_transliterate('Any-Latin; Latin-ASCII; Lower()', $s)
+         : false;
+      return $t !== false ? $t : mb_strtolower($s);
+   };
+   uksort($content, static function ($a, $b) use ($content, $collator, $fold): int {
+      $ta = (string) ($content[$a]['title'] ?? $a);
+      $tb = (string) ($content[$b]['title'] ?? $b);
+      $cmp = $collator !== null ? (int) $collator->compare($ta, $tb) : strcmp($fold($ta), $fold($tb));
+      return $cmp !== 0 ? $cmp : strcmp((string) $a, (string) $b);
+   });
+
+   return $ordered + $content;
+}
+
 function plugin_nextool_redefine_menus($menu) {
    if (empty($menu)) {
       return $menu;
@@ -785,27 +853,9 @@ function _plugin_nextool_build_menus($menu) {
       }
    }
 
-   // Ordem fixa: Módulos primeiro, depois módulos dinâmicos e standalone
-   $order = ['modulos'];
-   $content = $nextoolsItem['content'];
-   $nextoolsItem['content'] = [];
-   foreach ($order as $k) {
-      if (isset($content[$k])) {
-         $nextoolsItem['content'][$k] = $content[$k];
-      }
-   }
-   foreach ($moduleConfigTabs as $tabNum => $meta) {
-      $key = 'module_' . $meta['module_key'];
-      if (isset($content[$key])) {
-         $nextoolsItem['content'][$key] = $content[$key];
-      }
-   }
-   // Módulos standalone (não presentes em $moduleConfigTabs) na ordem que restou
-   foreach ($content as $k => $v) {
-      if (!isset($nextoolsItem['content'][$k])) {
-         $nextoolsItem['content'][$k] = $v;
-      }
-   }
+   // "Módulos" primeiro; os demais (abas de módulo, páginas próprias e classes de menu) em ordem
+   // alfabética do nome EXIBIDO, no idioma do usuário (nextool-dev#296).
+   $nextoolsItem['content'] = plugin_nextool_menu_sort_content($nextoolsItem['content'], ['modulos']);
 
    // Só inserir "Nextools" se tem conteúdo (perfil pode não ter nenhuma permissão)
    if (!empty($nextoolsItem['content'])) {
@@ -842,7 +892,12 @@ function _plugin_nextool_build_menus($menu) {
             $mKey = $menuData['menu_key'];
             $menuData['menu'] = plugin_nextool_menu_normalize((array)$menuData['menu']);
             if (empty($menu[$mKey])) {
-               $menu[$mKey] = $menuData['menu'];
+               $menu = plugin_nextool_menu_insert(
+                  $menu,
+                  (string) $mKey,
+                  $menuData['menu'],
+                  isset($menuData['position']) ? (string) $menuData['position'] : null
+               );
             } else {
                // Merge conteúdo se menu já existe
                if (!empty($menuData['menu']['content'])) {

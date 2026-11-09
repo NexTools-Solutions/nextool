@@ -1023,7 +1023,11 @@ abstract class PluginNextoolBaseModule {
     * os menus retornados.
     *
     * @return array|null null se não possui menu adicional, ou array com estrutura:
-    *   ['menu_key' => string, 'menu' => [...estrutura GLPI...]]
+    *   ['menu_key' => string, 'menu' => [...estrutura GLPI...], 'position' => string (opcional)]
+    *
+    * `position` (base com nextool-dev#296): 'first', 'before:<menu_key>' ou 'after:<menu_key>'
+    * (ex.: 'before:assets'). Ausente, inválida ou com alvo inexistente: fim do menu. Base antiga
+    * ignora a chave e põe o menu no fim, então declará-la não exige subir o min_plugin_version.
     */
    public function getRedefineMenuItems(): ?array {
       return null;
