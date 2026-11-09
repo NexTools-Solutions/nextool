@@ -18,7 +18,8 @@
  *     - outro CommonDBTM: `canView()`;
  *     - sempre: entidades da sessão (cruzadas com o filtro `entities`), `is_deleted = 0`, período na
  *       `date_field`, e em Ticket os filtros `users`/`groups` (técnico/grupo ATRIBUÍDO, como os filtros
- *       nativos do painel) e `tickets` (critérios dos filtros nativos, só em processo e só no formato que
+ *       nativos do painel; com `date_scope`/`users_scope`/`groups_scope` = 'compute' quem aplica é o
+ *       módulo, na coluna dele, #298) e `tickets` (critérios dos filtros nativos, só em processo e só no formato que
  *       eles geram: colunas de glpi_tickets, JOIN em tabela de vínculo, valores escalares; ticketCriteria());
  *  4. chama o `compute` do módulo com PluginNextoolApiMetricQuery;
  *  5. corta no teto de linhas, deixa só as chaves declaradas (dimensões pedidas + medidas), converte
@@ -53,6 +54,17 @@ final class PluginNextoolApiMetrics {
    public const MEASURE_TYPES = ['count', 'sum', 'avg', 'duration'];
    public const DIMENSION_TYPES = ['date', 'enum', 'itemtype'];
    public const FILTERS = ['date', 'entities', 'users', 'groups', 'tickets'];
+
+   /**
+    * Quem aplica o SENTIDO de um filtro (nextool-dev#298). `item` (padrão): a base restringe o itemtype da
+    * métrica (período na `date_field`, técnico/grupo ATRIBUÍDO ao chamado). `compute`: a base só valida e
+    * entrega em `dateRange()`/`users()`/`groups()`, e o compute aplica na coluna dele (ex.: data, autor e
+    * grupo da TAREFA). O escopo de quem VÊ (perfil + entidades) segue sempre com a base.
+    */
+   public const SCOPE_ITEM = 'item';
+   public const SCOPE_COMPUTE = 'compute';
+   /** chave do descritor => filtro que ela governa */
+   public const SCOPE_KEYS = ['date_scope' => 'date', 'users_scope' => 'users', 'groups_scope' => 'groups'];
 
    public const MAX_DIMENSIONS = 3;
    public const MAX_ROWS = 5000;
@@ -252,14 +264,37 @@ final class PluginNextoolApiMetrics {
       if (array_diff($filters, self::FILTERS) !== []) {
          return 'filtro desconhecido (aceitos: ' . implode(', ', self::FILTERS) . ')';
       }
-      if (in_array('date', $filters, true)) {
-         $df = $d['date_field'] ?? null;
-         if (!is_string($df) || preg_match('/^[a-z0-9_]+$/', $df) !== 1 || !$DB->fieldExists($itemtype::getTable(), $df, false)) {
-            return 'filtro date exige date_field (coluna existente na tabela do itemtype)';
+      foreach (self::SCOPE_KEYS as $key => $filter) {
+         if (!array_key_exists($key, $d)) {
+            continue;
+         }
+         if (!in_array($d[$key], [self::SCOPE_ITEM, self::SCOPE_COMPUTE], true)) {
+            return "{$key}: 'item' ou 'compute'";
+         }
+         if (!in_array($filter, $filters, true)) {
+            return "{$key} sem o filtro {$filter} em filters";
          }
       }
-      if (array_intersect($filters, ['users', 'groups', 'tickets']) !== [] && $itemtype !== Ticket::class) {
-         return 'filtros users/groups/tickets só valem para itemtype Ticket';
+      $scope = static fn (string $key): string => (string) ($d[$key] ?? self::SCOPE_ITEM);
+      if (in_array('date', $filters, true)) {
+         $df = $d['date_field'] ?? null;
+         if ($scope('date_scope') === self::SCOPE_COMPUTE) {
+            // Com compute a base não usa date_field: declarar as duas coisas é ambíguo (e numa base anterior à
+            // #298 a métrica sairia filtrando pela data do chamado, em silêncio). Ausente = base antiga recusa.
+            if ($df !== null) {
+               return "date_scope 'compute' dispensa date_field (o compute aplica o período)";
+            }
+         } elseif (!is_string($df) || preg_match('/^[a-z0-9_]+$/', $df) !== 1 || !$DB->fieldExists($itemtype::getTable(), $df, false)) {
+            return 'filtro date exige date_field (coluna existente na tabela do itemtype) ou date_scope compute';
+         }
+      }
+      if (in_array('tickets', $filters, true) && $itemtype !== Ticket::class) {
+         return 'filtro tickets só vale para itemtype Ticket';
+      }
+      foreach (['users' => 'users_scope', 'groups' => 'groups_scope'] as $filter => $key) {
+         if (in_array($filter, $filters, true) && $itemtype !== Ticket::class && $scope($key) !== self::SCOPE_COMPUTE) {
+            return "filtro {$filter} fora de Ticket exige {$key} 'compute' (técnico/grupo atribuído só existe no chamado)";
+         }
       }
       $max = $d['max_dimensions'] ?? null;
       if ($max !== null && (!is_int($max) || $max < 0 || $max > self::MAX_DIMENSIONS)) {
@@ -315,6 +350,9 @@ final class PluginNextoolApiMetrics {
          $d['dimensions'] = (array) ($d['dimensions'] ?? []);
          $d['filters'] = array_values((array) ($d['filters'] ?? []));
          $d['max_dimensions'] = $d['max_dimensions'] ?? min(2, count($d['dimensions']));
+         foreach (array_keys(self::SCOPE_KEYS) as $key) {
+            $d[$key] = (string) ($d[$key] ?? self::SCOPE_ITEM);
+         }
          $valid[$id] = $d;
       }
       return self::$cache[$cacheKey] = $valid;
@@ -341,6 +379,9 @@ final class PluginNextoolApiMetrics {
          'description'    => $d['description'],
          'itemtype'       => $d['itemtype'],
          'date_field'     => $d['date_field'] ?? null,
+         'date_scope'     => $d['date_scope'],
+         'users_scope'    => $d['users_scope'],
+         'groups_scope'   => $d['groups_scope'],
          'measures'       => $d['measures'],
          'dimensions'     => $dims,
          'filters'        => $d['filters'],
@@ -459,6 +500,11 @@ final class PluginNextoolApiMetrics {
       }
       $users = isset($filters['users']) ? self::intList($filters['users'], 'users') : null;
       $groups = isset($filters['groups']) ? self::intList($filters['groups'], 'groups') : null;
+      // Lista vazia não casa com ninguém: resultado vazio sem chamar o compute (com scope compute, o módulo
+      // nunca recebe [] para tratar como "sem filtro").
+      if ($users === [] || $groups === []) {
+         return null;
+      }
       $tickets = isset($filters['tickets']) ? self::ticketCriteria($filters['tickets']) : null;
 
       $scope = self::scopeCriteria($d, $entities, $dateRange, $users, $groups, $tickets);
@@ -578,19 +624,19 @@ final class PluginNextoolApiMetrics {
       if (!empty($profile['WHERE'])) {
          $crit['WHERE'][] = $profile['WHERE'];
       }
-      if ($dateRange !== null && !empty($d['date_field'])) {
+      if ($dateRange !== null && $d['date_scope'] !== self::SCOPE_COMPUTE && !empty($d['date_field'])) {
          $col = "{$table}." . $d['date_field'];
          $crit['WHERE'][] = [$col => ['>=', $dateRange['from']]];
          $crit['WHERE'][] = [$col => ['<=', $dateRange['to']]];
       }
       if ($itemtype === Ticket::class) {
-         if ($users !== null) {
+         if ($users !== null && $d['users_scope'] !== self::SCOPE_COMPUTE) {
             $crit['WHERE'][] = ["{$table}.id" => PluginNextoolApiMetricQuery::subQuery([
                'SELECT' => 'tickets_id', 'FROM' => 'glpi_tickets_users',
                'WHERE'  => ['users_id' => $users === [] ? [-1] : $users, 'type' => CommonITILActor::ASSIGN],
             ])];
          }
-         if ($groups !== null) {
+         if ($groups !== null && $d['groups_scope'] !== self::SCOPE_COMPUTE) {
             $crit['WHERE'][] = ["{$table}.id" => PluginNextoolApiMetricQuery::subQuery([
                'SELECT' => 'tickets_id', 'FROM' => 'glpi_groups_tickets',
                'WHERE'  => ['groups_id' => $groups === [] ? [-1] : $groups, 'type' => CommonITILActor::ASSIGN],

@@ -43,8 +43,8 @@ final class PluginNextoolApiMetricQuery {
     * @param string[] $dimensions dimensões pedidas (já validadas)
     * @param array{from: string, to: string}|null $dateRange
     * @param int[] $entities entidades efetivas (já cruzadas com as da sessão)
-    * @param int[]|null $users filtro de técnico atribuído (null = sem filtro)
-    * @param int[]|null $groups filtro de grupo técnico atribuído (null = sem filtro)
+    * @param int[]|null $users filtro de técnico (null = sem filtro; atribuído, ou o sentido do compute com users_scope)
+    * @param int[]|null $groups filtro de grupo (null = sem filtro; atribuído, ou o sentido do compute com groups_scope)
     * @param array<string, mixed> $scopeCriteria subconsulta de IDs visíveis do itemtype (montada pela base)
     */
    public function __construct(
@@ -87,9 +87,54 @@ final class PluginNextoolApiMetricQuery {
       return $this->granularity;
    }
 
-   /** @return array{from: string, to: string}|null período já aplicado no escopo (informativo) */
+   /**
+    * Período pedido (já validado). Com `date_scope` 'item' a base já aplicou na `date_field` (informativo);
+    * com 'compute' o compute TEM de aplicar (dateWhere()).
+    *
+    * @return array{from: string, to: string}|null
+    */
    public function dateRange(): ?array {
       return $this->dateRange;
+   }
+
+   /**
+    * Critério do período sobre uma coluna do compute (ex.: `glpi_tickettasks.date`), ou [] sem filtro de data.
+    * Para métrica com `date_scope` 'compute'.
+    *
+    * @return array<int, array<string, mixed>>
+    */
+   public function dateWhere(string $column): array {
+      self::assertColumn($column);
+      if ($this->dateRange === null) {
+         return [];
+      }
+      return [
+         [$column => ['>=', $this->dateRange['from']]],
+         [$column => ['<=', $this->dateRange['to']]],
+      ];
+   }
+
+   /**
+    * Critério do filtro de técnico sobre uma coluna do compute (ex.: `glpi_tickettasks.users_id_tech`), ou []
+    * sem filtro. Para métrica com `users_scope` 'compute'. Nunca recebe lista vazia (a base responde vazio antes).
+    *
+    * @return array<string, mixed>
+    */
+   public function usersWhere(string $column): array {
+      self::assertColumn($column);
+      return $this->users === null ? [] : [$column => $this->users];
+   }
+
+   /** Como usersWhere(), para o filtro de grupo (`groups_scope` 'compute'). @return array<string, mixed> */
+   public function groupsWhere(string $column): array {
+      self::assertColumn($column);
+      return $this->groups === null ? [] : [$column => $this->groups];
+   }
+
+   private static function assertColumn(string $column): void {
+      if (preg_match('/^[a-z0-9_]+\.[a-z0-9_]+$/i', $column) !== 1) {
+         throw new InvalidArgumentException('Coluna inválida: ' . $column);
+      }
    }
 
    /** @return int[] */

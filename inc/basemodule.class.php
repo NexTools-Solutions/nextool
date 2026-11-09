@@ -835,6 +835,13 @@ abstract class PluginNextoolBaseModule {
     *     'compute'     => [self::class, 'computeHours'],  // fn(PluginNextoolApiMetricQuery $q): array linhas
     *   ]
     *
+    * Filtro com sentido do módulo (nextool-dev#298): `date_scope`/`users_scope`/`groups_scope`
+    * = 'compute' (padrão 'item' = data do itemtype e técnico/grupo ATRIBUÍDO ao chamado). Com 'compute' a base
+    * só valida e entrega, e o compute aplica na coluna dele: `$q->dateWhere('glpi_tickettasks.date')`,
+    * `$q->usersWhere('glpi_tickettasks.users_id_tech')`, `$q->groupsWhere(...)`. `date_scope` 'compute' NÃO
+    * leva `date_field`. O escopo de quem VÊ (`$q->scopeWhere()`) continua obrigatório. Declarar 'compute' exige
+    * `min_plugin_version` com a #298: numa base anterior a métrica é recusada (falta `date_field`).
+    *
     * @return array<int, array<string, mixed>>
     */
    public function getApiMetrics(): array {
