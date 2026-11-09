@@ -842,6 +842,10 @@ abstract class PluginNextoolBaseModule {
     * leva `date_field`. O escopo de quem VÊ (`$q->scopeWhere()`) continua obrigatório. Declarar 'compute' exige
     * `min_plugin_version` com a #298: numa base anterior a métrica é recusada (falta `date_field`).
     *
+    * Lixeira (nextool-dev#299): `'deleted_scope' => 'include'` faz o escopo contar itens excluídos (padrão
+    * 'exclude' = `is_deleted = 0`); perfil, entidades e filtros não mudam. Base anterior IGNORA a chave e exclui em
+    * silêncio: declarar 'include' exige `min_plugin_version` com a #299.
+    *
     * @return array<int, array<string, mixed>>
     */
    public function getApiMetrics(): array {

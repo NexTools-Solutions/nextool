@@ -55,6 +55,7 @@ final class PluginNextoolApiMetricController extends PluginNextoolApiController 
             'date_scope'     => new Doc\Schema(Doc\Schema::TYPE_STRING, enum: [PluginNextoolApiMetrics::SCOPE_ITEM, PluginNextoolApiMetrics::SCOPE_COMPUTE]),
             'users_scope'    => new Doc\Schema(Doc\Schema::TYPE_STRING, enum: [PluginNextoolApiMetrics::SCOPE_ITEM, PluginNextoolApiMetrics::SCOPE_COMPUTE]),
             'groups_scope'   => new Doc\Schema(Doc\Schema::TYPE_STRING, enum: [PluginNextoolApiMetrics::SCOPE_ITEM, PluginNextoolApiMetrics::SCOPE_COMPUTE]),
+            'deleted_scope'  => new Doc\Schema(Doc\Schema::TYPE_STRING, enum: [PluginNextoolApiMetrics::DELETED_EXCLUDE, PluginNextoolApiMetrics::DELETED_INCLUDE]),
             'measures'       => new Doc\Schema(Doc\Schema::TYPE_OBJECT),
             'dimensions'     => new Doc\Schema(Doc\Schema::TYPE_OBJECT),
             'filters'        => new Doc\Schema(type: Doc\Schema::TYPE_ARRAY, items: new Doc\Schema(Doc\Schema::TYPE_STRING, enum: PluginNextoolApiMetrics::FILTERS)),

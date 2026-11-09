@@ -16,7 +16,8 @@
  *       tudo": aqui isso é recusa (ITEMTYPE_NOT_VISIBLE);
  *     - outro ITIL (Problem, Change): só com READALL (o core não tem critério por perfil para eles);
  *     - outro CommonDBTM: `canView()`;
- *     - sempre: entidades da sessão (cruzadas com o filtro `entities`), `is_deleted = 0`, período na
+ *     - sempre: entidades da sessão (cruzadas com o filtro `entities`), `is_deleted = 0` (salvo `deleted_scope`
+ *       'include', #299), período na
  *       `date_field`, e em Ticket os filtros `users`/`groups` (técnico/grupo ATRIBUÍDO, como os filtros
  *       nativos do painel; com `date_scope`/`users_scope`/`groups_scope` = 'compute' quem aplica é o
  *       módulo, na coluna dele, #298) e `tickets` (critérios dos filtros nativos, só em processo e só no formato que
@@ -63,6 +64,14 @@ final class PluginNextoolApiMetrics {
     */
    public const SCOPE_ITEM = 'item';
    public const SCOPE_COMPUTE = 'compute';
+   /**
+    * Itens na lixeira no escopo (nextool-dev#299). `exclude` (padrão): `is_deleted = 0`. `include`: a lixeira conta
+    * (ex.: horas de chamado excluído seguem consumindo o contrato e indo na fatura); perfil, entidades e filtros não
+    * mudam. Base anterior ignora a chave e EXCLUI em silêncio: quem declara `include` exige esta base no
+    * `min_plugin_version` (ou confere `defined('PluginNextoolApiMetrics::DELETED_INCLUDE')` antes de declarar).
+    */
+   public const DELETED_EXCLUDE = 'exclude';
+   public const DELETED_INCLUDE = 'include';
    /** chave do descritor => filtro que ela governa */
    public const SCOPE_KEYS = ['date_scope' => 'date', 'users_scope' => 'users', 'groups_scope' => 'groups'];
 
@@ -275,6 +284,14 @@ final class PluginNextoolApiMetrics {
             return "{$key} sem o filtro {$filter} em filters";
          }
       }
+      if (array_key_exists('deleted_scope', $d)) {
+         if (!in_array($d['deleted_scope'], [self::DELETED_EXCLUDE, self::DELETED_INCLUDE], true)) {
+            return "deleted_scope: 'exclude' ou 'include'";
+         }
+         if ($d['deleted_scope'] === self::DELETED_INCLUDE && !(new $itemtype())->maybeDeleted()) {
+            return "deleted_scope 'include' num itemtype sem lixeira";
+         }
+      }
       $scope = static fn (string $key): string => (string) ($d[$key] ?? self::SCOPE_ITEM);
       if (in_array('date', $filters, true)) {
          $df = $d['date_field'] ?? null;
@@ -353,6 +370,7 @@ final class PluginNextoolApiMetrics {
          foreach (array_keys(self::SCOPE_KEYS) as $key) {
             $d[$key] = (string) ($d[$key] ?? self::SCOPE_ITEM);
          }
+         $d['deleted_scope'] = (string) ($d['deleted_scope'] ?? self::DELETED_EXCLUDE);
          $valid[$id] = $d;
       }
       return self::$cache[$cacheKey] = $valid;
@@ -382,6 +400,7 @@ final class PluginNextoolApiMetrics {
          'date_scope'     => $d['date_scope'],
          'users_scope'    => $d['users_scope'],
          'groups_scope'   => $d['groups_scope'],
+         'deleted_scope'  => $d['deleted_scope'],
          'measures'       => $d['measures'],
          'dimensions'     => $dims,
          'filters'        => $d['filters'],
@@ -610,7 +629,7 @@ final class PluginNextoolApiMetrics {
       $table = $itemtype::getTable();
       $crit = ['SELECT' => "{$table}.id", 'DISTINCT' => true, 'FROM' => $table, 'WHERE' => []];
 
-      if ($item->maybeDeleted()) {
+      if ($item->maybeDeleted() && $d['deleted_scope'] !== self::DELETED_INCLUDE) {
          $crit['WHERE']["{$table}.is_deleted"] = 0;
       }
       if ($item->isEntityAssign()) {
