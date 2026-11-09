@@ -101,11 +101,12 @@ class PluginNextoolCloudItilTools {
          'create_ticket' => [
             'kind'    => 'write',
             'handler' => [self::class, 'createTicket'],
-            // Os opcionais vêm do catálogo do cérebro (folha da triagem). O grupo sai da categoria, pelo
-            // próprio core (`setTechAndGroupFromItilCategory`), nunca do corpo.
+            // Os opcionais vêm do catálogo do cérebro (folha da triagem). O grupo técnico é o da área (o
+            // da fila de atendimento, 2026-11-08), conferido aqui; sem ele, o core tira o grupo da categoria
+            // (`setTechAndGroupFromItilCategory`).
             'schema'  => ['args' => [
                'title' => 'string', 'content' => 'string', 'entities_id' => 'int?', 'itilcategories_id' => 'int?',
-               'type' => '1|2?', 'requesttypes_id' => 'int?', 'urgency' => '1..5?',
+               'type' => '1|2?', 'requesttypes_id' => 'int?', 'urgency' => '1..5?', 'groups_id_assign' => 'int?',
             ]],
          ],
          'add_followup' => [
@@ -421,6 +422,12 @@ class PluginNextoolCloudItilTools {
          'opened_at'    => self::iso((string) $ticket->fields['date']),
          'due_at'       => self::iso((string) ($ticket->fields['time_to_resolve'] ?? '')),
          'followups'    => $followups,
+         // Filas de atendimento (2026-11-08): os grupos técnicos do chamado (ids), para o bot achar a fila
+         // de um chamado já aberto. Só ids: o nome do grupo não sai para o canal.
+         'assign_groups' => array_values(array_map('intval', array_column(
+            $ticket->getGroups(CommonITILActor::ASSIGN),
+            'groups_id'
+         ))),
       ];
    }
 
@@ -458,9 +465,14 @@ class PluginNextoolCloudItilTools {
     *  - `itilcategories_id`: existe, é visível na entidade, serve ao tipo e, na interface simplificada,
     *    é visível ao autoatendimento (a regra do formulário de abertura do core);
     *  - `requesttypes_id`: existe e está ativa;
-    *  - `type` (1 incidente, 2 requisição) e `urgency` (1 a 5).
-    * O grupo e o técnico saem da categoria pelo próprio core. Campo opcional inválido recusa o chamado
-    * inteiro (`invalid_field`): abrir sem a categoria pedida mandaria o chamado para a fila errada.
+    *  - `type` (1 incidente, 2 requisição) e `urgency` (1 a 5);
+    *  - `groups_id_assign` (2026-11-08, filas de atendimento): o grupo técnico da área, configurado no
+    *    catálogo pelo administrador do GLPI (não é escolha do contato). Existe, é de atribuição e é visível
+    *    na entidade do chamado. Inválido é IGNORADO (o grupo volta a sair da categoria): um grupo apagado no
+    *    GLPI não pode parar a abertura de chamados de uma fila inteira.
+    * Sem grupo, o grupo e o técnico saem da categoria pelo próprio core. Os outros opcionais inválidos
+    * recusam o chamado inteiro (`invalid_field`): abrir sem a categoria pedida mandaria o chamado para a
+    * fila errada.
     */
    public static function createTicket(array $args): array {
       $title   = trim((string) ($args['title'] ?? ''));
@@ -496,6 +508,10 @@ class PluginNextoolCloudItilTools {
          return ['created' => false, 'reason' => 'invalid_field'];
       }
       $input += $opcionais;
+      $grupo = self::assignGroup($args['groups_id_assign'] ?? null, $entity);
+      if ($grupo > 0) {
+         $input['_groups_id_assign'] = $grupo;
+      }
 
       $ticket = new Ticket();
       // O `add()` do core não confere direito nenhum: sem isto, o bit do módulo bastaria para abrir
@@ -514,6 +530,33 @@ class PluginNextoolCloudItilTools {
          Toolbox::logInFile('plugin_nextool_cloud', sprintf("[cloud_contact] chamado %d aberto sem a ligação com o contato\n", (int) $id));
       }
       return ['created' => true, 'id' => (int) $id];
+   }
+
+   /**
+    * O grupo técnico da área (filas de atendimento, 2026-11-08), conferido: existe, é de atribuição
+    * (`is_assign`) e é visível na entidade do chamado (própria ou herdada por recursividade). 0 = sem grupo
+    * (ausente ou inválido; o inválido fica no log e o core usa o grupo da categoria).
+    */
+   private static function assignGroup($valor, int $entity): int {
+      global $DB;
+      if ($valor === null || $valor === '' || (int) $valor === 0) {
+         return 0;
+      }
+      $id = filter_var($valor, FILTER_VALIDATE_INT);
+      $g  = Group::getTable();
+      if ($id !== false && $id > 0) {
+         $row = $DB->request([
+            'COUNT' => 'cnt',
+            'FROM'  => $g,
+            'WHERE' => ["$g.id" => (int) $id, "$g.is_assign" => 1] + getEntitiesRestrictCriteria($g, '', $entity, true),
+         ])->current();
+         if ((int) ($row['cnt'] ?? 0) > 0) {
+            return (int) $id;
+         }
+      }
+      Toolbox::logInFile('plugin_nextool_cloud', sprintf("[cloud_exec] create_ticket: grupo %s ignorado (inexistente, sem atribuição ou fora da entidade %d)\n",
+         is_scalar($valor) ? substr((string) $valor, 0, 20) : '?', $entity));
+      return 0;
    }
 
    /**

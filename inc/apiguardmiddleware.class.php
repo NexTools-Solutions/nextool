@@ -8,10 +8,13 @@
  * padrão do core, entra no log do módulo e interrompe a cadeia (não chama $next):
  *  1. controller registrado neste boot e dono da rota (senão 404);
  *  2. módulo ativo (senão 404: não revela que a rota existe);
- *  3. licença do módulo ativa (PluginNextoolApiRegistry::accessDenyReason; senão 403 LICENSE_INACTIVE;
- *     o cloud link não é exigido);
+ *  3. licença (PluginNextoolApiRegistry::accessDenyReason): módulo FREE passa direto; PAID/DEV exigem a
+ *     licença do módulo ativa (getApiLicenseKey()), senão 403 LICENSE_INACTIVE; o cloud link não é exigido;
  *  4. #[PluginNextoolApiRight] do método: ausente -> 403 (o registro já barra; defesa em
  *     profundidade); cada bit exigido via PermissionManager -> falta -> 403 ERROR_RIGHT_MISSING.
+ *
+ * A regra mora em PluginNextoolApiGuard::check(), a mesma da chamada em processo (PluginNextoolApiService).
+ * Aqui só se traduz a recusa na resposta HTTP no formato do core.
  *
  * process() é void: a recusa vai em $input->response. O resultado da operação NÃO é conhecido
  * aqui (o controller roda depois): quem o registra é o PluginNextoolApiAuditMiddleware.
@@ -53,51 +56,17 @@ final class PluginNextoolApiGuardMiddleware extends AbstractMiddleware implement
          return;
       }
 
-      $moduleKey = PluginNextoolApiRegistry::moduleOf($class);
-      if ($moduleKey === null || $moduleKey !== $pathModule) {
-         $this->deny($input, (string) $pathModule, 'NOT_REGISTERED', AbstractController::getNotFoundErrorResponse());
-         return;
-      }
-
-      $manager = PluginNextoolModuleManager::getInstance();
-      $active = $manager->getActiveModules();
-      $module = is_array($active) ? ($active[$moduleKey] ?? null) : null;
-      if (!$module instanceof PluginNextoolBaseModule) {
-         $this->deny($input, $moduleKey, 'MODULE_INACTIVE', AbstractController::getNotFoundErrorResponse());
-         return;
-      }
-
-      $denied = PluginNextoolApiRegistry::accessDenyReason($module);
+      $denied = PluginNextoolApiGuard::check($class, $method, $pathModule);
       if ($denied !== null) {
-         $this->deny($input, $moduleKey, $denied, new JSONResponse(AbstractController::getErrorResponseBody(
-            AbstractController::ERROR_RIGHT_MISSING,
-            __('A licença deste módulo não está ativa: a API do módulo exige licença vigente.', 'nextool'),
-            $denied
-         ), 403));
-         return;
-      }
-
-      $attrs = $method->getAttributes(PluginNextoolApiRight::class);
-      if ($attrs === []) {
-         $this->deny($input, $moduleKey, 'RIGHT_UNDECLARED', AbstractController::getAccessDeniedErrorResponse());
-         return;
-      }
-      $right = $attrs[0]->newInstance();
-      require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
-      $bits = $right->bits;
-      $granted = $bits !== [];
-      foreach ($bits as $bit) {
-         $bit = (int) $bit;
-         $ok = $right->kind === PluginNextoolApiRight::KIND_USE
-            ? PluginNextoolPermissionManager::canUse($moduleKey, $bit)
-            : ($right->kind === PluginNextoolApiRight::KIND_ADMIN && PluginNextoolPermissionManager::canAdmin($moduleKey, $bit));
-         if (!$ok) {
-            $granted = false;
-            break;
-         }
-      }
-      if (!$granted) {
-         $this->deny($input, $moduleKey, 'RIGHT_MISSING', AbstractController::getAccessDeniedErrorResponse());
+         $this->deny($input, $denied['module'], $denied['reason'], match ($denied['kind']) {
+            PluginNextoolApiGuard::DENY_NOT_FOUND => AbstractController::getNotFoundErrorResponse(),
+            PluginNextoolApiGuard::DENY_LICENSE   => new JSONResponse(AbstractController::getErrorResponseBody(
+               AbstractController::ERROR_RIGHT_MISSING,
+               __('A licença deste módulo não está ativa: a API do módulo exige licença vigente.', 'nextool'),
+               $denied['reason']
+            ), 403),
+            default => AbstractController::getAccessDeniedErrorResponse(),
+         });
          return;
       }
 

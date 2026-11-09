@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.53.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.54.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -388,6 +388,11 @@ function plugin_init_nextool() {
    // (Symfony) NAO serve .js estatico de plugin por path direto (/plugins/X/js/*.js ->
    // 404) -- mesmo padrao do add_css. Ver front/nextool-tabs.js.php.
    $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-tabs.js.php';
+
+   // JS global: window.NextoolTopbar, a barra superior administrada pela base (nextool-dev#297).
+   // Módulo com ícone no cabeçalho registra por aqui (posição, geometria, indicadores e painel são
+   // da base). Antes do loadActiveModules, para existir quando o JS dos módulos rodar.
+   $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-topbar.js.php';
 
    // Ordenacao padrao das grades Search::show em abas de modulo (#275). Precisa ser
    // pre_show_tab, e nao o boot: o ajax/common.tabs.php preenche sort/order com ''

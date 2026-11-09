@@ -787,8 +787,9 @@ abstract class PluginNextoolBaseModule {
     *
     * Contrato resumido (detalhe em PluginNextoolApiController e na KB): a classe estende
     * PluginNextoolApiController, tem #[Route('/Nextool/<module_key>')] e cada método com #[Route]
-    * declara #[RouteVersion] e #[PluginNextoolApiRight]. Toda rota (de módulo FREE, PAID ou DEV) só responde
-    * com a licença do módulo ativa (`getCloudLicenseKey()`, ou a chave do módulo); o cloud link não é exigido.
+    * declara #[RouteVersion] e #[PluginNextoolApiRight]. Licença: módulo FREE responde sem portão de licença;
+    * PAID/DEV só com a licença do módulo ativa (`getApiLicenseKey()`); o cloud link não é exigido
+    * (PluginNextoolApiRegistry::accessDenyReason).
     *
     * @return class-string[] Ex.: ['PluginNextoolSsologinApiController']
     */
@@ -797,15 +798,60 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Chave de licença que libera a API v2 do módulo PAID/DEV (módulo FREE não passa por licença na API).
+    *
+    * Padrão null = a chave do próprio módulo. É SEPARADA de `getCloudLicenseKey()` de propósito: aquela é das
+    * funções de nuvem e pode apontar para um produto `feature_*` (workflow, whatsappbot), e a API do módulo é
+    * do GLPI do cliente, liberada pela licença do módulo. Sobrescrever só se o módulo for vendido sob outra
+    * chave de licença.
+    *
+    * @since pós-6.53.0 (nextool-dev#291)
+    */
+   public function getApiLicenseKey(): ?string {
+      return null; // null = usa a chave do módulo
+   }
+
+   /**
+    * Métricas que o módulo oferece (nextool-dev#295): fonte de dados do MyDashboards, do assistente de IA
+    * e da API (`/api.php/v2.3/Nextool/Metric/<module_key>/<id>`), pelo MESMO serviço
+    * (PluginNextoolApiMetrics). A base valida o pedido, aplica o escopo de quem VÊ (perfil + entidades,
+    * nunca o de quem criou o painel), o período, o teto de linhas e resolve id/nome das dimensões.
+    *
+    * Cada item (detalhe e exemplo completo na KB nextools: contexts/plugin/glpi11/api-v2.md, "Métricas"):
+    *
+    *   [
+    *     'id'          => 'hours_by_contract',          // contrato estável: vira card_id; renomear quebra painel
+    *     'label'       => __('Horas por contrato', 'x'),
+    *     'description' => __('Horas lançadas ...', 'x'),
+    *     'itemtype'    => Ticket::class,                // sujeito do escopo
+    *     'date_field'  => 'date',                       // coluna do filtro de período (na tabela do itemtype)
+    *     'right'       => ['bits' => [PluginNextoolXRights::VIEW], 'kind' => 'use'],
+    *     'measures'    => ['hours' => ['label' => __('Horas', 'x'), 'type' => 'duration', 'unit' => 's']],
+    *     'dimensions'  => [
+    *        'contract' => ['label' => __('Contrato', 'x'), 'type' => 'itemtype', 'itemtype' => Contract::class],
+    *        'period'   => ['label' => __('Período', 'x'), 'type' => 'date'],
+    *     ],
+    *     'filters'     => ['date', 'entities', 'users', 'groups'],
+    *     'compute'     => [self::class, 'computeHours'],  // fn(PluginNextoolApiMetricQuery $q): array linhas
+    *   ]
+    *
+    * @return array<int, array<string, mixed>>
+    */
+   public function getApiMetrics(): array {
+      return [];
+   }
+
+   /**
     * Registro de uma chamada de API do módulo (portão ou resultado). Padrão: arquivo de log do
     * módulo. Módulo com aba Logs sobrescreve para gravar lá. O evento só tem chaves (LGPD): nunca
     * corpo da requisição nem valores devolvidos.
     *
-    * @param array{phase: string, verb: string, route: string, status: int, reason: string, target: ?int, users_id: int} $event
+    * @param array{phase: string, verb: string, route: string, status: int, reason: string, target: ?int, users_id: int, channel: string} $event
     */
    public function logApiCall(array $event): void {
       Toolbox::logInFile('plugin_nextool_' . $this->getModuleKey(), sprintf(
-         "[api] %s %s %s -> %d%s (usuário %d%s)\n",
+         "[api%s] %s %s %s -> %d%s (usuário %d%s)\n",
+         ($event['channel'] ?? 'http') === 'http' ? '' : ':' . $event['channel'],
          $event['phase'] ?? '',
          $event['verb'] ?? '',
          $event['route'] ?? '',

@@ -40,6 +40,14 @@ final class PluginNextoolApiRegistry {
    /** @var array<class-string, string> controller registrado neste boot => chave do módulo */
    private static array $owners = [];
 
+   /**
+    * Controllers da PRÓPRIA base registrados neste boot (ex.: métricas). Não têm módulo dono: o
+    * portão/auditoria por módulo não se aplica a eles (cada rota confere o módulo alvo por conta).
+    *
+    * @var array<class-string, true>
+    */
+   private static array $baseControllers = [];
+
    /** Motivo do resultado desta requisição, posto pelo controller e lido pela auditoria. */
    private static string $resultReason = '';
 
@@ -58,12 +66,21 @@ final class PluginNextoolApiRegistry {
     */
    public static function controllersForHook(array $activeModules): array {
       self::$owners = [];
-      if (!self::isAvailable()) {
+      self::$baseControllers = [];
+      // Sem o portão não há API: rota registrada sem o middleware de autorização responderia sem licença e
+      // sem bits (fail-closed; achado da revisão de 08/11).
+      if (!self::isAvailable() || !class_exists('PluginNextoolApiGuardMiddleware')) {
          return [];
       }
+      $hasMetrics = false;
       foreach ($activeModules as $moduleKey => $module) {
          if (!$module instanceof PluginNextoolBaseModule) {
             continue;
+         }
+         try {
+            $hasMetrics = $hasMetrics || $module->getApiMetrics() !== [];
+         } catch (Throwable $e) {
+            // descritor quebrado: o PluginNextoolApiMetrics o recusa e registra
          }
          try {
             $declared = $module->getApiControllers();
@@ -87,7 +104,21 @@ final class PluginNextoolApiRegistry {
             self::$owners[$class] = (string) $moduleKey;
          }
       }
-      return array_keys(self::$owners);
+      // Rotas genéricas de métrica (/Nextool/Metric): só quando algum módulo ativo declara métrica.
+      if ($hasMetrics && class_exists('PluginNextoolApiMetricController')) {
+         self::$baseControllers['PluginNextoolApiMetricController'] = true;
+      }
+      return array_merge(array_keys(self::$owners), array_keys(self::$baseControllers));
+   }
+
+   /**
+    * Controllers de MÓDULO registrados neste boot (classe => chave do módulo). Base do serviço em
+    * processo (PluginNextoolApiService).
+    *
+    * @return array<class-string, string>
+    */
+   public static function registeredControllers(): array {
+      return self::$owners;
    }
 
    /**
@@ -97,18 +128,34 @@ final class PluginNextoolApiRegistry {
     * @return array<int, array{middleware: string, priority: int, condition: callable}>
     */
    public static function middlewaresForHook(): array {
-      if (!self::isAvailable()
-          || !class_exists('PluginNextoolApiGuardMiddleware')
-          || !class_exists('PluginNextoolApiAuditMiddleware')) {
+      // Cada middleware entra por conta própria: uma falha no recorte (cosmético/LGPD) ou na auditoria
+      // NUNCA tira o portão. Sem o portão, controllersForHook() já não registrou rota nenhuma.
+      if (!self::isAvailable() || !class_exists('PluginNextoolApiGuardMiddleware')) {
          return [];
       }
-      $isNextoolRoute = static fn($routePath): bool => self::moduleFromPath((string) $routePath->getRoutePath()) !== null;
+      // Rota de módulo (`/Nextool/<mk>/...`) servida por controller de módulo. Os controllers da base
+      // (métricas) ficam fora: conferem o módulo alvo e auditam dentro do PluginNextoolApiMetrics.
+      $isNextoolRoute = static function ($routePath): bool {
+         if (self::moduleFromPath((string) $routePath->getRoutePath()) === null) {
+            return false;
+         }
+         try {
+            return !isset(self::$baseControllers[$routePath->getController()]);
+         } catch (Throwable $e) {
+            return true;
+         }
+      };
       // Prioridade negativa: o Router encadeia do maior para o menor, então o portão roda DEPOIS dos
       // middlewares do core (IP, escopo OAuth, CRUD, RSQL), imediatamente antes do controller.
-      return [
-         ['middleware' => 'PluginNextoolApiGuardMiddleware', 'priority' => -10, 'condition' => $isNextoolRoute],
-         ['middleware' => 'PluginNextoolApiAuditMiddleware', 'priority' => -10, 'condition' => $isNextoolRoute],
-      ];
+      $list = [['middleware' => 'PluginNextoolApiGuardMiddleware', 'priority' => -10, 'condition' => $isNextoolRoute]];
+      if (class_exists('PluginNextoolApiAuditMiddleware')) {
+         $list[] = ['middleware' => 'PluginNextoolApiAuditMiddleware', 'priority' => -10, 'condition' => $isNextoolRoute];
+      }
+      // Recorte pelo schema (nextool-dev#295): roda antes da auditoria (prioridade maior).
+      if (class_exists('PluginNextoolApiResponseFilterMiddleware')) {
+         $list[] = ['middleware' => 'PluginNextoolApiResponseFilterMiddleware', 'priority' => -5, 'condition' => $isNextoolRoute];
+      }
+      return $list;
    }
 
    /** Módulo dono de um controller registrado NESTE boot (null = não registrado). */
@@ -174,6 +221,10 @@ final class PluginNextoolApiRegistry {
          if (!in_array($right->kind, [PluginNextoolApiRight::KIND_ADMIN, PluginNextoolApiRight::KIND_USE], true)) {
             return "{$name}(): kind inválido";
          }
+         if ($right->effect !== null
+             && !in_array($right->effect, [PluginNextoolApiRight::EFFECT_READ, PluginNextoolApiRight::EFFECT_WRITE], true)) {
+            return "{$name}(): effect inválido (read ou write)";
+         }
          if ($right->bits === []) {
             return "{$name}(): bits vazio (não exigiria nada)";
          }
@@ -228,13 +279,14 @@ final class PluginNextoolApiRegistry {
             continue;
          }
          [$class, $method] = array_pad(explode('::', $key, 2), 2, '');
-         if (!isset(self::$owners[$class]) || !class_exists($class) || !method_exists($class, $method)) {
+         $known = isset(self::$owners[$class]) || isset(self::$baseControllers[$class]);
+         if (!$known || !class_exists($class) || !method_exists($class, $method)) {
             self::invalidateRouteCache();
             return;
          }
          $seen[$class] = true;
       }
-      if (array_diff_key(self::$owners, $seen) !== []) {
+      if (array_diff_key(self::$owners + self::$baseControllers, $seen) !== []) {
          self::invalidateRouteCache();
       }
    }
@@ -249,19 +301,30 @@ final class PluginNextoolApiRegistry {
    }
 
    /**
-    * Acesso à API do módulo (decisão do owner, 2026-10-31): TODO módulo (FREE, PAID ou DEV) responde pela API
-    * quando a LICENÇA DO MÓDULO está ativa (`getCloudLicenseKey()`, ou a chave do módulo, com o entitlement
-    * sincronizado dentro da graça offline). O vínculo `nextool_cloud` NÃO é exigido: ele serve às funções de
-    * nuvem (`hasCloudProductLink()`), e a API do módulo é do GLPI do cliente. A TELA segue a regra própria
-    * (módulo com histórico de licença continua ativo): esta restrição é só da API. Fail-closed: erro ao
-    * avaliar = sem acesso.
+    * Acesso à API do módulo, pelo tier do CATÁLOGO (`PluginNextoolModuleManager::getBillingTier()`):
+    *
+    * - **FREE: sem portão de licença** (owner, 2026-11-08). Módulo gratuito não tem item de licença, e cliente
+    *   sem licença nenhuma recebe `valid=false` do /validate, então exigir licença fecharia a API justamente
+    *   para quem só usa módulos gratuitos. O que é pago DENTRO de um FREE (créditos de IA, instância gerenciada,
+    *   produto `feature_*`) continua conferido pelo nosso servidor em cada chamada de nuvem, não aqui.
+    * - **PAID, DEV e tier desconhecido:** licença do PRÓPRIO módulo ativa (`getApiLicenseKey()`, padrão a chave
+    *   do módulo), com o entitlement sincronizado dentro da graça offline (regra de 2026-10-31). NÃO é a chave
+    *   de `getCloudLicenseKey()`: aquela é das funções de nuvem e, em workflow/whatsappbot, aponta para um
+    *   produto `feature_*`, o que faria a API exigir o produto de nuvem em vez da licença do módulo.
+    *
+    * O vínculo `nextool_cloud` nunca é exigido. A TELA segue a regra própria (`ever_licensed`): esta restrição
+    * é só da API. Fail-closed: erro ao avaliar = sem acesso.
     *
     * @return string|null motivo da recusa (LICENSE_INACTIVE) ou null = liberado
     */
    public static function accessDenyReason(PluginNextoolBaseModule $module): ?string {
       try {
+         $moduleKey = (string) $module->getModuleKey();
+         if (self::billingTierOf($moduleKey) === 'FREE') {
+            return null;
+         }
          require_once NEXTOOL_PHP_DIR . '/inc/cloudcreds.class.php';
-         return PluginNextoolCloudCreds::entitled($module->getCloudLicenseKey() ?? $module->getModuleKey())
+         return PluginNextoolCloudCreds::entitled($module->getApiLicenseKey() ?? $moduleKey)
             ? null
             : 'LICENSE_INACTIVE';
       } catch (Throwable $e) {
@@ -270,10 +333,23 @@ final class PluginNextoolApiRegistry {
    }
 
    /**
+    * Tier do módulo para o portão: o do catálogo sincronizado (fonte de verdade), com o fallback da instância
+    * que o próprio ModuleManager aplica. Sem ModuleManager, '' (não FREE: cai na exigência de licença).
+    */
+   private static function billingTierOf(string $moduleKey): string {
+      if ($moduleKey === '' || !class_exists('PluginNextoolModuleManager')) {
+         return '';
+      }
+      return strtoupper(trim(PluginNextoolModuleManager::getInstance()->getBillingTier($moduleKey)));
+   }
+
+   /**
     * Evento de auditoria para o log do módulo. Só chaves (LGPD): fase, verbo, rota (padrão, sem
     * valores), usuário, alvo, status HTTP e motivo. Nunca corpo nem atributos.
     *
-    * @param array{phase: string, verb?: string, route?: string, status?: int, reason?: string, target?: ?int} $event
+    * Canal: `http` (router) ou `inprocess` (PluginNextoolApiService / PluginNextoolApiMetrics).
+    *
+    * @param array{phase: string, verb?: string, route?: string, status?: int, reason?: string, target?: ?int, channel?: string} $event
     */
    public static function logEvent(string $moduleKey, array $event): void {
       try {
@@ -284,7 +360,7 @@ final class PluginNextoolApiRegistry {
          if (!$module instanceof PluginNextoolBaseModule) {
             return;
          }
-         $event += ['verb' => '', 'route' => '', 'status' => 0, 'reason' => '', 'target' => null];
+         $event += ['verb' => '', 'route' => '', 'status' => 0, 'reason' => '', 'target' => null, 'channel' => 'http'];
          $event['users_id'] = (int) Session::getLoginUserID();
          $module->logApiCall($event);
       } catch (Throwable $e) {
