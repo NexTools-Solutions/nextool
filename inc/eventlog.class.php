@@ -148,7 +148,7 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
       $tab[] = $plain(11, 'section', __('Seção', 'nextool'));
       $tab[] = $plain(12, 'http_code', __('Código HTTP', 'nextool'), 'number', ['equals', 'notequals']);
       $tab[] = $plain(13, 'response_time_ms', __('Tempo (ms)', 'nextool'), 'number', ['equals', 'notequals']);
-      $tab[] = $plain(14, 'plan', __('Plano', 'nextool'));
+      $tab[] = $plain(14, 'plan', __('Tipo de licença', 'nextool'));
       $tab[] = $plain(15, 'license_status', __('Status da licença', 'nextool'));
       $tab[] = $plain(16, 'client_identifier', __('Ambiente', 'nextool'));
       $tab[] = $plain(17, 'source_ip', __('IP de origem', 'nextool'));

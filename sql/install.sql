@@ -228,3 +228,18 @@ CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_jobs` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `module_job` (`module_key`, `job_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Assistente de primeira configuração dos módulos (estado por módulo; linha ausente = concluído).
+CREATE TABLE IF NOT EXISTS `glpi_plugin_nextool_main_setup_wizards` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `module_key` VARCHAR(100) NOT NULL,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'pending',
+  `current_step` VARCHAR(64) NOT NULL DEFAULT '',
+  `completed_steps` TEXT NULL,
+  `wizard_version` INT NOT NULL DEFAULT 1,
+  `users_id` INT UNSIGNED NOT NULL DEFAULT 0,
+  `date_creation` TIMESTAMP NULL DEFAULT NULL,
+  `date_mod` TIMESTAMP NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_module` (`module_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

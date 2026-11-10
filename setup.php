@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.57.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.58.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -393,6 +393,10 @@ function plugin_init_nextool() {
    // Módulo com ícone no cabeçalho registra por aqui (posição, geometria, indicadores e painel são
    // da base). Antes do loadActiveModules, para existir quando o JS dos módulos rodar.
    $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-topbar.js.php';
+
+   // JS global: window.NextoolWizard, o assistente de primeira configuração dos módulos (modal). Só faz algo nas páginas
+   // de módulo (pergunta se há assistente pendente) ou quando chamado; mesmo padrão de path sem query do topbar.
+   $PLUGIN_HOOKS['add_javascript']['nextool'][] = 'front/nextool-wizard.js.php';
 
    // Ordenacao padrao das grades Search::show em abas de modulo (#275). Precisa ser
    // pre_show_tab, e nao o boot: o ajax/common.tabs.php preenche sort/order com ''

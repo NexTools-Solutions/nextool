@@ -933,6 +933,25 @@ class PluginNextoolPermissionManager {
       unset(self::$syncedModuleRights[$rightName]);
    }
 
+   /**
+    * Assistente de configuração: concede (OR, nunca tira) o uso do módulo a um perfil. Perfil do portal recebe só o que
+    * o módulo declara para o helpdesk (e o ACCESS); administração nunca entra por aqui.
+    */
+   public static function grantModuleUse(int $profilesId, string $moduleKey, int $mask): void {
+      global $DB;
+      $profile = $DB->request(['SELECT' => ['interface'], 'FROM' => 'glpi_profiles', 'WHERE' => ['id' => $profilesId], 'LIMIT' => 1])->current();
+      if (!$profile) {
+         return;
+      }
+      $mask &= (self::ACCESS | self::USE_MASK);
+      if ((string) $profile['interface'] === 'helpdesk') {
+         $mask &= (self::ACCESS | self::helpdeskUsableMask($moduleKey));
+      }
+      if ($mask > 0) {
+         self::grantBit($profilesId, self::getModuleRightName($moduleKey), $mask);
+      }
+   }
+
    /** Concede (OR) um bit a um direito de um perfil, sem apagar bits existentes. */
    private static function grantBit(int $profilesId, string $rightName, int $bit): void {
       global $DB;

@@ -24,8 +24,14 @@ final class PluginNextoolLogMessage {
    /** Letras fora dos placeholders exigidas para casar um modelo com %s (evita casar "%s: %s"). */
    private const MIN_TEMPLATE_LETTERS = 8;
 
-   /** Planos que a validação acrescenta entre parênteses ("... (DESENVOLVIMENTO)"). */
-   private const PLAN_KEYS = ['FREE', 'DESENVOLVIMENTO', 'LICENCIADO', 'ENTERPRISE', 'BUSINESS'];
+   /**
+    * Tipos de licença que a validação acrescenta entre parênteses ("... (DESENVOLVIMENTO)"). Inclui os
+    * legados (LICENCIADO, ENTERPRISE, BUSINESS) porque o log antigo continua sendo exibido.
+    */
+   private const PLAN_KEYS = [
+      'FREE', 'ANUAL', 'CORTESIA', 'DEMONSTRACAO', 'DESENVOLVIMENTO', 'PATROCINADOR',
+      'LICENCIADO', 'ENTERPRISE', 'BUSINESS',
+   ];
 
    /** @var array<string, array<string, string>> locale => [msgstr => msgid] */
    private static array $reverse = [];

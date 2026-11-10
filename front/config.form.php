@@ -39,6 +39,7 @@ if ($nextoolConfigFormDirect) {
 global $DB;
 
 require_once NEXTOOL_PHP_DIR . '/inc/modulespath.inc.php';
+require_once NEXTOOL_PHP_DIR . '/inc/setupwizard.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
 
 $canViewModules     = PluginNextoolPermissionManager::canViewModules();
@@ -232,7 +233,7 @@ foreach ($allModuleKeys as $moduleKey) {
    // DEV nomeado numa licença de ambiente fora do plano Desenvolvimento: segue as regras de
    // módulo licenciado (ramo PAID abaixo). O selo e o filtro continuam DEV. Sem nomeação,
    // vale a regra de sempre (DEV só no plano Desenvolvimento).
-   $isDevByLicense = $isDevModule && $licenseTier !== 'DESENVOLVIMENTO'
+   $isDevByLicense = $isDevModule && !PluginNextoolLicenseValidator::isDevPlan($licenseTier)
       && PluginNextoolLicenseValidator::isDevModuleGrantedByLicense($moduleKey, $modulesEntitlement);
    $isDevByPlan = $isDevModule && !$isDevByLicense;
 
@@ -267,12 +268,10 @@ foreach ($allModuleKeys as $moduleKey) {
    if (!$hasValidatedPlan) {
       $isAllowedByPlan = false;
    } elseif ($isDevByPlan) {
-      // Módulos DEV: plano DESENVOLVIMENTO (o DEV nomeado em licença cai nas regras abaixo)
-      $isAllowedByPlan = ($licenseTier === 'DESENVOLVIMENTO');
-   } elseif ($licenseTier === 'ENTERPRISE') {
-      // Enterprise: todos exceto DEV (wildcard já cobre PAID/FREE)
-      $isAllowedByPlan = true;
+      // Módulos DEV: tipo Desenvolvimento (o DEV nomeado em licença cai nas regras abaixo)
+      $isAllowedByPlan = PluginNextoolLicenseValidator::isDevPlan($licenseTier);
    } elseif ($hasWildcardAll) {
+      // Curinga: desde 2026-11 só o tipo Desenvolvimento recebe (o legado ENTERPRISE virou alias de ANUAL)
       $isAllowedByPlan = true;
    } elseif (!empty($allowedModules)) {
       $isAllowedByPlan = in_array($moduleKey, $allowedModules, true);
@@ -285,7 +284,7 @@ foreach ($allModuleKeys as $moduleKey) {
    // can_download_module: controla download e update (requer licença ativa)
    // can_use_module: controla instalar/ativar/desativar (permissivo se ever_licensed + baixado)
    if ($isDevByPlan) {
-      $canDownloadModule = ($licenseTier === 'DESENVOLVIMENTO') && $isLicenseActive && !$isFreeTier && $catalogIsEnabled;
+      $canDownloadModule = PluginNextoolLicenseValidator::isDevPlan($licenseTier) && $isLicenseActive && !$isFreeTier && $catalogIsEnabled;
       $canUseModule = $canDownloadModule;
    } elseif ($isPaid) {
       // Download/Update: requer licença ativa
@@ -449,6 +448,10 @@ foreach ($allModuleKeys as $moduleKey) {
          'data_url'                => PluginNextoolCompat::webDir() . '/front/module_data.php?module=' . urlencode($moduleKey),
          'config_url'              => $configUrl,
          'show_config_button'      => $isInstalled && $moduleHasConfig && $moduleCanView,
+         // Assistente de primeira configuração: pendente vira o botão "Continuar configuração"; com assistente, o menu
+         // ganha "Assistente de configuração" para rever (só para quem configura o módulo).
+         'wizard_pending'          => $isInstalled && $isEnabled && $configUrl !== null && $moduleCanManage && PluginNextoolSetupWizard::isPending($moduleKey),
+         'wizard_available'        => $isInstalled && $isEnabled && $configUrl !== null && $moduleCanManage && PluginNextoolSetupWizard::hasWizard($moduleKey),
          'can_manage_admin_tabs'   => $canManageAdminTabs,
          'can_manage_modules'      => $canManageModules,
          'can_purge_modules'       => $canPurgeModules,

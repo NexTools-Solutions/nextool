@@ -91,7 +91,7 @@ declare(strict_types=1);
                         $categoryCounters[$cat] = ($categoryCounters[$cat] ?? 0) + 1;
                      }
                   }
-                  $isDevEnvironment = isset($licenseTier) && $licenseTier === 'DESENVOLVIMENTO';
+                  $isDevEnvironment = isset($licenseTier) && PluginNextoolLicenseValidator::isDevPlan($licenseTier);
 
                   // Filtros de estado ordenados por contagem (desc), ocultar zeros
                   $stateChips = [

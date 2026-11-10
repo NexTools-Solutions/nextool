@@ -65,7 +65,7 @@ $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
                <br>
                <span class="small text-licensing-hero fw-semibold">
                   <i class="ti ti-lifebuoy"></i>
-                  <?php echo __('Planos de licenciamento com suporte oficial, atualizações contínuas e acompanhamento técnico.', 'nextool'); ?>
+                  <?php echo __('Licenças com suporte oficial, atualizações contínuas e acompanhamento técnico.', 'nextool'); ?>
                </span>
             </p>
             <?php if ($licenseStatusCode === 'CANCELLED' && !$isFreeTier): ?>

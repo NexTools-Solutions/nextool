@@ -36,11 +36,21 @@ class PluginNextoolLicenseValidator {
 
    use PluginNextoolHmacSignatureTrait;
 
-   /** Aliases de planos legados → nomes atuais (espelho do PlanNormalizer do ContainerAPI). */
+   /**
+    * Aliases de tipos de licença legados → tipos atuais (espelho do PlanNormalizer do ContainerAPI).
+    * Tipos atuais (2026-11): ANUAL, CORTESIA, DEMONSTRACAO, DESENVOLVIMENTO, PATROCINADOR. FREE não é tipo de
+    * licença: é o estado do ambiente sem licença paga, e segue chegando do servidor nesse papel.
+    * ENTERPRISE vira ANUAL (não DESENVOLVIMENTO) de propósito: só o tipo Desenvolvimento libera módulos DEV.
+    */
    private const PLAN_ALIASES = [
-      'STARTER' => 'DESENVOLVIMENTO',
-      'PRO'     => 'LICENCIADO',
+      'STARTER'    => 'DESENVOLVIMENTO',
+      'PRO'        => 'ANUAL',
+      'LICENCIADO' => 'ANUAL',
+      'ENTERPRISE' => 'ANUAL',
    ];
+
+   /** Tipo de licença que libera todos os módulos, inclusive os DEV. */
+   public const PLAN_DEV = 'DESENVOLVIMENTO';
 
    /**
     * F2 -- capabilities anunciadas ao ContainerAPI (header X-Nextool-Caps). `entitlement-v1` =
@@ -211,7 +221,9 @@ class PluginNextoolLicenseValidator {
     */
    private static function persistAiCredits(array $block): void {
       $permitidas = ['balance_micros', 'reserved_micros', 'available_micros', 'free_remaining_micros', 'free_granted',
-         'currency', 'purchase_url', 'trial', 'ever_credited'];
+         'currency', 'purchase_url', 'trial', 'ever_credited',
+         // Próximo vencimento dos créditos (lote aberto mais antigo; ContainerAPI 2026-11-09): o AI Assist mostra ao lado do saldo.
+         'next_expiry_at', 'next_expiry_micros'];
       $limpo = [];
       foreach ($permitidas as $k) {
          if (array_key_exists($k, $block) && (is_scalar($block[$k]) || $block[$k] === null)) {
@@ -439,6 +451,14 @@ class PluginNextoolLicenseValidator {
       }
       $upper = strtoupper(trim($plan));
       return self::PLAN_ALIASES[$upper] ?? $upper;
+   }
+
+   /**
+    * O tipo de licença (já normalizado ou não) é Desenvolvimento? Ponto único da regra "módulo DEV só no
+    * tipo Desenvolvimento" (antes repetida como `=== 'DESENVOLVIMENTO'` em 6 lugares).
+    */
+   public static function isDevPlan(?string $plan): bool {
+      return self::normalizePlan($plan) === self::PLAN_DEV;
    }
 
    /**
@@ -1375,8 +1395,7 @@ class PluginNextoolLicenseValidator {
          PluginNextoolMigrationHelper::runSilently($migration);
       }
 
-      $planUpper = strtoupper(trim($plan));
-      $envHasDevLicense = ($planUpper === 'DESENVOLVIMENTO');
+      $envHasDevLicense = self::isDevPlan($plan);
       $moduleKeysInCatalog = [];
 
       foreach ($catalog as $entry) {

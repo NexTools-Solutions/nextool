@@ -273,17 +273,31 @@ class PluginNextoolConfigViewState {
    }
 
    /**
-    * @return array{label:string,description:string,badgeClass:string}
-    */
-   /**
-    * Nome do plano no idioma da sessão (ex.: DESENVOLVIMENTO -> "Desenvolvimento").
+    * Nome do tipo de licença no idioma da sessão (ex.: DESENVOLVIMENTO -> "Desenvolvimento", LICENCIADO -> "Anual").
     */
    public static function getPlanLabel(string $licenseTier): string {
       return self::resolvePlanPresentation($licenseTier)['label'];
    }
 
+   /**
+    * Classe de cor do badge do tipo de licença (sempre usada com `text-white`).
+    */
+   public static function getPlanBadgeClass(string $licenseTier): string {
+      return self::resolvePlanPresentation($licenseTier)['badgeClass'];
+   }
+
+   /**
+    * Rótulo, descrição e cor de cada TIPO DE LICENÇA (antes "plano"). Aceita o código cru do servidor:
+    * normaliza os aliases legados (LICENCIADO/ENTERPRISE/PRO -> ANUAL, STARTER -> DESENVOLVIMENTO) antes.
+    *
+    * @return array{label:string,description:string,badgeClass:string}
+    */
    private static function resolvePlanPresentation(string $licenseTier): array {
-      switch ($licenseTier) {
+      $tier = $licenseTier === 'UNKNOWN' || $licenseTier === 'BUSINESS'
+         ? $licenseTier
+         : (string) PluginNextoolLicenseValidator::normalizePlan($licenseTier);
+
+      switch ($tier) {
          case 'FREE':
             return [
                'label'       => __('Não licenciado', 'nextool'),
@@ -291,39 +305,62 @@ class PluginNextoolConfigViewState {
                'badgeClass'  => 'bg-teal',
             ];
 
-         case 'DESENVOLVIMENTO':
+         case 'ANUAL':
             return [
-               'label'       => __('Desenvolvimento', 'nextool'),
-               'description' => __('Plano de desenvolvimento com acesso a todos os módulos (incluindo DEV).', 'nextool'),
-               'badgeClass'  => 'bg-blue',
-            ];
-
-         case 'LICENCIADO':
-            return [
-               'label'       => __('Licenciado', 'nextool'),
-               'description' => __('Plano licenciado com acesso aos módulos permitidos pelo contrato.', 'nextool'),
+               'label'       => __('Anual', 'nextool'),
+               'description' => __('Licença anual dos módulos contratados, com suporte, atualizações e acompanhamento enquanto estiver vigente.', 'nextool'),
                'badgeClass'  => 'bg-indigo',
             ];
 
-         case 'ENTERPRISE':
+         case 'CORTESIA':
             return [
-               'label'       => __('Enterprise', 'nextool'),
-               'description' => __('Plano corporativo com acesso a todos os módulos exceto os de desenvolvimento (DEV).', 'nextool'),
+               'label'       => __('Cortesia', 'nextool'),
+               'description' => __('Licença de cortesia concedida pela NexTool para os módulos indicados.', 'nextool'),
+               'badgeClass'  => 'bg-cyan',
+            ];
+
+         case 'DEMONSTRACAO':
+            return [
+               'label'       => __('Demonstração', 'nextool'),
+               'description' => __('Licença de demonstração de 30 dias para avaliar os módulos indicados.', 'nextool'),
+               'badgeClass'  => 'bg-orange',
+            ];
+
+         case 'PATROCINADOR':
+            return [
+               'label'       => __('Patrocinador', 'nextool'),
+               'description' => __('Licença vitalícia de quem patrocinou o desenvolvimento dos módulos indicados.', 'nextool'),
                'badgeClass'  => 'bg-purple',
             ];
 
+         case 'DESENVOLVIMENTO':
+            return [
+               'label'       => __('Desenvolvimento', 'nextool'),
+               'description' => __('Licença de desenvolvimento com acesso a todos os módulos (incluindo DEV).', 'nextool'),
+               'badgeClass'  => 'bg-blue',
+            ];
+
          case 'BUSINESS':
+            // Compatibilidade com versões antigas (validação aprovada sem tipo gravado).
             return [
                'label'       => __('Licenciado', 'nextool'),
-               'description' => __('Plano pago com acesso a módulos licenciados conforme seu contrato atual.', 'nextool'),
+               'description' => __('Licença paga com acesso aos módulos licenciados conforme seu contrato atual.', 'nextool'),
                'badgeClass'  => 'bg-primary',
             ];
 
          case 'UNKNOWN':
-         default:
+         case '':
             return [
                'label'       => __('Não validado', 'nextool'),
-               'description' => __('Valide sua licença para descobrir seu plano, registrar seu ambiente e desbloquear módulos.', 'nextool'),
+               'description' => __('Valide sua licença para descobrir o tipo de licença, registrar seu ambiente e desbloquear módulos.', 'nextool'),
+               'badgeClass'  => 'bg-secondary',
+            ];
+
+         default:
+            // Tipo que esta versão ainda não conhece: mostra o código, nunca "Não validado".
+            return [
+               'label'       => ucfirst(strtolower($tier)),
+               'description' => __('Licença com acesso aos módulos indicados.', 'nextool'),
                'badgeClass'  => 'bg-secondary',
             ];
       }

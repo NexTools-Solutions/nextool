@@ -1078,6 +1078,31 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * Assistente de primeira configuração (PluginNextoolSetupWizard): passos PRÓPRIOS do módulo, entre as Boas-vindas e o
+    * "Quem pode usar"/Resumo que a base acrescenta. Vazio (padrão) = módulo sem assistente. Contrato no cabeçalho de
+    * inc/setupwizard.class.php. Só aparece na instalação nova.
+    *
+    * @return array<int, array>
+    */
+   public function getSetupWizardSteps(): array {
+      return [];
+   }
+
+   /** Versão do assistente (sobe quando os passos mudam de forma relevante). */
+   public function getSetupWizardVersion(): int {
+      return 1;
+   }
+
+   /**
+    * Linhas do passo Resumo: [rótulo => valor], já traduzidas, com a configuração REAL gravada.
+    *
+    * @return array<string, string>
+    */
+   public function getSetupWizardSummary(): array {
+      return [];
+   }
+
+   /**
     * Verifica se o módulo tem dependências
     * 
     * @return array Lista de módulos necessários (module_key)

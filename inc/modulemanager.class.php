@@ -653,6 +653,13 @@ class PluginNextoolModuleManager {
          $this->clearCache();
          $this->refreshModules();
 
+         // Assistente de primeira configuração: SÓ na instalação nova (sem linha anterior). Reinstalação, atualização e
+         // sincronização nunca o armam (o upgrade() chama install(), por isso o gancho é aqui e não no módulo).
+         if ($row === null) {
+            require_once NEXTOOL_PHP_DIR . '/inc/setupwizard.class.php';
+            PluginNextoolSetupWizard::arm($moduleKey);
+         }
+
          return $this->buildModuleActionResult(
             $moduleKey,
             $action,
@@ -2638,6 +2645,8 @@ class PluginNextoolModuleManager {
       // tabelas pelo getDataTables() do objeto, que precisa do código em disco; na
       // ordem inversa o lookup degradava pro fallback por convenção de nome.
       $tablesDropped = $this->dropTablesForModule($moduleKey);
+      require_once NEXTOOL_PHP_DIR . '/inc/setupwizard.class.php';
+      PluginNextoolSetupWizard::forget($moduleKey);
 
       if ($this->moduleDirectoryExists($moduleKey)) {
          try {
@@ -2922,12 +2931,12 @@ class PluginNextoolModuleManager {
       // Módulos DEV: o plano DESENVOLVIMENTO usa todos. Fora dele, só o DEV que uma licença
       // vinculada NOMEIA -- e esse segue as regras de módulo licenciado abaixo (modo FREE,
       // validade da licença, allowed_modules), como qualquer módulo PAID.
-      if ($isDevModule && $plan !== 'DESENVOLVIMENTO'
+      if ($isDevModule && !PluginNextoolLicenseValidator::isDevPlan($plan)
          && !PluginNextoolLicenseValidator::isDevModuleGrantedByLicense($moduleKey)
       ) {
          return [
             'success' => false,
-            'message' => __('Módulos de desenvolvimento (DEV) estão disponíveis apenas para o plano Desenvolvimento.', 'nextool'),
+            'message' => __('Módulos de desenvolvimento (DEV) estão disponíveis apenas para o tipo de licença Desenvolvimento.', 'nextool'),
             'validation' => $validation,
          ];
       }

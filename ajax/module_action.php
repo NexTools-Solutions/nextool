@@ -229,6 +229,16 @@ if ($requestedReturnTab !== '' && in_array($requestedReturnTab, $validTabs, true
 
 $redirectUrl = nextoolBuildModuleRedirectUrl($returnTab, $moduleFilter);
 
+// Assistente de primeira configuração: módulo recém-ativado com assistente pendente vai para a página dele, onde o
+// modal abre sozinho (vale também para módulo com página própria, que antes voltava ao catálogo).
+if ($action === 'enable' && !empty($result['success']) && PluginNextoolPermissionManager::canAdmin($moduleKey, PluginNextoolPermissionManager::CONFIGURE)) {
+   require_once NEXTOOL_PHP_DIR . '/inc/setupwizard.class.php';
+   $wizModule = PluginNextoolModuleManager::getInstance()->getModule($moduleKey);
+   if ($wizModule !== null && PluginNextoolSetupWizard::isPending($moduleKey) && $wizModule->hasConfig()) {
+      $redirectUrl = (string) $wizModule->getConfigPage();
+   }
+}
+
 echo json_encode([
    'success'         => !empty($result['success']),
    'message'         => (string) ($result['message'] ?? ''),

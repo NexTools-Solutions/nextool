@@ -29,7 +29,7 @@ declare(strict_types=1);
                   <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
                      <i class="fs-2x ti ti-key"></i>
                   </div>
-                  <span><?php echo __('Plano e status do ambiente', 'nextool'); ?></span>
+                  <span><?php echo __('Tipo de licença e status do ambiente', 'nextool'); ?></span>
                </h4>
             </div>
             <div class="card-body">
@@ -46,7 +46,7 @@ declare(strict_types=1);
                <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode === 'INACTIVE'): ?>
                   <div class="alert alert-info mb-4">
                      <i class="ti ti-info-circle me-2"></i>
-                     <?php echo __('A licença ainda não está ativa. O ambiente permanece no plano gratuito até que uma licença válida seja vinculada.', 'nextool'); ?>
+                     <?php echo __('A licença ainda não está ativa. O ambiente segue apenas com os módulos gratuitos até que uma licença válida seja vinculada.', 'nextool'); ?>
                   </div>
                <?php endif; ?>
 
@@ -64,8 +64,9 @@ declare(strict_types=1);
                                  <thead>
                                     <tr>
                                        <th><?php echo __('Licença', 'nextool'); ?></th>
-                                       <th><?php echo __('Plano', 'nextool'); ?></th>
+                                       <th><?php echo __('Tipo de licença', 'nextool'); ?></th>
                                        <th><?php echo __('Status', 'nextool'); ?></th>
+                                       <th><?php echo __('Início', 'nextool'); ?></th>
                                        <th><?php echo __('Validade da licença', 'nextool'); ?></th>
                                        <th><?php echo __('Módulos liberados', 'nextool'); ?></th>
                                     </tr>
@@ -76,28 +77,32 @@ declare(strict_types=1);
                                        $rowPlan = strtoupper($licenseRow['plan'] ?? 'FREE');
                                        $rowStatus = strtoupper($licenseRow['license_status'] ?? 'INACTIVE');
                                        $rowExpires = $licenseRow['expires_at'] ?? null;
+                                       $rowStarts = $licenseRow['starts_at'] ?? null;
                                        $rowModules = [];
                                        if (!empty($licenseRow['allowed_modules']) && is_array($licenseRow['allowed_modules'])) {
                                           $rowModules = $licenseRow['allowed_modules'];
                                        }
-                                       $planBadge = [
-                                          'FREE'           => 'bg-teal',
-                                          'DESENVOLVIMENTO'=> 'bg-blue',
-                                          'LICENCIADO'     => 'bg-indigo',
-                                          'ENTERPRISE'     => 'bg-purple',
-                                       ][$rowPlan] ?? 'bg-secondary';
+                                       // Tipo de licença: rótulo e cor centralizados (aceita os códigos legados).
+                                       $planBadge = PluginNextoolConfigViewState::getPlanBadgeClass($rowPlan);
+                                       $planLabel = PluginNextoolConfigViewState::getPlanLabel($rowPlan);
                                        $statusBadge = [
                                           'ACTIVE'    => 'bg-green',
                                           'INACTIVE'  => 'bg-red',
                                           'SUSPENDED' => 'bg-orange',
                                           'CANCELLED' => 'bg-red',
+                                          'EXPIRED'   => 'bg-red',
                                        ][$rowStatus] ?? 'bg-secondary';
                                        $statusLabel = [
                                           'ACTIVE'    => __('Ativa', 'nextool'),
                                           'INACTIVE'  => __('Inativa', 'nextool'),
                                           'SUSPENDED' => __('Suspensa', 'nextool'),
                                           'CANCELLED' => __('Cancelada', 'nextool'),
+                                          'EXPIRED'   => __('Expirada', 'nextool'),
                                        ][$rowStatus] ?? $rowStatus;
+                                       $startDisplay = '-';
+                                       if (!empty($rowStarts)) {
+                                          $startDisplay = class_exists('Html') ? Html::convDateTime($rowStarts) : $rowStarts;
+                                       }
                                        $validityDisplay = __('Sem expiração', 'nextool');
                                        if (!empty($rowExpires)) {
                                           $formatted = $rowExpires;
@@ -109,12 +114,15 @@ declare(strict_types=1);
                                     ?>
                                     <tr>
                                        <td><code><?php echo PluginNextoolCompat::escape($rowKey); ?></code></td>
-                                       <td><span class="badge text-white <?php echo $planBadge; ?>"><?php echo PluginNextoolCompat::escape(ucfirst(strtolower($rowPlan))); ?></span></td>
+                                       <td><span class="badge text-white <?php echo $planBadge; ?>"><?php echo PluginNextoolCompat::escape($planLabel); ?></span></td>
                                        <td><span class="badge text-white <?php echo $statusBadge; ?>"><?php echo PluginNextoolCompat::escape($statusLabel); ?></span></td>
+                                       <td><?php echo PluginNextoolCompat::escape($startDisplay); ?></td>
                                        <td><?php echo PluginNextoolCompat::escape($validityDisplay); ?></td>
                                        <td>
-                                          <?php if (empty($rowModules) || in_array('*', $rowModules, true)): ?>
+                                          <?php if (in_array('*', $rowModules, true)): ?>
                                              <span class="badge text-white bg-purple"><?php echo __('Todos os módulos', 'nextool'); ?></span>
+                                          <?php elseif (empty($rowModules)): ?>
+                                             <span class="text-muted"><?php echo __('Nenhum módulo', 'nextool'); ?></span>
                                           <?php else: ?>
                                              <?php foreach ($rowModules as $moduleKey): ?>
                                                 <span class="badge text-white bg-teal me-1 mb-1"><?php echo PluginNextoolCompat::escape($moduleKey); ?></span>

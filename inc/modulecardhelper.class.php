@@ -120,7 +120,7 @@ class PluginNextoolModuleCardHelper {
       }
 
       if (!$state['has_validated_plan']) {
-         $out = self::renderBadge(__('Plano não validado. Solicite a um administrador para realizar este passo.', 'nextool'));
+         $out = self::renderBadge(__('Licença não validada. Solicite a um administrador para realizar este passo.', 'nextool'));
          $secondary = [];
          self::appendDataItems($state, $secondary);
          self::appendExternalLinks($state, $secondary);
@@ -229,6 +229,12 @@ class PluginNextoolModuleCardHelper {
                !$state['can_use_module'] || $catalogDisabled || !$canToggleMod
             );
          }
+         // Prioridade 3b: assistente de primeira configuração pendente -> Continuar configuração (abre sozinho lá)
+         elseif (!empty($state['wizard_pending']) && !empty($state['config_url'])) {
+            $primary = self::renderLink(
+               __('Continuar configuração', 'nextool'), 'btn btn-sm btn-primary', 'ti ti-wand', $state['config_url']
+            );
+         }
          // Prioridade 4: Ativo com config -> Configuracoes
          elseif ($state['show_config_button']) {
             $primary = self::renderLink(
@@ -270,6 +276,10 @@ class PluginNextoolModuleCardHelper {
 
          if ($state['show_config_button'] && strpos($primary, 'ti-settings') === false) {
             $secondary[] = self::renderDropdownItem(__('Configurações', 'nextool'), 'ti ti-settings', $state['config_url']);
+         }
+         if (!empty($state['wizard_available']) && !empty($state['config_url'])) {
+            $wizUrl = $state['config_url'] . (strpos((string) $state['config_url'], '?') === false ? '?' : '&') . 'nextool_wizard=1';
+            $secondary[] = self::renderDropdownItem(__('Assistente de configuração', 'nextool'), 'ti ti-wand', $wizUrl);
          }
 
       }
