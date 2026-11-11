@@ -203,13 +203,13 @@ declare(strict_types=1);
                <?php endif; ?>
                <?php
                   // Anúncio antes do download de módulo gratuito (#283): dados para o popup, como JSON (sem JS inline).
+                  // Desde a #301 o popup abre em todo Download (jornada de um clique), então o bloco sai sempre,
+                  // mesmo vazio.
                   $nextoolDownloadAds = PluginNextoolDownloadAds::payloadForPage();
-                  if ($nextoolDownloadAds !== []):
                ?>
                <script type="application/json" id="nextool-download-ads-data"><?php
                   echo json_encode($nextoolDownloadAds, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
                ?></script>
-               <?php endif; ?>
                <div class="row g-3">
                   <?php foreach ($modulesState as $module):
                      $tier = strtoupper($module['billing_tier'] ?? 'FREE');
@@ -251,6 +251,8 @@ declare(strict_types=1);
                        data-module-can-download="<?php echo !empty($module['can_download']) ? '1' : '0'; ?>"
                        data-module-install-ready="<?php echo (!$module['is_installed'] && $module['module_downloaded']) ? '1' : '0'; ?>"
                        data-module-update="<?php echo $module['update_available'] ? '1' : '0'; ?>"
+                       data-module-installed-version="<?php echo PluginNextoolCompat::escape((string) ($module['installed_version'] ?? '')); ?>"
+                       data-module-available-version="<?php echo PluginNextoolCompat::escape((string) ($module['available_version'] ?? '')); ?>"
                        data-module-tier="<?php echo $tier; ?>"
                        data-module-blocked="<?php echo !empty($module['blocked_reason']) ? '1' : '0'; ?>"
                        data-module-category="<?php echo PluginNextoolCompat::escape($moduleCategory); ?>"

@@ -526,9 +526,78 @@ abstract class PluginNextoolBaseObservability {
       return $saida;
    }
 
+   /** Quantos registros do log do módulo vão no relatório do suporte. */
+   public const DIAGNOSTIC_RECORDS_LIMIT = 150;
+
+   /**
+    * O que o modo diagnóstico capturou: registros do log do módulo (todos os níveis, inclusive os de
+    * detalhe que só existem com o diagnóstico ligado) das últimas 24 horas, a janela máxima do modo.
+    * Vai no relatório técnico do suporte da base (`PluginNextoolSupportReport`, seção
+    * `module_diagnostic`), nunca numa URL. Já sem segredo e sem dado pessoal. Contrato default de
+    * colunas: level/action/detail + coluna de data; módulo com esquema próprio sobrescreve.
+    *
+    * @return string[] do mais recente para o mais antigo
+    */
+   public static function diagnosticRecords(int $limite = self::DIAGNOSTIC_RECORDS_LIMIT): array {
+      global $DB;
+      $saida = [];
+      try {
+         $logClass = static::logClass();
+         $table    = $logClass::getTable();
+         $coluna   = static::logDateColumn();
+         if (!$DB->tableExists($table) || !$DB->fieldExists($table, $coluna)) {
+            return $saida;
+         }
+         require_once NEXTOOL_PHP_DIR . '/inc/basemodule.class.php';
+         require_once NEXTOOL_PHP_DIR . '/inc/moduleerror.class.php';
+         $temNivel = $DB->fieldExists($table, 'level');
+         foreach ($DB->request([
+            'FROM'  => $table,
+            'WHERE' => [$coluna => ['>=', date('Y-m-d H:i:s', time() - PluginNextoolBaseModule::DIAGNOSTIC_WINDOW_SECONDS)]],
+            'ORDER' => $coluna . ' DESC',
+            'LIMIT' => max(1, min(500, $limite)),
+         ]) as $row) {
+            $linha = trim(sprintf(
+               '%s [%s] %s %s',
+               (string) ($row[$coluna] ?? ''),
+               $temNivel ? (string) ($row['level'] ?? '') : '-',
+               (string) ($row['action'] ?? ''),
+               static::stripSecretsFromText(mb_substr((string) ($row['detail'] ?? ''), 0, 400))
+            ));
+            $saida[] = PluginNextoolModuleError::sanitize($linha, 500);
+         }
+      } catch (\Throwable $e) {
+         // diagnóstico parcial é melhor que nenhum
+      }
+      return $saida;
+   }
+
+   /** Nome do módulo como o usuário o conhece (catálogo, no idioma da sessão); a chave se não houver. */
+   public static function moduleLabel(): string {
+      global $DB;
+      try {
+         $row = $DB->request([
+            'SELECT' => ['name', 'name_i18n'],
+            'FROM'   => 'glpi_plugin_nextool_main_modules',
+            'WHERE'  => ['module_key' => static::moduleKey()],
+            'LIMIT'  => 1,
+         ])->current();
+         if ($row) {
+            $nome = class_exists('PluginNextoolModuleCatalog')
+               ? PluginNextoolModuleCatalog::localized($row['name_i18n'] ?? null, (string) $row['name'])
+               : (string) $row['name'];
+            if (trim($nome) !== '') {
+               return trim($nome);
+            }
+         }
+      } catch (\Throwable $e) {
+      }
+      return static::moduleKey();
+   }
+
    /** Snapshot em texto plano, pronto para colar no chamado. */
    public static function snapshotAsText(): string {
-      $linhas = ['=== Diagnostico ' . static::moduleKey() . ' (NexTool) ==='];
+      $linhas = ['=== Diagnóstico ' . static::moduleLabel() . ' (NexTool) ==='];
       foreach (static::snapshot() as $k => $v) {
          if (is_array($v)) {
             $linhas[] = $k . ':';

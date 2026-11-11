@@ -3,9 +3,11 @@ declare(strict_types=1);
 /**
  * Relatório técnico do ambiente para o suporte NexTool (2026-10-09).
  *
- * Só é montado e enviado quando o usuário marca "Anexar relatório técnico" no popup de suporte (caixa
- * desmarcada por padrão) ou clica em "Baixar relatório". A mesma montagem alimenta a prévia, o arquivo e o
- * envio: o que o usuário vê é exatamente o que sai.
+ * Só é montado e enviado com a caixa "Anexar relatório técnico" marcada no popup de suporte, ou em "Baixar
+ * relatório". A caixa vem MARCADA por padrão desde 2026-11-10 (decisão do owner: a base legal do envio é a
+ * execução do suporte pedido, com a prévia como transparência; antes era desmarcada). O usuário pode desmarcar.
+ * A mesma montagem alimenta a prévia, o arquivo e o envio: o que o usuário vê é exatamente o que sai.
+ * Quando o atendimento é sobre um módulo, o relatório leva também o diagnóstico dele (`module_diagnostic`).
  *
  * Minimização (LGPD): só dados técnicos do ambiente e erros ligados ao NexTool (plugin e módulos), dos
  * últimos 7 dias, lidos do FIM dos arquivos, agrupados por assinatura e com teto de tamanho. Todo texto livre
@@ -59,7 +61,7 @@ final class PluginNextoolSupportReport {
     * @param int|null $now timestamp de referência (injetável no teste)
     * @return array<string, mixed>
     */
-   public static function build(?int $now = null): array {
+   public static function build(?int $now = null, ?string $item = null): array {
       $now = $now ?? time();
       $report = [
          'schema'       => self::SCHEMA,
@@ -72,6 +74,12 @@ final class PluginNextoolSupportReport {
          'prereq'       => self::safe([self::class, 'prereq']),
          'errors'       => self::safe(static fn(): array => self::errors($now)),
       ];
+      // Diagnóstico do módulo escolhido em "Sobre o quê?" (2026-11-10): o que o modo diagnóstico capturou
+      // vai junto com o atendimento, em vez de o cliente copiar e colar.
+      $diag = self::safe(static fn(): array => self::moduleDiagnostic((string) $item));
+      if ($diag !== []) {
+         $report['module_diagnostic'] = $diag;
+      }
       return self::fitToLimit($report);
    }
 
@@ -238,7 +246,8 @@ final class PluginNextoolSupportReport {
          return $items;
       }
       $rows = [];
-      foreach ($DB->request(['FROM' => $table, 'WHERE' => ['is_installed' => 1]]) as $row) {
+      // O módulo `template` é o scaffold interno de referência: não é item de suporte (nextool-dev#302).
+      foreach ($DB->request(['FROM' => $table, 'WHERE' => ['is_installed' => 1, 'NOT' => ['module_key' => 'template']]]) as $row) {
          $name = class_exists('PluginNextoolModuleCatalog')
             ? PluginNextoolModuleCatalog::localized($row['name_i18n'] ?? null, (string) $row['name'])
             : (string) $row['name'];
@@ -571,8 +580,56 @@ final class PluginNextoolSupportReport {
       }
    }
 
-   /** Corta grupos de erro até caber no teto. */
+   /**
+    * Diagnóstico do módulo para o relatório: o resumo do módulo (versões, configuração relevante, falhas
+    * recentes) e os registros do log dele das últimas 24 horas, que incluem os de detalhe gravados com o
+    * modo diagnóstico ligado. Vazio para o plugin base, módulo sem a casca de observabilidade ou usuário
+    * sem "Ver logs" do módulo. Todo texto passa por sanitize() e maskPeople(), como os erros.
+    *
+    * @return array<string, mixed>
+    */
+   private static function moduleDiagnostic(string $item): array {
+      require_once NEXTOOL_PHP_DIR . '/inc/modulediagnostic.class.php';
+      $key = PluginNextoolModuleDiagnostic::cleanKey($item);
+      if ($key === '' || $key === 'plugin' || PluginNextoolModuleDiagnostic::module($key) === null
+          || !PluginNextoolModuleDiagnostic::canViewLogs($key)) {
+         return [];
+      }
+      $class = 'PluginNextool' . ucfirst($key) . 'Observability';
+      $file  = NEXTOOL_MODULES_BASE . '/' . $key . '/inc/observability.class.php';
+      if (!class_exists($class, false) && is_file($file)) {
+         require_once $file;
+      }
+      require_once NEXTOOL_PHP_DIR . '/inc/baseobservability.class.php';
+      if (!class_exists($class, false) || !is_subclass_of($class, 'PluginNextoolBaseObservability')) {
+         return [];
+      }
+      $people = self::peopleTokens();
+      $limpa = static function ($valor) use (&$limpa, $people) {
+         if (is_array($valor)) {
+            return array_map($limpa, $valor);
+         }
+         return is_string($valor) ? self::maskPeople(self::sanitize($valor), $people) : $valor;
+      };
+      $status = PluginNextoolModuleDiagnostic::status($key);
+      return [
+         'module'           => $key,
+         'diagnostic_mode'  => $status['active'] ? 'on' : 'off',
+         'diagnostic_until' => (string) $status['until'],
+         'summary'          => $limpa($class::snapshot()),
+         'records_window_hours' => 24,
+         'records'          => $limpa($class::diagnosticRecords()),
+      ];
+   }
+
+   /** Corta primeiro os registros do diagnóstico do módulo (os mais antigos) e depois os grupos de erro, até caber no teto. */
    private static function fitToLimit(array $report): array {
+      while (strlen(self::toText($report)) > self::MAX_BYTES && !empty($report['module_diagnostic']['records'])) {
+         $report['module_diagnostic']['records'] = array_slice(
+            $report['module_diagnostic']['records'], 0, (int) floor(count($report['module_diagnostic']['records']) / 2)
+         );
+         $report['module_diagnostic']['truncated'] = true;
+      }
       while (strlen(self::toText($report)) > self::MAX_BYTES && !empty($report['errors']['groups'])) {
          array_pop($report['errors']['groups']);
          $report['errors']['truncated'] = true;

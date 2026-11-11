@@ -9,7 +9,14 @@ declare(strict_types=1);
  * Regras (decisões do owner, 2026-10-09): SLA sem horário de atendimento; licenciado (item = módulo com licença
  * ativa) Bug até 2 dias úteis e Suporte geral até 5; gratuito Bug até 5 e Dúvida até 30, sem suporte a módulos;
  * sugestão não abre atendimento (vira registro fechado); urgência por WhatsApp só com licença ativa; relatório
- * técnico com a caixa desmarcada e prévia. O nível real é decidido pelo servidor.
+ * técnico com prévia e a caixa MARCADA por padrão (decisão do owner em 2026-11-10; era desmarcada). No tipo Bug o
+ * relatório é obrigatório (caixa travada; o servidor anexa sempre); em Sugestão não vai. O nível real é decidido
+ * pelo servidor.
+ *
+ * Nas páginas de módulo o popup não está na página: o botão "Suporte" ao lado do Salvar
+ * (PluginNextoolModuleChrome::diagnosticButtons) pede este HTML a ajax/support.php (action=modal) e abre com o
+ * módulo já escolhido (window.nextoolSupportOpen). Com um módulo em "Sobre o quê?", o relatório leva o
+ * diagnóstico dele.
  * Desenho: /data/relatorios/suporte-no-plugin-2026-10-09/desenho.md
  *
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
@@ -92,7 +99,7 @@ $nxSupportTypes = [
                   <div class="row g-3">
                      <div class="col-12 col-md-6">
                         <label class="form-label fw-semibold" for="nextool-support-item"><?php echo __('Sobre o quê?', 'nextool'); ?></label>
-                        <select class="form-select" id="nextool-support-item" onchange="nextoolSupportRenderTypes();">
+                        <select class="form-select" id="nextool-support-item" onchange="nextoolSupportRenderTypes(); var p = document.getElementById('nextool-support-preview'); if (p) { p.classList.add('d-none'); p.textContent = ''; }">
                            <?php foreach ($nxSupportItems as $row): ?>
                               <option value="<?php echo PluginNextoolCompat::escape($row['key']); ?>" data-licensed="<?php echo $row['licensed'] ? '1' : '0'; ?>">
                                  <?php echo PluginNextoolCompat::escape($row['name'] . ($row['licensed'] ? ' (' . __('licenciado', 'nextool') . ')' : '')); ?>
@@ -118,16 +125,17 @@ $nxSupportTypes = [
                         <div class="col-12">
                            <div class="border rounded p-2">
                               <label class="form-check mb-1">
-                                 <input class="form-check-input" type="checkbox" id="nextool-support-with-report">
+                                 <input class="form-check-input" type="checkbox" id="nextool-support-with-report" checked>
                                  <span class="form-check-label fw-semibold"><?php echo __('Anexar relatório técnico deste ambiente', 'nextool'); ?>
+                                    <span class="badge bg-secondary text-white ms-1 d-none" id="nextool-support-report-required"><?php echo __('Obrigatório para Bug', 'nextool'); ?></span>
                                     <?php // Ajuda no padrão do core ("?" form-help + data-bs-title); o initTooltips() do GLPI inicializa. ?>
                                     <span class="form-help" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
-                                       data-bs-title="<?php echo PluginNextoolCompat::escape(__('Versões do GLPI, do PHP e do banco, módulos e plugins instalados, tarefas automáticas e os erros ligados ao NexTool dos últimos 7 dias. E-mails, IPs e tokens saem mascarados. Ajuda a equipe a responder sem precisar pedir esses dados.', 'nextool')); ?>">?</span>
+                                       data-bs-title="<?php echo PluginNextoolCompat::escape(__('Versões do GLPI, do PHP e do banco, módulos e plugins instalados, tarefas automáticas e os erros ligados ao NexTool dos últimos 7 dias. Quando o atendimento é sobre um módulo, vai também o diagnóstico dele: os registros das últimas 24 horas, incluindo o que o modo diagnóstico capturou. E-mails, IPs e tokens saem mascarados. Ajuda a equipe a responder sem precisar pedir esses dados.', 'nextool')); ?>">?</span>
                                  </span>
                               </label>
                               <div class="ms-4 mt-1 d-flex flex-wrap gap-3 small">
                                  <a href="#" onclick="nextoolSupportPreview(event);"><i class="ti ti-eye me-1"></i><?php echo __('Ver o que será enviado', 'nextool'); ?></a>
-                                 <a href="<?php echo PluginNextoolCompat::escape($nxSupportEndpoint . '?action=download'); ?>"><i class="ti ti-download me-1"></i><?php echo __('Baixar relatório', 'nextool'); ?></a>
+                                 <a href="<?php echo PluginNextoolCompat::escape($nxSupportEndpoint . '?action=download'); ?>" id="nextool-support-download" onclick="nextoolSupportDownloadHref(this);"><i class="ti ti-download me-1"></i><?php echo __('Baixar relatório', 'nextool'); ?></a>
                               </div>
                               <pre class="d-none mt-2 mb-0 p-2 bg-light border rounded small" id="nextool-support-preview" style="max-height:280px;overflow:auto;white-space:pre-wrap;"></pre>
                            </div>
@@ -174,6 +182,38 @@ $nxSupportTypes = [
 <script>
 // === Popup de suporte (2026-10-09) ===
 var NEXTOOL_SUPPORT_ENDPOINT = <?php echo json_encode($nxSupportEndpoint); ?>;
+var NEXTOOL_SUPPORT_CONFIG_URL = <?php echo json_encode(PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1'); ?>;
+
+// Nas páginas de módulo o helper de POST da página do NexTool não existe: mesma assinatura, mesmo retorno.
+if (typeof window.nextoolPostJson !== 'function') {
+   window.nextoolPostJson = function (endpoint, params) {
+      var tokenless = <?php echo json_encode(PluginNextoolCompat::csrfTokenless()); ?>;
+      var token = '';
+      if (!tokenless) {
+         if (typeof window.getAjaxCsrfToken === 'function') {
+            token = window.getAjaxCsrfToken();
+         } else {
+            var meta = document.querySelector('meta[property="glpi:csrf_token"]');
+            token = meta ? meta.getAttribute('content') : '';
+         }
+      }
+      return fetch(endpoint, {
+         method: 'POST',
+         headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-Glpi-Csrf-Token': token || ''
+         },
+         body: new URLSearchParams(params || {}).toString(),
+         credentials: 'same-origin'
+      }).then(function (r) {
+         return r.json().catch(function () { return {}; }).then(function (data) {
+            return { ok: r.ok, status: r.status, data: data };
+         });
+      });
+   };
+}
 var NEXTOOL_SUPPORT_TYPES = <?php echo json_encode($nxSupportTypes, JSON_UNESCAPED_UNICODE); ?>;
 var NEXTOOL_SUPPORT_TXT = <?php echo json_encode([
    'sla'          => __('Prazo de resposta: até %d dias úteis.', 'nextool'),
@@ -184,6 +224,7 @@ var NEXTOOL_SUPPORT_TXT = <?php echo json_encode([
    'needSubject'  => __('Informe um assunto entre 3 e 150 caracteres.', 'nextool'),
    'needDesc'     => __('Descreva a solicitação com pelo menos 10 caracteres.', 'nextool'),
    'needType'     => __('Escolha o tipo da solicitação.', 'nextool'),
+   'needReport'   => __('Para reportar um bug é preciso anexar o relatório técnico, e só quem administra o NexTool pode gerá-lo. Peça a um administrador do NexTool para abrir o atendimento, ou use outro tipo de solicitação.', 'nextool'),
    'commError'    => __('Erro de comunicação.', 'nextool'),
    'opened'       => __('Atendimento aberto', 'nextool'),
    'openedText'   => __('A equipe responde pelo portal NexTool e você recebe os avisos por e-mail.', 'nextool'),
@@ -250,6 +291,24 @@ function nextoolSupportRenderSla() {
    var days = checked.getAttribute('data-days');
    sla.textContent = days ? nextoolSupportFmt(NEXTOOL_SUPPORT_TXT.sla, days) : '';
    if (label) { label.textContent = days ? NEXTOOL_SUPPORT_TXT.submit : NEXTOOL_SUPPORT_TXT.submitSugg; }
+   nextoolSupportSyncReport(checked.value);
+}
+
+// Relatório técnico por tipo (2026-11-10): Bug = obrigatório (marcado e travado); Sugestão = não vai
+// (desmarcado e travado); Suporte geral e Dúvida = opcional, marcado por padrão.
+function nextoolSupportSyncReport(type) {
+   var box = document.getElementById('nextool-support-with-report');
+   var tag = document.getElementById('nextool-support-report-required');
+   if (!box) { return; }
+   if (type === 'bug') {
+      box.checked = true; box.disabled = true;
+   } else if (type === 'sugestao') {
+      box.checked = false; box.disabled = true;
+   } else {
+      if (box.disabled) { box.checked = true; }
+      box.disabled = false;
+   }
+   if (tag) { tag.classList.toggle('d-none', type !== 'bug'); }
 }
 
 function nextoolSupportReset() {
@@ -260,13 +319,66 @@ function nextoolSupportReset() {
    if (footer) { footer.classList.remove('d-none'); }
    if (success) { success.classList.add('d-none'); }
    nextoolSupportAlert('', '');
+   // Relatório técnico marcado por padrão (2026-11-10); o usuário pode desmarcar.
+   var withReport = document.getElementById('nextool-support-with-report');
+   if (withReport) { withReport.checked = true; }
+   var pre = document.getElementById('nextool-support-preview');
+   if (pre) { pre.classList.add('d-none'); pre.textContent = ''; }
    nextoolSupportRenderTypes();
 }
+
+// Item escolhido em "Sobre o quê?": define se o relatório leva o diagnóstico do módulo.
+function nextoolSupportItem() {
+   return (document.getElementById('nextool-support-item') || {}).value || '';
+}
+
+function nextoolSupportDownloadHref(link) {
+   link.setAttribute('href', NEXTOOL_SUPPORT_ENDPOINT + '?action=download&item=' + encodeURIComponent(nextoolSupportItem()));
+}
+
+/**
+ * Abre o popup já preenchido. Usado pelo botão "Suporte" das páginas de módulo.
+ * @param {{item?: string, type?: string, subject?: string, description?: string}} opts
+ *        `subject`/`description` chegam já escritos quando o suporte nasce de uma falha (ex.: jornada de
+ *        instalação de módulo); o usuário completa e envia.
+ */
+function nextoolSupportOpen(opts) {
+   opts = opts || {};
+   var el = document.getElementById('nextool-support-modal');
+   if (!el || !window.bootstrap) { return; }
+   var apply = function () {
+      el.removeEventListener('shown.bs.modal', apply);
+      var select = document.getElementById('nextool-support-item');
+      if (select && opts.item) {
+         for (var i = 0; i < select.options.length; i++) {
+            if (select.options[i].value === opts.item) { select.selectedIndex = i; break; }
+         }
+         nextoolSupportRenderTypes();
+      }
+      if (opts.type) {
+         var radio = document.getElementById('nextool-support-type-' + opts.type);
+         if (radio) { radio.checked = true; nextoolSupportRenderSla(); }
+      }
+      var subject = document.getElementById('nextool-support-subject');
+      var description = document.getElementById('nextool-support-description');
+      if (subject && typeof opts.subject === 'string') { subject.value = opts.subject.slice(0, 150); }
+      if (description && typeof opts.description === 'string') {
+         description.value = opts.description.slice(0, 10000);
+         description.focus();
+         description.setSelectionRange(description.value.length, description.value.length);
+      }
+   };
+   el.addEventListener('shown.bs.modal', apply);
+   bootstrap.Modal.getOrCreateInstance(el).show();
+}
+window.nextoolSupportOpen = nextoolSupportOpen;
 
 function nextoolSupportGoLink() {
    var el = document.getElementById('nextool-support-modal');
    var target = document.getElementById('nextool-account-link-modal');
    if (window.bootstrap && el) { bootstrap.Modal.getOrCreateInstance(el).hide(); }
+   // Página de módulo: o popup de vínculo mora na página do NexTool.
+   if (!target) { window.location.assign(NEXTOOL_SUPPORT_CONFIG_URL); return; }
    if (window.bootstrap && target) {
       bootstrap.Modal.getOrCreateInstance(target).show();
       if (typeof nextoolRefreshLinkStatus === 'function') { nextoolRefreshLinkStatus(); }
@@ -283,7 +395,7 @@ function nextoolSupportPreview(ev) {
    }
    pre.textContent = NEXTOOL_SUPPORT_TXT.loading;
    pre.classList.remove('d-none');
-   nextoolPostJson(NEXTOOL_SUPPORT_ENDPOINT, { action: 'preview' }).then(function (res) {
+   nextoolPostJson(NEXTOOL_SUPPORT_ENDPOINT, { action: 'preview', item: nextoolSupportItem() }).then(function (res) {
       var d = res.data || {};
       pre.textContent = (res.ok && d.success) ? d.text : (d.message || NEXTOOL_SUPPORT_TXT.commError);
    }).catch(function () {
@@ -301,6 +413,8 @@ function nextoolSupportSubmit(ev) {
    subject = subject.trim();
    description = description.trim();
    if (!type) { nextoolSupportAlert('warning', NEXTOOL_SUPPORT_TXT.needType); return; }
+   // Bug exige o relatório; quem não pode gerá-lo (sem a caixa na tela) não abre Bug.
+   if (type === 'bug' && !withReport) { nextoolSupportAlert('warning', NEXTOOL_SUPPORT_TXT.needReport); return; }
    if (subject.length < 3 || subject.length > 150) { nextoolSupportAlert('warning', NEXTOOL_SUPPORT_TXT.needSubject); return; }
    if (description.length < 10) { nextoolSupportAlert('warning', NEXTOOL_SUPPORT_TXT.needDesc); return; }
    var btn = document.getElementById('nextool-support-submit');

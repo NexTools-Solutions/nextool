@@ -297,6 +297,10 @@ function plugin_nextool_install() {
    if (function_exists('_plugin_nextool_register_crons')) {
       try {
          _plugin_nextool_register_crons();
+         // Carência do alerta de rotinas paradas (#300): 15 min depois de instalar/atualizar.
+         if (class_exists('PluginNextoolJobWatchdog')) {
+            PluginNextoolJobWatchdog::markGrace();
+         }
       } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', 'Registro da CronTask catalogSync falhou: ' . $e->getMessage());
       }
@@ -547,6 +551,42 @@ function plugin_nextool_pre_show_tab($params) {
       if (isset($_GET[$key]) && $_GET[$key] === '') {
          unset($_GET[$key]);
       }
+   }
+
+   // Rotinas paradas (#300): faixa no TOPO da página (o script a leva para fora da aba), na página do NexTool
+   // e na página do módulo que declara rotina.
+   try {
+      $item = $params['item'] ?? null;
+      if (is_object($item) && stripos(get_class($item), 'PluginNextool') === 0) {
+         if (!class_exists('PluginNextoolJobWatchdog')) {
+            require_once __DIR__ . '/inc/jobwatchdog.class.php';
+         }
+         if ($item instanceof PluginNextoolMainConfig) {
+            echo PluginNextoolJobWatchdog::renderAlert('strip');
+         } else {
+            $moduleKey = PluginNextoolJobWatchdog::moduleKeyFromClass(get_class($item));
+            if ($moduleKey !== null) {
+               echo PluginNextoolJobWatchdog::renderAlert('strip', $moduleKey);
+            }
+         }
+      }
+   } catch (\Throwable $e) {
+      // a faixa nunca derruba a aba.
+   }
+}
+
+/**
+ * Hook display_central - faixa "rotinas do NexTool paradas" na página inicial (#300), só para quem
+ * enxerga as abas administrativas do NexTool e só enquanto a ação `nextoolJobs` não roda.
+ */
+function plugin_nextool_display_central() {
+   try {
+      if (!class_exists('PluginNextoolJobWatchdog')) {
+         require_once __DIR__ . '/inc/jobwatchdog.class.php';
+      }
+      PluginNextoolJobWatchdog::displayCentral();
+   } catch (\Throwable $e) {
+      // a faixa nunca derruba a página inicial.
    }
 }
 

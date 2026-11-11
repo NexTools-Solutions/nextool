@@ -24,6 +24,11 @@ class PluginNextoolDownloadAds {
    public const METRICS_CONTEXT = 'plugin:nextool_download_ad_metrics';
    public const EVENTS          = ['impression' => 'impressions', 'click' => 'clicks', 'complete' => 'completions'];
 
+   public const AUDIENCE_FREE     = 'free';
+   public const AUDIENCE_PAID     = 'paid';
+   /** Página de depoimentos do portal; a base acrescenta a chave do módulo (#301). */
+   public const TESTIMONIAL_URL   = 'https://app.nextoolsolutions.com/painel/plugin-nextool?aba=depoimentos&depoimento=';
+
    private const MAX_ADS          = 30;
    private const MAX_METRIC_ITEMS = 50;
    private const MAX_METRIC_VALUE = 1000;
@@ -35,10 +40,15 @@ class PluginNextoolDownloadAds {
     * anúncio vigente: limpa. Quem chama garante que é uma validação real (HTTP 200 com `valid`), nunca um 401/429/5xx.
     */
    public static function persist(?array $block, string $baseUrl = '', string $identifier = '', string $secret = ''): void {
+      // `ads` = anúncios dos módulos gratuitos (contador segura a jornada). `paid_ads` (#301) = agradecimento
+      // dos módulos pagos, sem contador; vem em chave separada porque as bases 6.35 a 6.58 tratariam um AD
+      // geral de pago como geral dos gratuitos.
       $ads = [];
-      foreach (array_slice((array) ($block['ads'] ?? []), 0, self::MAX_ADS) as $raw) {
-         if (is_array($raw) && ($ad = self::sanitize($raw)) !== null) {
-            $ads[] = $ad;
+      foreach ([self::AUDIENCE_FREE => 'ads', self::AUDIENCE_PAID => 'paid_ads'] as $audience => $chave) {
+         foreach (array_slice((array) ($block[$chave] ?? []), 0, self::MAX_ADS) as $raw) {
+            if (is_array($raw) && ($ad = self::sanitize($raw, $audience)) !== null) {
+               $ads[] = $ad;
+            }
          }
       }
       try {
@@ -60,10 +70,13 @@ class PluginNextoolDownloadAds {
       return is_array($ads) ? array_values(array_filter($ads, 'is_array')) : [];
    }
 
-   /** Anúncio que vale para o módulo: o próprio do módulo, senão o geral, senão nenhum. */
-   public static function resolveForModule(string $moduleKey): ?array {
+   /** Anúncio que vale para o módulo naquele público: o próprio do módulo, senão o geral, senão nenhum. */
+   public static function resolveForModule(string $moduleKey, string $audience = self::AUDIENCE_FREE): ?array {
       $default = null;
       foreach (self::getAds() as $ad) {
+         if ((string) ($ad['audience'] ?? self::AUDIENCE_FREE) !== $audience) {
+            continue;
+         }
          if (in_array($moduleKey, (array) ($ad['modules'] ?? []), true)) {
             return $ad;
          }
@@ -101,6 +114,7 @@ class PluginNextoolDownloadAds {
                : null,
             'default'   => !empty($ad['default']),
             'modules'   => array_values((array) ($ad['modules'] ?? [])),
+            'audience'  => (string) ($ad['audience'] ?? self::AUDIENCE_FREE),
          ];
       }
       return $out;
@@ -205,7 +219,7 @@ class PluginNextoolDownloadAds {
     * Só campos conhecidos, texto puro e cortado, link só https, vídeo só YouTube (reduzido ao id), contador 3..30,
     * imagem por sha256 com mime em lista. Anúncio sem título ou sem onde aparecer é descartado.
     */
-   private static function sanitize(array $raw): ?array {
+   private static function sanitize(array $raw, string $audience = self::AUDIENCE_FREE): ?array {
       $id = filter_var($raw['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
       $title = self::text($raw['title'] ?? '', 120);
       if ($id === false || $title === '') {
@@ -236,7 +250,9 @@ class PluginNextoolDownloadAds {
          'video_title'  => self::text($raw['video_title'] ?? '', 200) ?: null,
          'video_views'  => isset($raw['video_views']) && is_numeric($raw['video_views']) && (int) $raw['video_views'] >= 0
             ? (int) $raw['video_views'] : null,
-         'countdown'    => max(3, min(30, (int) ($raw['countdown'] ?? 10))),
+         // AD de módulo pago não tem contador: o cliente lê se quiser.
+         'countdown'    => $audience === self::AUDIENCE_PAID ? 0 : max(3, min(30, (int) ($raw['countdown'] ?? 10))),
+         'audience'     => $audience,
          'image_sha256' => $hasImage ? $sha : null,
          'image_mime'   => $hasImage ? $mime : null,
          'default'      => $isDefault,

@@ -249,7 +249,7 @@ function plugin_nextool_bootstrap_hmac_if_needed(array $distributionSettings, bo
 // Verificação de permissão depende da ação
 $action = $_POST['action'] ?? '';
 
-$validActions = ['', 'validate_license', 'accept_policies', 'unlink_environment', 'save_uninstall_mode', 'save_news_feed', 'job_run_now', 'job_resume'];
+$validActions = ['', 'validate_license', 'accept_policies', 'unlink_environment', 'save_uninstall_mode', 'save_news_feed', 'job_run_now', 'job_resume', 'job_task_recreate'];
 if (!in_array($action, $validActions, true)) {
    http_response_code(400);
    die(json_encode(['success' => false, 'message' => __('Ação inválida.', 'nextool')]));
@@ -298,6 +298,32 @@ if ($action === 'unlink_environment') {
       INFO
    );
 
+   plugin_nextool_redirect_after_action();
+   exit;
+}
+
+if ($action === 'job_task_recreate') {
+   // Rotinas paradas (#300): a ação automática `nextoolJobs` não existe. O registro é idempotente.
+   global $DB;
+   require_once NEXTOOL_PHP_DIR . '/inc/jobdispatcher.class.php';
+   _plugin_nextool_register_crons();
+   $recriada = count($DB->request([
+      'FROM'  => 'glpi_crontasks',
+      'WHERE' => ['itemtype' => 'PluginNextoolJobDispatcher', 'name' => PluginNextoolJobDispatcher::TASK_NAME],
+   ])) > 0;
+   PluginNextoolConfigAudit::log([
+      'section' => 'general',
+      'action'  => $action,
+      'result'  => $recriada ? 1 : 0,
+      'message' => PluginNextoolJobDispatcher::TASK_NAME,
+   ]);
+   Session::addMessageAfterRedirect(
+      $recriada
+         ? __('Ação automática das rotinas recriada. Ela volta a rodar na próxima execução do cron do servidor.', 'nextool')
+         : __('Não foi possível recriar a ação automática das rotinas.', 'nextool'),
+      false,
+      $recriada ? INFO : ERROR
+   );
    plugin_nextool_redirect_after_action();
    exit;
 }

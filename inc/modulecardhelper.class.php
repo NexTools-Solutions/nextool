@@ -163,11 +163,14 @@ class PluginNextoolModuleCardHelper {
                $msg = sprintf(__('Nextool %s necessário para baixar', 'nextool'), $dlMinVer);
                $primary = '<span class="badge bg-warning text-white me-1">' . PluginNextoolCompat::escape($msg) . '</span>';
             } else {
+               // Jornada de um clique (#301): baixa, instala e ativa. Sem permissão de ativar, para em instalado.
                $primary = self::renderActionForm(
-                  $state, 'download', __('Download', 'nextool'),
+                  $state, 'download', $canToggleMod ? __('Baixar e ativar', 'nextool') : __('Baixar e instalar', 'nextool'),
                   'btn btn-sm btn-success module-action', 'ti ti-cloud-download',
                   !$state['distribution_configured'] || !$canDownload,
-                  !$state['distribution_configured'] ? __('Configure o ContainerAPI para liberar o download.', 'nextool') : null
+                  !$state['distribution_configured'] ? __('Configure o ContainerAPI para liberar o download.', 'nextool') : null,
+                  'simple',
+                  $canToggleMod ? ['data-chain' => 'enable'] : []
                );
             }
          }
@@ -179,9 +182,12 @@ class PluginNextoolModuleCardHelper {
          } elseif ($catalogDisabled) {
             $primary = self::renderBadge(__('Módulo desativado no catálogo', 'nextool'));
          } else {
+            // #301: instala e, na sequência, ativa (duas requisições). Sem permissão de ativar, só instala.
             $primary = self::renderActionForm(
-               $state, 'install', __('Instalar', 'nextool'),
-               'btn btn-sm btn-success module-action', 'ti ti-download'
+               $state, 'install', $canToggleMod ? __('Instalar e ativar', 'nextool') : __('Instalar', 'nextool'),
+               'btn btn-sm btn-success module-action', 'ti ti-download',
+               false, null, 'simple',
+               $canToggleMod ? ['data-chain' => 'enable'] : []
             );
          }
 
@@ -492,7 +498,8 @@ class PluginNextoolModuleCardHelper {
 
    private static function renderActionForm(
       array $state, string $action, string $label, string $buttonClass, string $iconClass,
-      bool $disabled = false, ?string $confirmMessage = null, string $confirmType = 'simple'
+      bool $disabled = false, ?string $confirmMessage = null, string $confirmType = 'simple',
+      array $extraAttrs = []
    ): string {
       $disabledAttr = $disabled ? ' disabled' : '';
       $confirmAttr = '';
@@ -506,6 +513,12 @@ class PluginNextoolModuleCardHelper {
       $actionEsc = PluginNextoolCompat::escape($action);
       $labelEsc  = PluginNextoolCompat::escape($label);
       $classes   = PluginNextoolCompat::escape(trim($buttonClass . ' me-1 nextool-module-action'));
-      return "<button type='button' class='{$classes}' data-module='{$moduleKey}' data-action='{$actionEsc}'{$confirmAttr}{$disabledAttr}><i class='{$iconClass} me-1'></i>{$labelEsc}</button>";
+      $extra = '';
+      foreach ($extraAttrs as $attr => $valor) {
+         if (preg_match('/^data-[a-z0-9-]+$/', (string) $attr)) {
+            $extra .= ' ' . $attr . "='" . htmlspecialchars((string) $valor, ENT_QUOTES, 'UTF-8') . "'";
+         }
+      }
+      return "<button type='button' class='{$classes}' data-module='{$moduleKey}' data-action='{$actionEsc}'{$extra}{$confirmAttr}{$disabledAttr}><i class='{$iconClass} me-1'></i>{$labelEsc}</button>";
    }
 }

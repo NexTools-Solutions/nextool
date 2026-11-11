@@ -6,7 +6,11 @@ declare(strict_types=1);
  * Ações:
  * - preview (POST): relatório técnico como texto, para a prévia do popup;
  * - download (GET): o mesmo relatório como arquivo (plano B quando a nuvem não responde);
- * - submit (POST): abre o atendimento no portal pela ContainerAPI, com o relatório só se o usuário marcou a caixa.
+ * - submit (POST): abre o atendimento no portal pela ContainerAPI, com o relatório se a caixa estiver marcada
+ *   (vem marcada por padrão desde 2026-11-10). No tipo Bug o relatório é OBRIGATÓRIO (o servidor anexa sempre e
+ *   recusa quem não pode gerá-lo); em Sugestão nunca vai;
+ * - modal (POST): o HTML do popup, para as páginas de módulo, que não o têm na página (botão "Suporte" ao lado
+ *   do Salvar). O parâmetro `item` (prévia, download e envio) acrescenta ao relatório o diagnóstico do módulo.
  *
  * Falha da plataforma responde 424, nunca 5xx: o proxy na frente do GLPI troca resposta 5xx por página HTML e o
  * JS perderia a mensagem (visto no DEV em 2026-10-09).
@@ -54,12 +58,26 @@ $input = static function (string $key): string {
 
 $canReport = PluginNextoolPermissionManager::canManageAdminTabs();
 
+// Item do atendimento (plugin ou chave de módulo instalado): decide se o relatório leva o diagnóstico do módulo.
+$reportItem = static function (): string {
+   $raw = $_REQUEST['item'] ?? '';
+   $raw = is_string($raw) ? strtolower(trim($raw)) : '';
+   return preg_match('/^[a-z0-9_-]{1,64}$/', $raw) === 1 ? $raw : '';
+};
+
 switch ($action) {
+   case 'modal':
+      // Popup pedido por uma página de módulo: o mesmo include da página do NexTool.
+      ob_start();
+      include NEXTOOL_PHP_DIR . '/front/support.modal.inc.php';
+      $respond(200, ['success' => true, 'html' => (string) ob_get_clean()]);
+      // no break (respond encerra)
+
    case 'preview':
       if (!$canReport) {
          $respond(403, ['success' => false, 'message' => __('Você não tem permissão para gerar o relatório técnico.', 'nextool')]);
       }
-      $text = PluginNextoolSupportReport::toText(PluginNextoolSupportReport::build());
+      $text = PluginNextoolSupportReport::toText(PluginNextoolSupportReport::build(null, $reportItem()));
       $respond(200, ['success' => true, 'text' => $text, 'bytes' => strlen($text)]);
       // no break (respond encerra)
 
@@ -69,7 +87,7 @@ switch ($action) {
       }
       $settings = PluginNextoolConfig::getDistributionSettings();
       $env = preg_replace('/[^A-Za-z0-9-]/', '', (string) ($settings['client_identifier'] ?? '')) ?: 'ambiente';
-      $text = PluginNextoolSupportReport::toText(PluginNextoolSupportReport::build());
+      $text = PluginNextoolSupportReport::toText(PluginNextoolSupportReport::build(null, $reportItem()));
       header('Content-Type: application/json; charset=UTF-8');
       header('Content-Disposition: attachment; filename="nextool-relatorio-' . $env . '-' . date('Ymd-His') . '.json"');
       header('Cache-Control: no-store');
@@ -97,6 +115,16 @@ switch ($action) {
       }
       if (!in_array($type, $types, true) || !isset($items[$item])) {
          $respond(422, ['success' => false, 'message' => __('Escolha o item e o tipo da solicitação.', 'nextool')]);
+      }
+      // Bug sempre leva o relatório técnico (decisão do owner, 2026-11-10): sem ele o diagnóstico fica às cegas.
+      // Suporte geral e Dúvida seguem com o relatório opcional; Sugestão nunca precisa.
+      if ($type === 'bug') {
+         if (!$canReport) {
+            $respond(403, ['success' => false, 'message' => __('Para reportar um bug é preciso anexar o relatório técnico, e só quem administra o NexTool pode gerá-lo. Peça a um administrador do NexTool para abrir o atendimento, ou use outro tipo de solicitação.', 'nextool')]);
+         }
+         $withReport = true;
+      } elseif ($type === 'sugestao') {
+         $withReport = false;
       }
       if ($withReport && !$canReport) {
          $respond(403, ['success' => false, 'message' => __('Você não tem permissão para gerar o relatório técnico.', 'nextool')]);
@@ -126,7 +154,7 @@ switch ($action) {
          'item_name'   => (string) $items[$item]['name'],
          'opened_by'   => $openedBy,
          'locale'      => (string) ($_SESSION['glpilanguage'] ?? ''),
-         'report'      => $withReport ? PluginNextoolSupportReport::build() : null,
+         'report'      => $withReport ? PluginNextoolSupportReport::build(null, $item) : null,
       ];
 
       $unavailable = __('Não foi possível falar com a plataforma NexTool agora. Baixe o relatório e anexe pelo portal, ou tente de novo em instantes.', 'nextool');

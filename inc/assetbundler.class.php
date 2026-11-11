@@ -43,6 +43,16 @@ class PluginNextoolAssetBundler {
    public static function collapseHooks(): void {
       global $PLUGIN_HOOKS;
 
+      // Sem sessão (página de erro anônima, que o core monta com Html::nullHeader e
+      // os add_css/add_javascript normais): module_assets.php e module_bundle.php
+      // exigem login e responderiam 401 a cada asset. Retira as entradas em vez de
+      // emitir requisição perdida. Vale para os 3 majors (no GLPI 10 seriam N
+      // pedidos individuais), por isso vem antes do corte de versão abaixo.
+      if (!Session::getLoginUserID()) {
+         self::dropAuthenticatedAssets();
+         return;
+      }
+
       // SOMENTE GLPI 11. O GLPI 10 valida o asset de plugin com
       // `file_exists($plugin_root_dir . "/{$file}")` (src/Html.php, add_javascript/add_css) --
       // e a URL do bundle carrega query string, então o caminho testado inclui o
@@ -103,6 +113,27 @@ class PluginNextoolAssetBundler {
             . '&h=' . $hash;
 
          $PLUGIN_HOOKS[$hook]['nextool'] = $keep;
+      }
+   }
+
+   /**
+    * Remove dos hooks as entradas servidas pelo module_assets.php (inclusive as
+    * nobundle=1): todas exigem sessão. O que é público (wrappers da base, assets
+    * por module_ajax.php com endpoint próprio, ex.: branding) fica intacto.
+    */
+   private static function dropAuthenticatedAssets(): void {
+      global $PLUGIN_HOOKS;
+
+      foreach (['add_javascript', 'add_css'] as $hook) {
+         $entries = $PLUGIN_HOOKS[$hook]['nextool'] ?? null;
+         if (!is_array($entries)) {
+            continue;
+         }
+         $PLUGIN_HOOKS[$hook]['nextool'] = array_values(array_filter(
+            $entries,
+            static fn ($url): bool => !is_string($url)
+               || strpos($url, 'front/module_assets.php?') === false
+         ));
       }
    }
 }

@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.58.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.59.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -402,6 +402,9 @@ function plugin_init_nextool() {
    // pre_show_tab, e nao o boot: o ajax/common.tabs.php preenche sort/order com ''
    // DEPOIS do init do plugin. Ver plugin_nextool_pre_show_tab() no hook.php.
    $PLUGIN_HOOKS['pre_show_tab']['nextool'] = 'plugin_nextool_pre_show_tab';
+
+   // Rotinas paradas (#300): faixa na página inicial, só para administradores do NexTool.
+   $PLUGIN_HOOKS['display_central']['nextool'] = 'plugin_nextool_display_central';
 
    try {
    // Base do scan de classes declaradas DURANTE o init (ver abaixo): so as
