@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.59.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.60.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -439,23 +439,14 @@ function plugin_init_nextool() {
 
 
    // F1a -- a identidade (client_identifier) NÃO é mais gerada localmente: é cunhada pelo
-   // ContainerAPI via enroll no provisionamento ativo (front/config.save.php). Esta chamada
-   // apenas garante o registro base de config e carrega a configuração; getConfig() não gera
-   // mais identificador (installs novos ficam sem identidade até enrollar).
+   // ContainerAPI via enroll no provisionamento ativo (front/config.save.php). Aqui só a classe é
+   // carregada; installs novos ficam sem identidade até enrollar.
    $configfile = NEXTOOL_PHP_DIR . '/inc/config.class.php';
    if (file_exists($configfile)) {
       require_once $configfile;
-      if (class_exists('PluginNextoolConfig')) {
-         try {
-            if (!$nxAssetFastPath) {
-               plugin_nextool_prof_start('getConfig');
-               PluginNextoolConfig::getConfig();
-               plugin_nextool_prof_stop('getConfig');
-            }
-         } catch (Exception $e) {
-            Toolbox::logInFile('plugin_nextool', "Erro ao inicializar client_identifier: " . $e->getMessage());
-         }
-      }
+      // O boot NÃO chama mais PluginNextoolConfig::getConfig(): era 1 SELECT por requisição com o
+      // retorno descartado. O registro base (id=1) nasce no install/upgrade (hook.php) e, se sumir,
+      // é recriado por quem grava (setClientIdentifier/saveConfig) ou lê (getConfig, sob demanda).
    }
 
    // Classe de setup mantida para uso interno; abas em Configurar → Geral foram removidas

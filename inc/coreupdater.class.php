@@ -870,15 +870,22 @@ class PluginNextoolCoreUpdater {
          $targetPath = $this->getPluginInstallPath();
          $currentVersion = $this->getInstalledCoreVersion();
 
-         // Create backup of current state before restoring (best-effort)
+         // Create backup of current state before restoring (best-effort). O backup que está sendo
+         // restaurado fica fora da poda (com a retenção cheia ele era o primeiro a sair).
          try {
-            $this->createVersionedBackup($targetPath);
+            $this->createVersionedBackup($targetPath, $sanitized);
          } catch (Throwable $backupEx) {
             Toolbox::logInFile('plugin_nextool', sprintf(
                "[WARN] [CoreUpdater] Não foi possível criar backup pré-restore: %s\n",
                $backupEx->getMessage()
             ));
          }
+
+         // Mesmo protocolo do apply: os arquivos vão mudar de versão, então o estado vai para
+         // NOTUPDATED durante a cópia e, ao fim, versão e ACTIVATED são gravados juntos. Até a
+         // 6.59.0 o restore só copiava os arquivos: o banco ficava com a versão nova, o core via a
+         // divergência na página seguinte e desativava o NexTool.
+         $previousState = $this->preUpdatePluginState();
 
          $this->setMaintenanceFlag();
 
@@ -887,6 +894,7 @@ class PluginNextoolCoreUpdater {
             $this->overwriteFilesFromStaging($filesDir, $targetPath);
             $this->cleanupRemovedFiles($filesDir, $targetPath);
          } catch (Throwable $e) {
+            $this->restorePluginState($previousState);
             $this->clearMaintenanceFlag();
             $this->invalidateFileCaches();
 
@@ -907,7 +915,26 @@ class PluginNextoolCoreUpdater {
          $this->clearMaintenanceFlag();
          $this->invalidateFileCaches();
 
-         $restoredVersion = (string)($meta['version'] ?? 'desconhecida');
+         // Versão que passou a estar em disco: a do setup.php restaurado (é o que o core compara com
+         // o banco) ou, se não der para ler, a do metadado do backup.
+         $versionOnDisk = (string) ($this->readVersionFromSetup($targetPath) ?? '');
+         if ($versionOnDisk === '') {
+            $versionOnDisk = trim((string) ($meta['version'] ?? ''));
+         }
+         if ($versionOnDisk !== '') {
+            $this->postUpdatePluginActivation($versionOnDisk);
+            $this->verifyAndForceActivated();
+            // O boot seguinte roda o install idempotente da versão restaurada (setup.php).
+            $this->persistState(['pending_apply_version' => $versionOnDisk]);
+            $pendingFlag = $this->getPendingApplyFlagPath();
+            if ($pendingFlag !== null) {
+               @file_put_contents($pendingFlag, $versionOnDisk);
+            }
+         } else {
+            $this->restorePluginState($previousState);
+         }
+
+         $restoredVersion = $versionOnDisk !== '' ? $versionOnDisk : 'desconhecida';
 
          $this->persistState([
             'update_available' => 0,
@@ -1345,6 +1372,34 @@ class PluginNextoolCoreUpdater {
       $values = Config::getConfigurationValues('plugin:nextool_distribution');
       $keys = [];
 
+      // Chave pública oficial da NexTool, embutida no plugin: é a ÂNCORA de confiança da atualização
+      // da base e nunca pode ser substituída. Config e ambiente só ACRESCENTAM kids novos (rotação,
+      // teste), a mesma regra do PluginNextoolEntitlementToken. Até a 6.59.0 a embutida só entrava
+      // quando nenhuma outra estava configurada: quem gravasse uma chave em glpi_configs (ou numa
+      // variável de ambiente) passava a ser o único assinante aceito.
+      $builtinKeyIds = [];
+      $bundledKeys = [
+         'nextool-core-ed25519-1' => 'PNK7FSuZccd9GQBvSTAkPJOpg98ENIiBoNH3M/0V/70=',
+      ];
+      foreach ($bundledKeys as $keyId => $rawKey) {
+         $decoded = $this->decodePublicKey($rawKey);
+         if ($decoded !== null) {
+            $keys[$keyId] = $decoded;
+            $builtinKeyIds[$keyId] = true;
+         }
+      }
+
+      $addKey = function (string $keyId, string $rawKey) use (&$keys, $builtinKeyIds): void {
+         $normalizedId = trim($keyId);
+         if ($normalizedId === '' || isset($builtinKeyIds[$normalizedId])) {
+            return; // kid embutido não se sobrescreve
+         }
+         $decodedKey = $this->decodePublicKey($rawKey);
+         if ($decodedKey !== null) {
+            $keys[$normalizedId] = $decodedKey;
+         }
+      };
+
       $jsonCandidates = [];
       if (isset($values['core_signing_public_keys_json'])) {
          $jsonCandidates[] = (string)$values['core_signing_public_keys_json'];
@@ -1366,45 +1421,20 @@ class PluginNextoolCoreUpdater {
          }
 
          foreach ($decoded as $keyId => $rawKey) {
-            $normalizedId = trim((string)$keyId);
-            $decodedKey = $this->decodePublicKey((string)$rawKey);
-            if ($normalizedId !== '' && $decodedKey !== null) {
-               $keys[$normalizedId] = $decodedKey;
-            }
+            $addKey((string) $keyId, (string) $rawKey);
          }
       }
 
       $singleKeyId = trim((string)($values['core_signing_key_id'] ?? ''));
       $singleKeyRaw = trim((string)($values['core_signing_public_key'] ?? ''));
       if ($singleKeyId !== '' && $singleKeyRaw !== '') {
-         $decoded = $this->decodePublicKey($singleKeyRaw);
-         if ($decoded !== null) {
-            $keys[$singleKeyId] = $decoded;
-         }
+         $addKey($singleKeyId, $singleKeyRaw);
       }
 
       $envSingleId = getenv('NEXTOOL_CORE_SIGNING_KEY_ID');
       $envSingleKey = getenv('NEXTOOL_CORE_SIGNING_PUBLIC_KEY');
       if ($envSingleId !== false && $envSingleKey !== false) {
-         $decoded = $this->decodePublicKey((string)$envSingleKey);
-         $normalizedId = trim((string)$envSingleId);
-         if ($decoded !== null && $normalizedId !== '') {
-            $keys[$normalizedId] = $decoded;
-         }
-      }
-
-      // Bundled public key - fallback when no key is configured via DB or env.
-      // This is the official NexTool signing key, safe to distribute with the plugin.
-      if (count($keys) === 0) {
-         $bundledKeys = [
-            'nextool-core-ed25519-1' => 'PNK7FSuZccd9GQBvSTAkPJOpg98ENIiBoNH3M/0V/70=',
-         ];
-         foreach ($bundledKeys as $keyId => $rawKey) {
-            $decoded = $this->decodePublicKey($rawKey);
-            if ($decoded !== null) {
-               $keys[$keyId] = $decoded;
-            }
-         }
+         $addKey((string) $envSingleId, (string) $envSingleKey);
       }
 
       if (count($keys) === 0) {
@@ -1443,7 +1473,9 @@ class PluginNextoolCoreUpdater {
          $binary = $raw;
       }
 
-      if (strlen($binary) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES) {
+      // 32 = tamanho da chave pública Ed25519. Sem a extensão sodium a constante não existe, e o
+      // caminho alternativo por openssl quebrava aqui antes de verificar a assinatura.
+      if (strlen($binary) !== (defined('SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES') ? SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES : 32)) {
          return null;
       }
 
@@ -1629,8 +1661,12 @@ class PluginNextoolCoreUpdater {
          ];
       }
 
+      // Versão de ANTES do apply, lida agora: o passo 7 grava a nova em glpi_plugins, e ler depois
+      // devolvia a versão nova como "anterior" (resposta e log do auto-update).
+      $previousVersion = $this->getInstalledCoreVersion();
+
       // 1. Pre-update: force NOTUPDATED to prevent "version changed" deactivation (marketplace pattern)
-      $this->preUpdatePluginState();
+      $previousState = $this->preUpdatePluginState();
 
       $backupFilesPath = null;
       try {
@@ -1669,8 +1705,9 @@ class PluginNextoolCoreUpdater {
          $this->persistState(['pending_apply_version' => $targetVersion]);
 
          // Flag-file fast-path para setup.php (evita SELECT em glpi_configs todo init)
-         if (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR)) {
-            @file_put_contents(GLPI_CACHE_DIR . '/nextool_pending_apply', $targetVersion);
+         $pendingFlag = $this->getPendingApplyFlagPath();
+         if ($pendingFlag !== null) {
+            @file_put_contents($pendingFlag, $targetVersion);
          }
 
          // Sem redirect_url (#264): o front recarrega a pagina atual. Nada aqui depende da
@@ -1680,7 +1717,7 @@ class PluginNextoolCoreUpdater {
             'success' => true,
             'message' => __('Atualização concluída com sucesso. Recarregando...', 'nextool'),
             'data' => [
-               'previous_version' => $this->getInstalledCoreVersion(),
+               'previous_version' => $previousVersion,
                'target_version' => $targetVersion,
                'current_version' => $targetVersion,
                'final_state' => 'completed',
@@ -1693,16 +1730,31 @@ class PluginNextoolCoreUpdater {
             $e->getMessage()
          ));
          // Só faz rollback se já houver backup (falha antes do backup deixa fs intacto)
+         $filesIntact = true;
          if ($backupFilesPath !== null) {
             try {
                $this->rollbackFromBackup($backupFilesPath, $targetPath);
             } catch (Throwable $rollbackEx) {
+               $filesIntact = false;
                Toolbox::logInFile('plugin_nextool', sprintf(
                   "[CRITICAL] [CoreUpdater] rollback também falhou: %s\n",
                   $rollbackEx->getMessage()
                ));
             }
          }
+         if (!$filesIntact) {
+            // Arquivos em estado incerto: o plugin fica desativado de propósito (carregar código
+            // misturado é pior) e a mensagem diz isso, em vez de anunciar um rollback que não houve.
+            return [
+               'success' => false,
+               'message' => sprintf(
+                  __('A atualização falhou e os arquivos anteriores não puderam ser restaurados: %s. O NexTool ficou desativado; restaure um backup ou reinstale o plugin.', 'nextool'),
+                  $e->getMessage()
+               ),
+            ];
+         }
+         // Arquivos como eram: o plugin volta ao estado que tinha antes do passo 1.
+         $this->restorePluginState($previousState);
          return [
             'success' => false,
             'message' => sprintf(__('Apply falhou com rollback: %s', 'nextool'), $e->getMessage()),
@@ -1714,7 +1766,7 @@ class PluginNextoolCoreUpdater {
       }
    }
 
-   private function createVersionedBackup(string $pluginPath): array {
+   private function createVersionedBackup(string $pluginPath, ?string $preserveBackupId = null): array {
       $version = $this->getInstalledCoreVersion();
       $backupId = $version . '_' . date('Ymd_His');
       $backupsRoot = $this->getBackupsRoot();
@@ -1745,7 +1797,7 @@ class PluginNextoolCoreUpdater {
          json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
       );
 
-      $this->pruneOldBackups();
+      $this->pruneOldBackups($preserveBackupId);
 
       Toolbox::logInFile('plugin_nextool', sprintf(
          "[DEBUG] [CoreUpdater] Backup versionado criado: %s\n", $backupId
@@ -1754,7 +1806,12 @@ class PluginNextoolCoreUpdater {
       return $meta;
    }
 
-   private function pruneOldBackups(): void {
+   /**
+    * @param string|null $preserveBackupId backup que NÃO pode sair na poda (o que está sendo restaurado).
+    *        Até a 6.59.0, com a retenção cheia, restaurar o backup mais antigo criava o backup
+    *        pré-restore e a poda apagava justamente o alvo: o restore falhava e o backup se perdia.
+    */
+   private function pruneOldBackups(?string $preserveBackupId = null): void {
       $root = $this->getBackupsRoot();
       if (!is_dir($root)) {
          return;
@@ -1763,6 +1820,9 @@ class PluginNextoolCoreUpdater {
       $backups = [];
       foreach (scandir($root) ?: [] as $entry) {
          if ($entry === '.' || $entry === '..') {
+            continue;
+         }
+         if ($preserveBackupId !== null && $entry === $preserveBackupId) {
             continue;
          }
          $dir = $root . '/' . $entry;
@@ -2078,13 +2138,18 @@ class PluginNextoolCoreUpdater {
     * This prevents GLPI from triggering "Plugin version changed, deactivated"
     * on the next boot. Follows the same pattern as Marketplace/Controller.php.
     */
-   private function preUpdatePluginState(): void {
+   /**
+    * @return int|null o estado que o plugin tinha ANTES (para devolver se a operação não concluir),
+    *                  ou null quando o estado não foi alterado
+    */
+   private function preUpdatePluginState(): ?int {
       try {
          $plugin = new Plugin();
          if (
             $plugin->getFromDBbyDir('nextool')
             && !in_array($plugin->fields['state'], [Plugin::ANEW, Plugin::NOTINSTALLED, Plugin::NOTUPDATED])
          ) {
+            $previous = (int) $plugin->fields['state'];
             $plugin->update([
                'id'    => $plugin->fields['id'],
                'state' => Plugin::NOTUPDATED,
@@ -2092,12 +2157,49 @@ class PluginNextoolCoreUpdater {
             Toolbox::logInFile('plugin_nextool',
                "[DEBUG] [CoreUpdater] Pre-update: estado forçado para NOTUPDATED.\n"
             );
+            return $previous;
          }
       } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', sprintf(
             "[WARN] [CoreUpdater] Falha no pre-update state: %s\n", $e->getMessage()
          ));
       }
+      return null;
+   }
+
+   /**
+    * Devolve o estado que o `preUpdatePluginState()` trocou, quando a operação NÃO concluiu e os
+    * arquivos do plugin voltaram (ou nunca saíram) do que eram. O core só carrega plugin ACTIVATED e
+    * nada desfaz o NOTUPDATED sozinho: até a 6.59.0 um apply que falhava respondia "falhou com
+    * rollback" e, na página seguinte, o NexTool e todos os módulos estavam desativados.
+    */
+   private function restorePluginState(?int $previousState): void {
+      if ($previousState === null) {
+         return;
+      }
+      try {
+         global $DB;
+         $DB->update('glpi_plugins', ['state' => $previousState], ['directory' => 'nextool']);
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[DEBUG] [CoreUpdater] Estado do plugin devolvido para %d (operação não concluída).\n", $previousState
+         ));
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[WARN] [CoreUpdater] Falha ao devolver o estado do plugin: %s\n", $e->getMessage()
+         ));
+      }
+   }
+
+   /** Versão declarada no `setup.php` de um diretório do plugin (ou null se não der para ler). */
+   private function readVersionFromSetup(string $pluginPath): ?string {
+      $content = @file_get_contents(rtrim($pluginPath, '/') . '/setup.php');
+      if (!is_string($content)) {
+         return null;
+      }
+      if (preg_match("/define\\(\\s*'PLUGIN_NEXTOOL_VERSION'\\s*,\\s*'([^']+)'\\s*\\)/", $content, $m)) {
+         return trim($m[1]) !== '' ? trim($m[1]) : null;
+      }
+      return null;
    }
 
    /**
@@ -2221,8 +2323,15 @@ class PluginNextoolCoreUpdater {
       return $this->getRuntimeRoot() . '/backups';
    }
 
-   private function getPluginInstallPath(): string {
-      return rtrim($this->getPluginsDir(), '/') . '/nextool';
+   /**
+    * Diretório REAL onde o plugin está instalado: `NEXTOOL_PHP_DIR` (Plugin::getPhpDir), que cobre
+    * `plugins/` e `marketplace/`. Até a 6.59.0 o alvo era fixo em `GLPI_ROOT/plugins/nextool`
+    * (via `GLPI_PLUGIN_DIR`, constante que não existe no core): com a base em `marketplace/` o
+    * preflight bloqueava para sempre, e havendo uma cópia antiga em `plugins/` o apply sobrescrevia
+    * a cópia errada. `protected` para os testes apontarem para uma área isolada.
+    */
+   protected function getPluginInstallPath(): string {
+      return rtrim((string) NEXTOOL_PHP_DIR, '/');
    }
 
    private function getWebProcessUser(): string {
@@ -2352,7 +2461,16 @@ class PluginNextoolCoreUpdater {
       return '0.0.0';
    }
 
-   private function getRuntimeRoot(): string {
+   /**
+    * Arquivo-flag lido pelo boot (setup.php) para rodar o install idempotente depois de um apply ou
+    * de um restore. `protected` para os testes não armarem a flag do ambiente real.
+    */
+   protected function getPendingApplyFlagPath(): ?string {
+      return (defined('GLPI_CACHE_DIR') && is_dir(GLPI_CACHE_DIR)) ? GLPI_CACHE_DIR . '/nextool_pending_apply' : null;
+   }
+
+   /** `protected` para os testes apontarem staging e backups para uma área isolada. */
+   protected function getRuntimeRoot(): string {
       return rtrim(NEXTOOL_DOC_DIR, '/') . '/core-update';
    }
 
@@ -2418,10 +2536,6 @@ class PluginNextoolCoreUpdater {
          return $extractRoot;
       }
       return $candidate;
-   }
-
-   private function getPluginsDir(): string {
-      return defined('GLPI_PLUGIN_DIR') ? rtrim(GLPI_PLUGIN_DIR, '/') : (rtrim(GLPI_ROOT, '/') . '/plugins');
    }
 
    private function getLockFilePath(): string {

@@ -11,7 +11,7 @@ declare(strict_types=1);
 ?>
 
 <!-- TAB 3: Logs -->
-<?php $show_logs = (!$nextool_is_standalone || $nextool_standalone_output_tab === 'logs') && $canViewAdminTabs; if ($show_logs): ?>
+<?php $show_logs = (!$nextool_is_standalone || $nextool_standalone_output_tab === 'logs') && !empty($canViewBaseLogs); if ($show_logs): ?>
 <?php if (!$nextool_is_standalone): ?><div class="tab-pane fade<?php echo $firstTabKey === 'logs' ? ' show active' : ''; ?>" id="rt-tab-logs" role="tabpanel" aria-labelledby="rt-tab-logs-link"><?php endif; ?>
    <?php echo $nextool_hero_standalone; ?>
 
@@ -57,6 +57,13 @@ declare(strict_types=1);
             overflow: visible !important;
             height: auto !important;
          }
+         <?php if (!PluginNextoolPermissionManager::canExportBaseLogs()): ?>
+         /* Sem "Exportar logs" o servidor recusa a exportação: o controle não é oferecido. */
+         .nextool-tab-card button[name="export"],
+         .nextool-tab-card button[name="export"] + .dropdown-menu {
+            display: none !important;
+         }
+         <?php endif; ?>
          </style>
       </div>
    </div>

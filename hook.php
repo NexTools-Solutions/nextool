@@ -375,7 +375,7 @@ function plugin_nextool_uninstall() {
             $modKey = (string)($modRow['module_key'] ?? '');
             if ($modKey === '') { continue; }
             try {
-               $manager->purgeModuleData($modKey);
+               $manager->purgeModuleData($modKey, true); // desinstalação da base: purga também módulo instalado
             } catch (\Throwable $e) {
                Toolbox::logInFile('plugin_nextool', sprintf('Uninstall purge_all: falha ao purgar %s: %s', $modKey, $e->getMessage()));
             }
@@ -415,6 +415,9 @@ function plugin_nextool_uninstall() {
    // (LGPD -- credencial não fica em banco de plugin desinstalado). São re-entregues pelo
    // servidor no primeiro Sincronizar após reinstalar.
    $DB->delete('glpi_configs', ['context' => 'plugin:nextool_managed_services']);
+   if (class_exists('PluginNextoolConfig') && method_exists('PluginNextoolConfig', 'forgetConfigContext')) {
+      PluginNextoolConfig::forgetConfigContext();
+   }
    // #292: o feed de novidades que o plugin cadastrou em Ferramentas > Feeds RSS sai junto (só o que ele
    // criou, pelo id guardado; feeds cadastrados à mão ficam).
    try {
@@ -877,7 +880,8 @@ function _plugin_nextool_build_menus($menu) {
                continue;
             }
             if (method_exists($mod, 'usesStandaloneConfig') && $mod->usesStandaloneConfig() && $mod->hasConfig()) {
-               if (!PluginNextoolPermissionManager::canViewModule($mk)) {
+               // A página é a configuração do módulo: a mesma régua do botão do card (nextool-dev#319).
+               if (!PluginNextoolPermissionManager::canViewModuleConfig($mk)) {
                   continue;
                }
                $key = 'module_' . $mk;

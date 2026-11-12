@@ -64,10 +64,12 @@ final class PluginNextoolPrereqCheck {
     * @return array{ran: bool, source: string, conditions?: string[]}
     */
    public static function run(string $source, bool $force = false): array {
-      self::loadDependencies();
+      // isDue() só olha um arquivo de flag: decide ANTES de carregar as dependências (atualizador,
+      // alertas, catálogo). O boot chama isto em toda requisição e a checagem roda 1 vez por hora.
       if (!$force && !self::isDue()) {
          return ['ran' => false, 'source' => $source];
       }
+      self::loadDependencies();
       $facts      = self::gatherFacts();
       $conditions = self::evaluate($facts);
       self::apply($conditions);

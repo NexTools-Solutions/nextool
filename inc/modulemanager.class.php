@@ -42,6 +42,17 @@ require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
 
 class PluginNextoolModuleManager {
 
+   /**
+    * Colunas de `glpi_plugin_nextool_main_modules` que o cache de linhas carrega no boot (ver
+    * moduleRowCacheColumns). Ficam de fora os textos de catálogo: description, description_i18n,
+    * features_json, features_i18n e afins.
+    */
+   private const ROW_CACHE_COLUMNS = [
+      'id', 'module_key', 'name', 'name_i18n', 'version', 'available_version', 'min_version_nextools',
+      'is_installed', 'is_enabled', 'is_available', 'is_discontinued', 'billing_tier', 'config', 'date_mod',
+   ];
+
+
    /** @var PluginNextoolModuleManager Instância singleton */
    private static $instance = null;
 
@@ -582,10 +593,16 @@ class PluginNextoolModuleManager {
       // Executa instalação do módulo. O install de alguns módulos (aiassist, mailanalyzer) roda
       // Migration::executeMigration, que ecoa a tela de progresso ("Tarefa concluída. (0 segundo)")
       // no HTML. Capturamos esse output para não vazar na UI (handler imune ao ob_flush interno).
+      // try/finally: se o install() lançar, o buffer que descarta tudo não pode ficar aberto (engoliria
+      // o resto da resposta, inclusive o JSON de erro).
+      $obLevel = ob_get_level();
       ob_start(static function () { return ''; });
-      $this->disableSchemaCache();
-      $installOk = $module->install();
-      if (ob_get_level() > 0) { @ob_end_clean(); }
+      try {
+         $this->disableSchemaCache();
+         $installOk = $module->install();
+      } finally {
+         self::closeOutputBufferTo($obLevel);
+      }
       if (!$installOk) {
          return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao executar instalação do módulo', 'nextool'), $baseContext);
       }
@@ -699,16 +716,26 @@ class PluginNextoolModuleManager {
          return $this->buildModuleActionResult($moduleKey, $action, false, __('Módulo não está instalado', 'nextool'), $baseContext);
       }
 
-      // Desativa primeiro se estiver ativo
+      // Desativa primeiro se estiver ativo. Se o desativar falhar, a desinstalação para aqui: seguir
+      // zeraria is_enabled sem rodar o onDisable() e deixaria as ações automáticas do módulo ligadas.
       if ($module->isEnabled()) {
-         $this->disableModule($moduleKey);
+         $disabled = $this->disableModule($moduleKey);
+         if (empty($disabled['success'])) {
+            return $this->buildModuleActionResult($moduleKey, $action, false,
+               sprintf(__('Não foi possível desativar o módulo antes de desinstalar: %s', 'nextool'), (string) ($disabled['message'] ?? '')),
+               $baseContext);
+         }
       }
 
       // Executa desinstalação do módulo (apenas desregistra; NÃO executa uninstall.sql nem DROP TABLE).
       // Capturamos eventual output de Migration (tela de progresso) para não vazar na UI.
+      $obLevel = ob_get_level();
       ob_start(static function () { return ''; });
-      $uninstallOk = $module->uninstall();
-      if (ob_get_level() > 0) { @ob_end_clean(); }
+      try {
+         $uninstallOk = $module->uninstall();
+      } finally {
+         self::closeOutputBufferTo($obLevel);
+      }
       if (!$uninstallOk) {
          return $this->buildModuleActionResult($moduleKey, $action, false, __('Falha ao executar desinstalação do módulo', 'nextool'), $baseContext);
       }
@@ -810,9 +837,12 @@ class PluginNextoolModuleManager {
          }
       }
 
-      // Licença para módulos pagos (mesma check em ambos os caminhos)
+      // Licença para módulos pagos: só para ATIVAR. Desativar é sempre permitido. Até a 6.59.0 a
+      // checagem valia nos dois caminhos (bloco colado em enable e disable em 2026-03): o cliente
+      // sem licença não conseguia desativar, o desligamento automático de módulo pago sem direito
+      // (#246) era recusado em silêncio e o uninstall seguia sem rodar o onDisable().
       $billingTier = $this->getBillingTier($moduleKey);
-      if ($billingTier !== 'FREE' && !$this->hasLicenseForModule($moduleKey)) {
+      if ($enabled && $billingTier !== 'FREE' && !$this->hasLicenseForModule($moduleKey)) {
          return $this->buildModuleActionResult($moduleKey, $action, false,
             __('Este módulo requer uma licença. Nenhuma licença encontrada que inclua este módulo.', 'nextool'),
             $baseContext);
@@ -1236,39 +1266,9 @@ class PluginNextoolModuleManager {
       $baseContext = ['origin' => 'remote_distribution'];
 
       // Em modo FREE ou SUSPENDED, não permitir download de módulos pagos.
-      $billingTier = null;
-      if (class_exists('PluginNextoolLicenseConfig')) {
-         $config = PluginNextoolLicenseConfig::getDefaultConfig();
-         $plan = isset($config['plan']) && $config['plan'] !== '' && $config['plan'] !== null
-            ? strtoupper(trim((string)$config['plan']))
-            : 'FREE';
-         $licenseStatus = strtoupper(trim((string)($config['license_status'] ?? '')));
-
-         if ($this->isFreePlan($plan)) {
-            $billingTier = $this->getBillingTier($moduleKey);
-            if ($billingTier !== 'FREE') {
-               return $this->buildModuleActionResult(
-                  $moduleKey,
-                  $action,
-                  false,
-                  __('No modo FREE não é possível baixar novos módulos pagos. Os módulos já instalados continuam utilizáveis; atualizações e novos downloads ficam indisponíveis até vincular uma licença.', 'nextool'),
-                  $baseContext
-               );
-            }
-         }
-
-         if ($licenseStatus === 'SUSPENDED') {
-            $billingTier = $billingTier ?? $this->getBillingTier($moduleKey);
-            if ($billingTier !== 'FREE') {
-               return $this->buildModuleActionResult(
-                  $moduleKey,
-                  $action,
-                  false,
-                  __('Licença suspensa: download de módulos pagos bloqueado.', 'nextool'),
-                  $baseContext
-               );
-            }
-         }
+      $blocked = $this->paidPackageBlockReason((string) $moduleKey, 'download');
+      if ($blocked !== null) {
+         return $this->buildModuleActionResult($moduleKey, $action, false, $blocked, $baseContext);
       }
 
       $result = $this->downloadModuleFromDistribution($moduleKey);
@@ -1300,6 +1300,42 @@ class PluginNextoolModuleManager {
          $needsFinalize ? array_merge($baseContext, ['pending_upgrade' => true]) : $baseContext,
          $needsFinalize ? ['pending_upgrade' => true] : []
       );
+   }
+
+   /**
+    * Pré-checagem de plano para baixar pacote de módulo PAGO: no plano FREE ou com a licença
+    * suspensa o servidor recusaria o manifesto. Fonte única para download, atualização e re-baixar
+    * (até a 6.59.0 o re-baixar e a atualização de módulo bloqueado pulavam esta checagem, e o
+    * re-baixar apagava os arquivos antes de o servidor recusar).
+    *
+    * @param string $kind 'download' ou 'update' (só muda o texto)
+    * @return string|null motivo da recusa, ou null quando pode seguir
+    */
+   private function paidPackageBlockReason(string $moduleKey, string $kind): ?string {
+      if (!class_exists('PluginNextoolLicenseConfig')) {
+         return null;
+      }
+      $config = PluginNextoolLicenseConfig::getDefaultConfig();
+      $plan = isset($config['plan']) && $config['plan'] !== '' && $config['plan'] !== null
+         ? strtoupper(trim((string) $config['plan']))
+         : 'FREE';
+      $licenseStatus = strtoupper(trim((string) ($config['license_status'] ?? '')));
+      $freePlan  = $this->isFreePlan($plan);
+      $suspended = $licenseStatus === 'SUSPENDED';
+      if (!$freePlan && !$suspended) {
+         return null;
+      }
+      if ($this->getBillingTier($moduleKey) === 'FREE') {
+         return null;
+      }
+      if ($freePlan) {
+         return $kind === 'update'
+            ? __('No modo FREE não há acesso a atualizações de módulos pagos. Os módulos já instalados continuam utilizáveis.', 'nextool')
+            : __('No modo FREE não é possível baixar novos módulos pagos. Os módulos já instalados continuam utilizáveis; atualizações e novos downloads ficam indisponíveis até vincular uma licença.', 'nextool');
+      }
+      return $kind === 'update'
+         ? __('Licença suspensa: atualização de módulos pagos bloqueada.', 'nextool')
+         : __('Licença suspensa: download de módulos pagos bloqueado.', 'nextool');
    }
 
    private function downloadModuleFromDistribution(string $moduleKey): array {
@@ -1381,7 +1417,14 @@ class PluginNextoolModuleManager {
 
       $wasEnabled = (bool) ($row['is_enabled'] ?? 0);
 
+      // Módulo pago em plano FREE ou com licença suspensa: recusa ANTES de tocar em qualquer coisa.
+      $blocked = $this->paidPackageBlockReason($moduleKey, !empty($row['is_installed']) ? 'update' : 'download');
+      if ($blocked !== null) {
+         return $this->buildModuleActionResult($moduleKey, $action, false, $blocked, $baseContext);
+      }
+
       // Desativar temporariamente se habilitado (evita onInit durante substituicao)
+      $module = null;
       if ($wasEnabled) {
          $module = $this->getModule($moduleKey);
          if ($module !== null) {
@@ -1389,14 +1432,20 @@ class PluginNextoolModuleManager {
          }
       }
 
-      // Remover arquivos do disco
-      if ($this->moduleDirectoryExists($moduleKey)) {
-         $this->deleteModuleDirectory($moduleKey);
-      }
-
-      // Baixar do ContainerAPI (validacao completa)
+      // Os arquivos atuais NÃO são apagados aqui. Até a 6.59.0 o diretório do módulo era removido
+      // antes do download: se o servidor recusasse o manifesto (plano, vínculo, versão mínima) ou a
+      // rede falhasse, o módulo ficava sem arquivos, sem volta. A troca acontece dentro do download
+      // (DistributionClient::replaceModuleDirectory), só depois de o pacote novo estar pronto.
       $download = $this->downloadModuleFromDistribution($moduleKey);
       if (!$download['success']) {
+         // Nada foi trocado: religa o que o onDisable() acima desligou.
+         if ($wasEnabled && $module !== null) {
+            try {
+               $module->onEnable();
+            } catch (Throwable $e) {
+               Toolbox::logInFile('plugin_nextool', sprintf("Falha ao religar o módulo %s após re-download recusado: %s\n", $moduleKey, $e->getMessage()));
+            }
+         }
          return $this->buildModuleActionResult($moduleKey, $action, false,
             $download['message'], $baseContext);
       }
@@ -1461,6 +1510,10 @@ class PluginNextoolModuleManager {
                $moduleKey,
                $this->blockedModules[$moduleKey]
             ));
+            $blocked = $this->paidPackageBlockReason((string) $moduleKey, 'update');
+            if ($blocked !== null) {
+               return $this->buildModuleActionResult($moduleKey, $action, false, $blocked, $baseContext);
+            }
             $download = $this->downloadModuleFromDistribution($moduleKey);
             if (!$download['success']) {
                return $this->buildModuleActionResult($moduleKey, $action, false, $download['message'], $baseContext);
@@ -1503,39 +1556,9 @@ class PluginNextoolModuleManager {
       }
 
       // Em modo FREE ou SUSPENDED, não permitir atualização de módulos pagos.
-      $billingTier = null;
-      if (class_exists('PluginNextoolLicenseConfig')) {
-         $config = PluginNextoolLicenseConfig::getDefaultConfig();
-         $plan = isset($config['plan']) && $config['plan'] !== '' && $config['plan'] !== null
-            ? strtoupper(trim((string)$config['plan']))
-            : 'FREE';
-         $licenseStatus = strtoupper(trim((string)($config['license_status'] ?? '')));
-
-         if ($this->isFreePlan($plan)) {
-            $billingTier = $this->getBillingTier($moduleKey);
-            if ($billingTier !== 'FREE') {
-               return $this->buildModuleActionResult(
-                  $moduleKey,
-                  $action,
-                  false,
-                  __('No modo FREE não há acesso a atualizações de módulos pagos. Os módulos já instalados continuam utilizáveis.', 'nextool'),
-                  $baseContext
-               );
-            }
-         }
-
-         if ($licenseStatus === 'SUSPENDED') {
-            $billingTier = $billingTier ?? $this->getBillingTier($moduleKey);
-            if ($billingTier !== 'FREE') {
-               return $this->buildModuleActionResult(
-                  $moduleKey,
-                  $action,
-                  false,
-                  __('Licença suspensa: atualização de módulos pagos bloqueada.', 'nextool'),
-                  $baseContext
-               );
-            }
-         }
+      $blocked = $this->paidPackageBlockReason((string) $moduleKey, 'update');
+      if ($blocked !== null) {
+         return $this->buildModuleActionResult($moduleKey, $action, false, $blocked, $baseContext);
       }
 
       // Para atualizar (baixar + aplicar upgrade), sempre validar com force_refresh.
@@ -1888,11 +1911,31 @@ class PluginNextoolModuleManager {
          return;
       }
 
-      $iterator = $DB->request([
-         'FROM' => 'glpi_plugin_nextool_main_modules',
-      ]);
+      // Só as colunas que o boot e os gates leem. O SELECT * trazia também os textos de catálogo
+      // (descrição, destaques e as traduções deles) de TODOS os módulos, inclusive os não instalados:
+      // cerca de 185 KB por requisição contra 41 KB (medido em 2026-11-11: 3,5 ms -> 1,2 ms).
+      $rows = null;
+      $columns = $this->moduleRowCacheColumns();
+      if ($columns !== null) {
+         try {
+            $rows = [];
+            foreach ($DB->request(['SELECT' => $columns, 'FROM' => 'glpi_plugin_nextool_main_modules']) as $row) {
+               $rows[] = $row;
+            }
+         } catch (\Throwable $e) {
+            $rows = null;
+         }
+         // Vazio pode ser tabela vazia OU consulta que falhou em silêncio (GLPI 10 não lança):
+         // nos dois casos a leitura completa abaixo decide.
+         if ($rows === []) {
+            $rows = null;
+         }
+      }
+      if ($rows === null) {
+         $rows = $DB->request(['FROM' => 'glpi_plugin_nextool_main_modules']);
+      }
 
-      foreach ($iterator as $row) {
+      foreach ($rows as $row) {
          $key = $row['module_key'] ?? '';
          if ($key !== '') {
             $this->moduleRowCache[$key] = $row;
@@ -1900,6 +1943,26 @@ class PluginNextoolModuleManager {
       }
 
       $this->rowMapPreloaded = true;
+   }
+
+   /**
+    * Colunas do pré-carregamento do cache de linhas, ou null para ler todas.
+    *
+    * A lista enxuta só vale com o esquema da base CONFERIDO para esta versão (flag
+    * `nextool_schema_ok_<versão>` gravada pela rede de schema do boot): durante uma atualização, antes
+    * de a migração rodar, uma coluna da lista pode ainda não existir. Todas as colunas da lista são
+    * criadas pelo install da base. Quem precisa dos textos de catálogo lê pelo PluginNextoolModuleCatalog.
+    *
+    * @return string[]|null
+    */
+   private function moduleRowCacheColumns(): ?array {
+      static $columns = false;
+      if ($columns === false) {
+         $schemaOk = defined('GLPI_CACHE_DIR') && defined('PLUGIN_NEXTOOL_VERSION')
+            && is_file(GLPI_CACHE_DIR . '/nextool_schema_ok_' . PLUGIN_NEXTOOL_VERSION);
+         $columns = $schemaOk ? self::ROW_CACHE_COLUMNS : null;
+      }
+      return $columns;
    }
 
    /**
@@ -2233,11 +2296,12 @@ class PluginNextoolModuleManager {
       // Migration do GLPI ecoa a tela de progresso direto no HTML. Capturamos e
       // descartamos esse output para não vazar mensagem fixa na UI (mesmo motivo do
       // schema-drift guard). As queries de schema rodam normalmente.
+      $obLevel = ob_get_level();
       ob_start(static function () { return ''; }); // handler descarta (imune ao ob_flush da Migration)
       try {
          $this->disableSchemaCache();
          $ok = $module->upgrade($from, $to) !== false;
-         ob_end_clean();
+         self::closeOutputBufferTo($obLevel);
          if ($ok) {
             $this->clearUpgradeFailure($moduleKey);
          } else {
@@ -2246,7 +2310,8 @@ class PluginNextoolModuleManager {
          }
          return $ok;
       } catch (\Throwable $e) {
-         ob_end_clean();
+         // idempotente: se a exceção veio DEPOIS do fechamento acima, não fecha um buffer de fora
+         self::closeOutputBufferTo($obLevel);
          Toolbox::logInFile('plugin_nextool', sprintf(
             "[ModuleManager] upgrade idempotente de %s (%s -> %s) FALHOU: %s\n",
             $moduleKey, $from ?? 'null', $to ?? 'null', $e->getMessage()
@@ -2527,16 +2592,17 @@ class PluginNextoolModuleManager {
                // capturamos e descartamos esse output para não vazar uma mensagem fixa na UI
                // (bug: "mensagem travada no hero" após desinstalar, no GLPI 10). A migração em si
                // (as queries de schema) roda normalmente -- só o eco visual é suprimido.
+               $obLevel = ob_get_level();
                ob_start(static function () { return ''; }); // handler descarta (imune ao ob_flush da Migration)
                try {
                   $module->runMigrations();
-                  ob_end_clean();
+                  self::closeOutputBufferTo($obLevel);
                   Toolbox::logInFile('plugin_nextool', sprintf(
                      "[ModuleManager] schema-drift guard: %s v%s reconciliado (runMigrations idempotente aplicado)\n",
                      $moduleKey, $diskVersion
                   ));
                } catch (\Throwable $e) {
-                  ob_end_clean();
+                  self::closeOutputBufferTo($obLevel);
                   $healed = false;
                   Toolbox::logInFile('plugin_nextool', sprintf(
                      "[ModuleManager] schema-drift guard: %s v%s NÃO reconciliado (runMigrations falhou: %s) -- schema pode estar ATRÁS da versão registrada\n",
@@ -2623,10 +2689,40 @@ class PluginNextoolModuleManager {
       return false;
    }
 
-   public function purgeModuleData(string $moduleKey): array {
+   /**
+    * Fecha os buffers de saída abertos acima de `$level` (idempotente). Usado pelos pontos que
+    * descartam a tela de progresso da Migration: fechar por nível evita o buffer esquecido aberto
+    * quando o código lança e o fechamento duplo quando a exceção vem depois do primeiro fechamento.
+    */
+   private static function closeOutputBufferTo(int $level): void {
+      while (ob_get_level() > $level) {
+         if (!@ob_end_clean()) {
+            break;
+         }
+      }
+   }
+
+   /**
+    * Apaga os dados de um módulo (tabelas, arquivos e o registro de instalação).
+    *
+    * Só vale para módulo DESINSTALADO e inativo, a mesma pré-condição que a tela impõe ao oferecer
+    * "Apagar dados". Até a 6.59.0 o método não conferia o estado: um POST direto apagava tabelas e
+    * arquivos de um módulo em produção, sem passar por desativar e desinstalar (ações automáticas
+    * ficavam ligadas, direito órfão na matriz). `$force` é só para a desinstalação da própria base
+    * com "apagar tudo" (hook.php), que purga todos os módulos de propósito.
+    */
+   public function purgeModuleData(string $moduleKey, bool $force = false): array {
       global $DB;
 
       $action = 'purge_data';
+      if (!$force) {
+         $stateRow = $this->getModuleRow($moduleKey);
+         if ($stateRow !== null && (!empty($stateRow['is_installed']) || !empty($stateRow['is_enabled']))) {
+            return $this->buildModuleActionResult($moduleKey, $action, false,
+               __('Desinstale o módulo antes de apagar os dados dele.', 'nextool'),
+               ['origin' => 'module_purge_data', 'requested_modules' => [$moduleKey]]);
+         }
+      }
       $module = $this->getModule($moduleKey);
       $customPurgeSuccess = false;
       $directoryRemoved = false;

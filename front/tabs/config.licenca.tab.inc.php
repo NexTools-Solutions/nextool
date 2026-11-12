@@ -14,7 +14,7 @@ declare(strict_types=1);
 ?>
 
 <!-- TAB 2: Licenciamento -->
-<?php $show_licenca = (!$nextool_is_standalone || $nextool_standalone_output_tab === 'licenca') && $canViewAdminTabs; if ($show_licenca): ?>
+<?php $show_licenca = (!$nextool_is_standalone || $nextool_standalone_output_tab === 'licenca') && !empty($canViewLicense); if ($show_licenca): ?>
 <?php if (!$nextool_is_standalone): ?><div class="tab-pane fade" id="rt-tab-licenca" role="tabpanel" aria-labelledby="rt-tab-licenca-link"><?php endif; ?>
    <form method="post" action="<?php echo PluginNextoolCompat::webDir() . '/front/config.save.php'; ?>" id="configForm">
       <?php if (!PluginNextoolCompat::csrfTokenless()) { echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); } ?>

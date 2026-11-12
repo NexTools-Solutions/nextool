@@ -259,6 +259,15 @@ trait PluginNextoolMainConfigBody {
       $tabs[self::TAB_SOBRE] = self::createTabEntry(__('Sobre', 'nextool'), 0, $item::getType(), 'ti ti-info-circle');
       $tabs[5] = self::createTabEntry(__('Logs', 'nextool'), 0, $item::getType(), 'ti ti-report-analytics');
 
+      // Oferta == conteúdo (PERMISSIONS.md § 7): Licenciamento e Logs têm bit próprio no direito
+      // base; sem ele a guia não é oferecida (o conteúdo também recusa, em config.form.php).
+      if (!PluginNextoolPermissionManager::canViewLicense()) {
+         unset($tabs[3]);
+      }
+      if (!PluginNextoolPermissionManager::canViewBaseLogs()) {
+         unset($tabs[5]);
+      }
+
       return $tabs;
    }
 

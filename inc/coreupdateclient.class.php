@@ -198,30 +198,23 @@ class PluginNextoolCoreUpdateClient {
          throw new RuntimeException(sprintf(__('Não foi possível criar diretório temporário: %s', 'nextool'), $targetDir));
       }
 
-      $fp = @fopen($targetPath, 'wb');
-      if ($fp === false) {
-         throw new RuntimeException(sprintf(__('Não foi possível criar arquivo temporário: %s', 'nextool'), $targetPath));
-      }
-
-      $ch = curl_init($downloadUrl);
-      curl_setopt($ch, CURLOPT_FILE, $fp);
-      curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-      curl_setopt($ch, CURLOPT_TIMEOUT, 180);
-      curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-      curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-      if ($this->clientIdentifier !== '') {
-         curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'X-Client-Identifier: ' . $this->clientIdentifier,
+      // Transporte único (PluginNextoolFileHelper::downloadToFile): cliente do core, com o proxy do GLPI.
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      $httpCode = 0;
+      $error = '';
+      $bytes = 0;
+      try {
+         $download = PluginNextoolFileHelper::downloadToFile($downloadUrl, $targetPath, [
+            'headers' => $this->clientIdentifier !== '' ? ['X-Client-Identifier: ' . $this->clientIdentifier] : [],
+            'timeout' => 180,
          ]);
+         $httpCode = (int) $download['http_code'];
+         $bytes = (int) $download['bytes'];
+      } catch (Throwable $e) {
+         $error = $e->getMessage();
       }
 
-      $result = curl_exec($ch);
-      $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      $error = curl_error($ch);
-      curl_close($ch);
-      fclose($fp);
-
-      if (!$result || $httpCode >= 300) {
+      if ($error !== '' || $httpCode >= 300 || $bytes <= 0) {
          @unlink($targetPath);
          Toolbox::logInFile('plugin_nextool', sprintf(
             "[DEBUG] [CoreUpdateClient] downloadPackage() falhou: http=%d error=%s\n",

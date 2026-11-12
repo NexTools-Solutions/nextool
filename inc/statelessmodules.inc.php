@@ -31,6 +31,33 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
+if (!function_exists('plugin_nextool_cache_file_trusted')) {
+   /**
+    * O arquivo de cache do plugin pode ser LIDO?
+    *
+    * O mapa stateless decide quais arquivos AJAX de módulo rodam sem login, e o manifesto de boot
+    * diz ao autoloader que arquivo incluir. Os dois moram no diretório de cache do GLPI (do próprio
+    * processo web). Sem ele, o último recurso é o diretório temporário do sistema, que outros
+    * usuários do servidor também gravam: ali o arquivo só é aceito se for do usuário do processo e
+    * não for gravável por grupo/outros. Sem como conferir (sem posix), é tratado como ausente.
+    */
+   function plugin_nextool_cache_file_trusted(string $file): bool {
+      $tmp = rtrim((string) sys_get_temp_dir(), '/');
+      if ($tmp === '' || strpos($file, $tmp . '/') !== 0) {
+         return true;
+      }
+      if (defined('GLPI_CACHE_DIR') && strpos($file, rtrim((string) GLPI_CACHE_DIR, '/') . '/') === 0) {
+         return true; // o próprio cache do GLPI fica sob o temporário neste ambiente
+      }
+      if (!function_exists('posix_geteuid')) {
+         return false;
+      }
+      $owner = @fileowner($file);
+      $perms = @fileperms($file);
+      return $owner !== false && $owner === posix_geteuid() && $perms !== false && ($perms & 0022) === 0;
+   }
+}
+
 /**
  * Retorna o caminho do arquivo de cache JSON dos módulos stateless.
  *
@@ -66,7 +93,7 @@ function plugin_nextool_stateless_files(): array {
    }
 
    $cacheFile = plugin_nextool_stateless_cache_path();
-   if (file_exists($cacheFile)) {
+   if (file_exists($cacheFile) && plugin_nextool_cache_file_trusted($cacheFile)) {
       $json = @file_get_contents($cacheFile);
       if ($json !== false) {
          $data = @json_decode($json, true);

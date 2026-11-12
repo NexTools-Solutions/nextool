@@ -70,10 +70,24 @@ class PluginNextoolEventLog extends PluginNextoolBaseAuditLog implements Default
     * `canView()` do ITEMTYPE e mais nada. Sem este override qualquer perfil com acesso central
     * baixaria o log inteiro por `?item_type=PluginNextoolEventLog&display_type=-4` (vazamento
     * real medido em 2026-09-03 na antiga grade de validações). O gate é o MESMO da aba que
-    * renderiza a grade (`front/tabs/config.logs.tab.inc.php` -> `canAccessAdminTabs()`).
+    * renderiza a grade (`front/tabs/config.logs.tab.inc.php` -> `canViewBaseLogs()`).
+    *
+    * Dois bits do direito base (PERMISSIONS.md § 2.1): "Ver logs" abre a grade; a exportação
+    * (`report.dynamic.php`) exige também "Exportar logs". Até a 6.59.0 qualquer bit base, até
+    * "Abrir suporte", lia e exportava o log inteiro.
     */
    public static function canView(): bool {
-      return PluginNextoolPermissionManager::canAccessAdminTabs();
+      if (self::isExportRequest()) {
+         return PluginNextoolPermissionManager::canExportBaseLogs();
+      }
+      return PluginNextoolPermissionManager::canViewBaseLogs();
+   }
+
+   /** A requisição atual é a exportação nativa da grade (`front/report.dynamic.php`)? */
+   private static function isExportRequest(): bool {
+      $path = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+      $script = (string) ($_SERVER['SCRIPT_NAME'] ?? '');
+      return str_contains($path, 'report.dynamic.php') || str_contains($script, 'report.dynamic.php');
    }
 
    public static function getSearchURL($full = true) {

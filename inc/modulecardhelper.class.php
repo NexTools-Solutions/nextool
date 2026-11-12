@@ -181,6 +181,9 @@ class PluginNextoolModuleCardHelper {
             $primary = self::renderLicensingButton($state);
          } elseif ($catalogDisabled) {
             $primary = self::renderBadge(__('Módulo desativado no catálogo', 'nextool'));
+         } elseif (!$canInstallMod) {
+            // Botão oferecido == ação autorizada: `install` exige "Instalar módulo" no endpoint.
+            $primary = self::renderBadge(__('Somente visualização', 'nextool'), 'badge bg-info text-white me-1');
          } else {
             // #301: instala e, na sequência, ativa (duas requisições). Sem permissão de ativar, só instala.
             $primary = self::renderActionForm(
@@ -293,7 +296,9 @@ class PluginNextoolModuleCardHelper {
       // Re-baixar: só quando o módulo JÁ foi baixado (há arquivos no disco para substituir)
       // e está desinstalado. Sem download prévio o CTA é "Download" -- não há o que
       // "re"-baixar, então o item não aparece.
-      if (!$state['is_installed'] && !empty($state['module_downloaded']) && !empty($state['distribution_configured'])) {
+      // Mesmo veredito do endpoint (canRunModuleAction 'redownload' em módulo não instalado).
+      if (!$state['is_installed'] && !empty($state['module_downloaded']) && !empty($state['distribution_configured'])
+          && ($canInstallMod || $canUpdateMod)) {
          $secondary[] = self::renderDropdownAction(
             $state,
             'redownload',

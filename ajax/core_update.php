@@ -51,10 +51,22 @@ if (!in_array($action, $allActions, true)) {
    exit;
 }
 
-if (in_array($action, $readActions, true)) {
-   PluginNextoolPermissionManager::assertCanAccessAdminTabs();
-} else {
-   PluginNextoolPermissionManager::assertCanManageAdminTabs();
+// Autorização POR BIT do direito base (PERMISSIONS.md § 2.1): consultar exige "Ver versão" (ou
+// "Aplicar atualização", cujo fluxo começa pela consulta); preparar, aplicar, cancelar e restaurar
+// exigem "Aplicar atualização". Até a 6.59.0 qualquer bit base consultava e qualquer um de
+// "Sincronizar licença"/"Aceitar políticas"/"Aplicar atualização" aplicava e restaurava. A recusa
+// é JSON 403 (o `deny()` do PermissionManager redireciona, o que não serve a um endpoint JSON).
+$allowed = in_array($action, $readActions, true)
+   ? PluginNextoolPermissionManager::canViewCoreVersion()
+   : PluginNextoolPermissionManager::canApplyCoreUpdate();
+if (!$allowed) {
+   PluginNextoolConfig::debugLog(sprintf("[DEBUG] [CoreUpdate] Ação negada por permissão: %s\n", $action));
+   http_response_code(403);
+   echo json_encode([
+      'success' => false,
+      'message' => __('Você não tem permissão para esta ação do NexTool.', 'nextool'),
+   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+   exit;
 }
 
 $updater = new PluginNextoolCoreUpdater();

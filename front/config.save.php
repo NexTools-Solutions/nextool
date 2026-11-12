@@ -16,8 +16,8 @@ declare(strict_types=1);
 
 include ('../../../inc/includes.php');
 
-// O endpoint atende ações de leitura (validate_license) e escrita;
-// permissões específicas são reforçadas abaixo por ação (assertCanAccessAdminTabs / assertCanManageAdminTabs).
+// Todas as ações daqui escrevem; a permissão é conferida abaixo, por ação, pelo bit do direito
+// base que a nomeia (ou pelo super-direito, nas ações sem bit próprio).
 Session::checkLoginUser();
 
 /**
@@ -255,11 +255,17 @@ if (!in_array($action, $validActions, true)) {
    die(json_encode(['success' => false, 'message' => __('Ação inválida.', 'nextool')]));
 }
 
-// Ação "validate_license" requer apenas READ (visualizar/consultar)
+// Autorização POR BIT do direito base (PERMISSIONS.md § 2.1). Até a 6.59.0 o Sincronizar passava
+// com QUALQUER bit base (e ele registra o ambiente e grava configuração) e as demais ações com
+// qualquer um de "Sincronizar licença"/"Aceitar políticas"/"Aplicar atualização".
+//  - validate_license (Sincronizar) -> "Sincronizar licença"
+//  - accept_policies                -> "Aceitar políticas"
+//  - as demais não têm bit próprio  -> só o super-direito (canManageAdminTabs)
 if ($action === 'validate_license') {
-   PluginNextoolPermissionManager::assertCanAccessAdminTabs();
+   PluginNextoolPermissionManager::assertCanBase(PluginNextoolPermissionManager::BASE_SYNC_LICENSE);
+} elseif ($action === 'accept_policies') {
+   PluginNextoolPermissionManager::assertCanBase(PluginNextoolPermissionManager::BASE_ACCEPT_POLICY);
 } else {
-   // Outras ações requerem UPDATE (modificar)
    PluginNextoolPermissionManager::assertCanManageAdminTabs();
 }
 
@@ -581,8 +587,11 @@ $previousGlobalConfig = PluginNextoolConfig::getConfig();
 // O form nunca altera a base_url -- ela só muda via adoptPlatformUrl no sync. Ignora endpoint_url postado.
 $endpointWasPosted = false;
 $isActiveWasPosted = array_key_exists('is_active', $_POST);
+// Salvar a configuração é ação sem bit próprio (só o super-direito): no Sincronizar, que exige
+// apenas "Sincronizar licença", um `is_active` no POST só é gravado para quem também pode salvar.
 $shouldPersistGlobal = in_array($action, ['', 'validate_license'], true)
-   && ($endpointWasPosted || $isActiveWasPosted);
+   && ($endpointWasPosted || $isActiveWasPosted)
+   && ($action === '' || PluginNextoolPermissionManager::canManageAdminTabs());
 
 if ($shouldPersistGlobal) {
    // Mantém valores atuais quando o campo não vem no POST.

@@ -2,17 +2,18 @@
 
 O **NexTool Solutions** é um hub de soluções dentro do GLPI: você habilita apenas o que precisa e mantém tudo centralizado em uma única interface, com instalação guiada e licenciamento integrado quando aplicável.
 
-Compatível com **GLPI 10, 11 e 12**: o mesmo pacote instala nas três versões, sem download separado. No GLPI 12 aparecem os módulos já certificados para ele; os demais ganham a versão compatível aos poucos.
+Compatível com **GLPI 10, 11 e 12**: o mesmo pacote instala nas três versões, sem download separado. Cada módulo indica as versões em que roda, e o catálogo mostra só os compatíveis com o seu GLPI. Todos os módulos rodam no GLPI 11 e no 12. No GLPI 10 ficam disponíveis os gratuitos, exceto Branding, Essentials, Smart Notify, Telegram Bot e Translate; os módulos licenciados exigem GLPI 11 ou 12.
 
 ---
 
 ## Requisitos
 
 - GLPI 10.0.0 a 12.0.x, com a versão de PHP suportada pelo seu GLPI.
-- Extensões PHP **curl** (download dos pacotes), **phar** (extração dos .tar.gz) e **zip**.
+- Extensões PHP **curl** (download dos pacotes) e **phar** (extração dos .tar.gz). A extensão **zip** é opcional: só serve a pacotes antigos no formato .zip.
 - Extensão **sodium** ou **openssl 3.0+** do sistema, para conferir a assinatura oficial dos pacotes antes de instalar uma atualização.
-- Permissão de escrita do usuário do servidor web em `plugins/nextool/` e em `files/_plugins/nextool/` (pasta de dados do GLPI).
-- Acesso de saída à internet (HTTPS) para o catálogo, a licença e o download dos módulos.
+- Permissão de escrita do usuário do servidor web na pasta do plugin (`plugins/nextool/`, ou `marketplace/nextool/` quando instalado pelo Marketplace) e em `files/_plugins/nextool/` (pasta de dados do GLPI).
+- Acesso de saída HTTPS a `containerapi.nextoolsolutions.ai`, direto ou pelo proxy de **Configurar > Geral > Proxy**, para o catálogo, a licença e o download dos módulos.
+- Ações automáticas do GLPI executadas pelo cron do servidor (modo CLI, no crontab do usuário do servidor web): as rotinas dos módulos (sincronizações, filas, importações, avisos) dependem delas.
 
 O próprio NexTool confere esses pontos e avisa, na tela, o que estiver faltando.
 
@@ -41,6 +42,9 @@ Cada módulo abaixo tem uma página dedicada em **[nextoolsolutions.com](https:/
 - **[AI Assist](https://nextoolsolutions.com/plugins-glpi/ai-assist)**  \
   Descrição: IA no chamado e na base de conhecimento – resumo, sugestão de resposta, análise de sentimento, triagem e classificação automáticas, sugestão de artigos antes de abrir o chamado e detecção de lacunas da base. Funciona com a sua chave (OpenAI, Gemini ou Anthropic) ou no modo gerenciado pela NexTool, com créditos.  \
   Problema que resolve: triagem lenta, respostas repetidas e base de conhecimento que não acompanha o que já foi resolvido.
+- **[Accessibility](https://nextoolsolutions.com/plugins-glpi/accessibility)**  \
+  Descrição: recursos de acessibilidade no GLPI e no portal do solicitante – tradução em Libras (VLibras), indicadores além da cor, espaçamento de texto, fonte de alta legibilidade e foco de teclado, salvos por usuário.  \
+  Problema que resolve: GLPI difícil de usar para pessoas com deficiência visual, auditiva ou motora.
 - **[Barcode](https://nextoolsolutions.com/plugins-glpi/barcode)**  \
   Descrição: cria e imprime etiquetas com código de barras (Code 128) ou QR Code para computadores, monitores, impressoras e demais ativos, direto das listas ou em lote, com modelos por entidade.  \
   Problema que resolve: etiquetagem patrimonial feita fora do GLPI e sem padrão.
@@ -92,6 +96,9 @@ Cada módulo abaixo tem uma página dedicada em **[nextoolsolutions.com](https:/
 - **[WhatsApp Bot](https://nextoolsolutions.com/plugins-glpi/whatsapp-bot)**  \
   Descrição: notificações dos chamados pelo WhatsApp, bot para abrir e acompanhar chamados e responder aprovações, e conversas do técnico com o usuário. Funciona com a sua Evolution API ou com a instância gerenciada pela NexTool.  \
   Problema que resolve: usuários que não acompanham e-mail nem o portal.
+- **[Zabbix](https://nextoolsolutions.com/plugins-glpi/zabbix)**  \
+  Descrição: liga o Zabbix ao inventário do GLPI – vincula hosts aos ativos, mostra o monitoramento e os alarmes na ficha de cada equipamento e abre chamados já vinculados ao ativo, com regras de roteamento.  \
+  Problema que resolve: alarmes do monitoramento desconectados do inventário e dos chamados.
 
 ### Módulos licenciados
 
@@ -165,7 +172,7 @@ Cada módulo abaixo tem uma página dedicada em **[nextoolsolutions.com](https:/
 
 Depois de instalado e ativado, o **NexTool Solutions** aparece como um novo item de menu no GLPI, com uma tela central que reúne:
 
-- **Módulos**: busca por nome/descrição, filtros por status (Ativado, Desativado, Download, Atualização, Gratuito, Licenciado) e cards com nome, descrição, status e plano, com os botões para Download, Instalar/Ativar e Configurações.
+- **Módulos**: busca por nome/descrição, filtros por status (Ativado, Desativado, Download, Instalar, Atualização, Gratuito, Licenciado) e cards com nome, descrição, status e plano, com os botões **Baixar e ativar** (baixa, instala e ativa em um clique), **Instalar e ativar** (módulo já baixado), **Atualizar** e **Configurações**. O botão **Atualizar todos** mostra os módulos com atualização e deixa escolher quais atualizar.
 - **Licenciamento**: plano do ambiente, módulos disponíveis, status de validação e o vínculo com a sua conta NexTool.
 - **Novidades**: comunicados oficiais da NexTool e alertas do próprio ambiente.
 - **Serviços**: implantação, consultoria e desenvolvimento sob medida oferecidos pela NexTool.
@@ -174,14 +181,14 @@ Depois de instalado e ativado, o **NexTool Solutions** aparece como um novo item
 - **Sobre**: o NexTool, como funciona o licenciamento e os canais oficiais.
 - **Logs**: registros de licença, configuração e ações nos módulos.
 
-O botão **Suporte**, no topo da tela, abre um atendimento com a equipe NexTool pelo portal.
+O botão **Suporte**, no topo da tela, abre um atendimento com a equipe NexTool sem sair do GLPI (exige o ambiente vinculado à sua conta NexTool).
 
 Fluxo rápido (administrador GLPI):
 
 1. Instalar e ativar o plugin NexTool pelo mecanismo padrão de plugins do GLPI.
 2. Acessar o item de menu **NexTool Solutions** no GLPI.
-3. Aceitar as Políticas de Uso e vincular o ambiente à sua conta NexTool (o código de vínculo é gerado na própria tela e confirmado no portal) – é o que libera o download dos módulos, inclusive os gratuitos.
-4. Na aba **Módulos**, escolher uma solução e usar **Download** e depois **Instalar/Ativar**.
+3. Vincular o ambiente à sua conta NexTool (o código de vínculo é gerado na própria tela e confirmado no portal, onde você aceita os Termos de uso e a Política de privacidade) – é o que libera o download dos módulos, inclusive os gratuitos.
+4. Na aba **Módulos**, escolher uma solução e usar **Baixar e ativar** no card.
 5. Quando aplicável, acessar a aba de configuração da solução para ajustar o comportamento.
 
 Soluções **gratuitas** ficam disponíveis mesmo sem licença ativa; soluções **licenciadas** só aparecem liberadas quando o plano do ambiente cobre o módulo.
@@ -209,14 +216,14 @@ Em caso de conflito entre qualquer texto comercial e a licença GPLv3, **prevale
 
 ## Privacidade e dados
 
-O NexTool Solutions se conecta ao **servidor da NexTool** para o catálogo, o licenciamento, o download e a atualização das soluções e as novidades. Nessa comunicação vão apenas dados técnicos do ambiente: identificador do ambiente, domínio do GLPI, versões do GLPI, do PHP e do NexTool, idioma padrão e fuso horário da instância e módulos instalados; o servidor registra também o IP de origem da conexão. Ela não envia conteúdo de chamados, senhas nem dados dos usuários.
+O NexTool Solutions se conecta ao **servidor da NexTool** para o catálogo, o licenciamento, o download e a atualização das soluções e as novidades. Nessa comunicação vão apenas dados técnicos do ambiente: identificador do ambiente, domínio do GLPI, versões do GLPI, do PHP e do NexTool, idioma padrão e fuso horário da instância e módulos instalados; o servidor registra também o IP de origem da conexão. Essa comunicação automática não envia conteúdo de chamados, senhas nem dados dos usuários.
 
 Alguns recursos opcionais enviam dados para fora do GLPI **somente quando o administrador os ativa**:
 
 - **AI Assist:** com a sua chave, o texto do chamado vai direto ao provedor de IA escolhido; no modo gerenciado, passa pela NexTool até o provedor. Nomes, e-mails, telefones e CPF/CNPJ são trocados por marcadores antes do envio (padrão).
 - **WhatsApp Bot:** com a sua Evolution API, as mensagens vão ao seu servidor; com a instância gerenciada, passam pelo servidor de atendimento da NexTool.
 - **Translate:** o texto do item traduzido vai ao provedor de tradução escolhido (DeepL, Google ou IA).
-- **Relatório técnico do suporte:** só quando você opta por anexá-lo ao atendimento, com e-mails, IPs e tokens mascarados.
+- **Suporte:** ao abrir um atendimento pelo botão Suporte, vão o assunto e a descrição escritos por você e o nome e o e-mail de quem abriu. O relatório técnico do ambiente vai só se a caixa de anexá-lo ficar marcada (em Bug ele é obrigatório), com e-mails, IPs e tokens mascarados.
 
 Para detalhes completos de privacidade, licenciamento, redistribuição e políticas de uso, consulte no site oficial:
 

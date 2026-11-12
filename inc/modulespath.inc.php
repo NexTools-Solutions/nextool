@@ -117,6 +117,33 @@ if (!defined('NEXTOOL_MODULES_BASE')) {
 // ModuleManager (caminho frio). Lido no máximo 1x por request, AQUI, porque o
 // autoloader abaixo precisa dele antes de o ModuleManager existir.
 // -------------------------------------------------------------------------
+if (!function_exists('plugin_nextool_cache_file_trusted')) {
+   /**
+    * O arquivo de cache do plugin pode ser LIDO?
+    *
+    * O mapa stateless decide quais arquivos AJAX de módulo rodam sem login, e o manifesto de boot
+    * diz ao autoloader que arquivo incluir. Os dois moram no diretório de cache do GLPI (do próprio
+    * processo web). Sem ele, o último recurso é o diretório temporário do sistema, que outros
+    * usuários do servidor também gravam: ali o arquivo só é aceito se for do usuário do processo e
+    * não for gravável por grupo/outros. Sem como conferir (sem posix), é tratado como ausente.
+    */
+   function plugin_nextool_cache_file_trusted(string $file): bool {
+      $tmp = rtrim((string) sys_get_temp_dir(), '/');
+      if ($tmp === '' || strpos($file, $tmp . '/') !== 0) {
+         return true;
+      }
+      if (defined('GLPI_CACHE_DIR') && strpos($file, rtrim((string) GLPI_CACHE_DIR, '/') . '/') === 0) {
+         return true; // o próprio cache do GLPI fica sob o temporário neste ambiente
+      }
+      if (!function_exists('posix_geteuid')) {
+         return false;
+      }
+      $owner = @fileowner($file);
+      $perms = @fileperms($file);
+      return $owner !== false && $owner === posix_geteuid() && $perms !== false && ($perms & 0022) === 0;
+   }
+}
+
 if (!function_exists('plugin_nextool_boot_manifest_path')) {
    function plugin_nextool_boot_manifest_path(): string {
       if (!defined('GLPI_CACHE_DIR') && defined('GLPI_ROOT')) {
@@ -150,7 +177,11 @@ if (!function_exists('plugin_nextool_boot_manifest_path')) {
          return $data;
       }
       $loaded = true;
-      $raw = @file_get_contents(plugin_nextool_boot_manifest_path());
+      $manifestPath = plugin_nextool_boot_manifest_path();
+      if (!plugin_nextool_cache_file_trusted($manifestPath)) {
+         return $data = null; // manifesto no temporário do sistema e que não é do processo web: ignora
+      }
+      $raw = @file_get_contents($manifestPath);
       if ($raw === false || $raw === '') {
          return $data = null;
       }
@@ -277,7 +308,9 @@ if (!defined('NEXTOOL_MODULE_AUTOLOADER')) {
       //    e nomes fora do padrão (class.config.php) -- sem sondar o disco. Entrada
       //    obsoleta (classe movida) só cai na heurística abaixo.
       $nxManifest = plugin_nextool_boot_manifest();
-      if ($nxManifest !== null && isset($nxManifest['classmap'][$class]) && is_string($nxManifest['classmap'][$class])) {
+      // Entrada com `..` nunca é incluída: o class-map só aponta para DENTRO da pasta de módulos.
+      if ($nxManifest !== null && isset($nxManifest['classmap'][$class]) && is_string($nxManifest['classmap'][$class])
+          && strpos($nxManifest['classmap'][$class], '..') === false) {
          $mapped = NEXTOOL_MODULES_BASE . '/' . $nxManifest['classmap'][$class];
          if (is_file($mapped) && plugin_nextool_module_loadable_on_this_glpi(strtok($nxManifest['classmap'][$class], '/'))) {
             require_once $mapped;

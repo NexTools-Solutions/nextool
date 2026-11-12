@@ -964,7 +964,38 @@ abstract class PluginNextoolBaseModule {
          }
       }
 
-      return $rights + PluginNextoolPermissionManager::getAdminRightLabels($this->hasCatalog());
+      $admin = PluginNextoolPermissionManager::getAdminRightLabels($this->hasCatalog());
+      // Rótulo próprio da coluna Gerenciar itens (nextool-dev#320): só o TEXTO muda; o bit e a posição são os do
+      // bloco fixo, que o catálogo lê posicionalmente. Rótulo inválido = o padrão da base.
+      if (isset($admin[PluginNextoolPermissionManager::MANAGE_ITEMS])) {
+         $label = $this->getManageItemsLabel();
+         if (is_string($label) && trim($label) !== '') {
+            $admin[PluginNextoolPermissionManager::MANAGE_ITEMS] = $label;
+         } elseif (is_array($label) && is_string($label['short'] ?? null) && trim($label['short']) !== ''
+            && is_string($label['long'] ?? null) && trim($label['long']) !== '') {
+            $admin[PluginNextoolPermissionManager::MANAGE_ITEMS] = ['short' => $label['short'], 'long' => $label['long']];
+         }
+      }
+      return $rights + $admin;
+   }
+
+   /**
+    * Rótulo da coluna "Gerenciar itens" (MANAGE_ITEMS) deste módulo na tela de perfil (nextool-dev#320). Só vale com
+    * hasCatalog() = true. Muda apenas o texto: o bit e a posição continuam os do bloco fixo.
+    *
+    * @return string|array{short:string,long:string}|null null = "Gerenciar itens" (padrão da base)
+    */
+   public function getManageItemsLabel() {
+      return null;
+   }
+
+   /**
+    * Bits (basta um) que fazem o catálogo e o submenu Nextools OFERECER a configuração do módulo (nextool-dev#319).
+    * Padrão: getViewMask(), comportamento de antes. Módulo cuja página de configuração exige administração declara a
+    * máscara que a própria página exige, senão quem só usa o módulo vê o botão e recebe "sem permissão".
+    */
+   public function getConfigViewMask(): int {
+      return $this->getViewMask();
    }
 
    /**

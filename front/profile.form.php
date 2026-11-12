@@ -21,6 +21,15 @@ Session::checkRight('profile', UPDATE);
 if (isset($_POST['update'])) {
    $profile = new PluginNextoolProfile();
    $profile->update($_POST);
+   // A matriz do perfil simplificado não exibe o super-direito nem o bloco base, mas este POST
+   // aceitaria os campos se viessem montados à mão. O saneamento (idempotente, o mesmo do upgrade)
+   // zera os dois em todo perfil helpdesk logo após gravar; os gates também negam (canBase).
+   try {
+      require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+      PluginNextoolPermissionManager::cleanHelpdeskProfileRights();
+   } catch (\Throwable $e) {
+      Toolbox::logInFile('plugin_nextool', 'Saneamento de perfil helpdesk falhou: ' . $e->getMessage() . "\n");
+   }
    Html::back();
 }
 

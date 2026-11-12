@@ -86,7 +86,7 @@ if (function_exists('plugin_version_nextool')) {
    $_nxCurrentVersion = isset($info['version']) ? (string) $info['version'] : '-';
 }
 $_nxTargetVersion = '';
-if (PluginNextoolPermissionManager::canAccessAdminTabs()) {
+if (PluginNextoolPermissionManager::canViewCoreVersion()) {
    require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
    $_nxCoreState = PluginNextoolCoreUpdater::getState();
    // Use staged version if available, otherwise fall back to latest known version

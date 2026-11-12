@@ -81,13 +81,6 @@ class PluginNextoolDistributionClient {
          'glpi_version'      => defined('GLPI_VERSION') ? GLPI_VERSION : null,
       ]), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-      $ch = curl_init($baseUrl . '/api/distribution/bootstrap');
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-      curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-      curl_setopt($ch, CURLOPT_POST, true);
-      curl_setopt($ch, CURLOPT_POSTFIELDS, $payload ?: '');
-      curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-      curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
       $bootstrapHeaders = [
          'Content-Type: application/json',
          'X-Nextool-Caps: reenroll-v1',
@@ -97,13 +90,27 @@ class PluginNextoolDistributionClient {
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
       }
       $bootstrapHeaders[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
-      curl_setopt($ch, CURLOPT_HTTPHEADER, $bootstrapHeaders);
 
-      $response = curl_exec($ch);
-      $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      $curlError = curl_error($ch);
-      $curlErrno = curl_errno($ch);
-      curl_close($ch);
+      // Transporte único (PluginNextoolFileHelper::httpSend): cliente do core, com o proxy do GLPI.
+      // $curlErrno segue sendo o errno do cURL quando a falha é de rede (0 se desconhecido).
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      $response = false;
+      $httpCode = 0;
+      $curlError = '';
+      $curlErrno = 0;
+      try {
+         $http = PluginNextoolFileHelper::httpSend($baseUrl . '/api/distribution/bootstrap', [
+            'method'  => 'POST',
+            'body'    => $payload ?: '',
+            'headers' => $bootstrapHeaders,
+            'timeout' => 30,
+         ]);
+         $response = (string) $http['body'];
+         $httpCode = (int) $http['http_code'];
+      } catch (Throwable $transportError) {
+         $curlError = $transportError->getMessage();
+         $curlErrno = (int) $transportError->getCode();
+      }
 
       // Falha de conexão (DNS, timeout, SSL, rede)
       if ($response === false) {
@@ -269,7 +276,13 @@ class PluginNextoolDistributionClient {
       }
 
       $downloadPath = $this->downloadPackage($downloadUrl, $moduleKey, $version);
-      $this->verifyHash($downloadPath, $hashExpected);
+      try {
+         $this->verifyHash($downloadPath, $hashExpected);
+      } catch (Throwable $e) {
+         // Pacote recusado não fica esquecido no diretório temporário.
+         @unlink($downloadPath);
+         throw $e;
+      }
 
       // Detectar formato do artefato e renomear com extensão correta (PharData exige)
       require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
@@ -338,17 +351,7 @@ class PluginNextoolDistributionClient {
       }
 
       $downloadPath = $tmpDir . '/' . $moduleKey . '-' . $version . '-' . uniqid() . '.download';
-      $fp = fopen($downloadPath, 'w+');
-      if ($fp === false) {
-         throw new RuntimeException(__('Não foi possível criar arquivo temporário para download.', 'nextool'));
-      }
 
-      $ch = curl_init($url);
-      curl_setopt($ch, CURLOPT_FILE, $fp);
-      curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-      curl_setopt($ch, CURLOPT_TIMEOUT, 120);
-      curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-      curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
       $headers = [];
       if ($this->clientIdentifier !== '') {
          $headers[] = 'X-Client-Identifier: ' . $this->clientIdentifier;
@@ -357,18 +360,21 @@ class PluginNextoolDistributionClient {
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
       }
       $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
-      if (!empty($headers)) {
-         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-      }
-      $result = curl_exec($ch);
-      $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      $error    = curl_error($ch);
-      curl_close($ch);
-      fclose($fp);
 
-      if (!$result || $httpCode >= 300) {
+      // Transporte único (PluginNextoolFileHelper::downloadToFile): cliente do core, com o proxy do GLPI.
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      try {
+         $download = PluginNextoolFileHelper::downloadToFile($url, $downloadPath, [
+            'headers' => $headers,
+            'timeout' => 120,
+         ]);
+      } catch (Throwable $e) {
          @unlink($downloadPath);
-         throw new RuntimeException(sprintf(__('Falha ao baixar módulo (HTTP %s): %s', 'nextool'), $httpCode, $error));
+         throw new RuntimeException(sprintf(__('Falha ao baixar módulo (HTTP %s): %s', 'nextool'), 0, $e->getMessage()));
+      }
+      if ($download['http_code'] >= 300 || $download['bytes'] <= 0) {
+         @unlink($downloadPath);
+         throw new RuntimeException(sprintf(__('Falha ao baixar módulo (HTTP %s): %s', 'nextool'), $download['http_code'], ''));
       }
 
       return $downloadPath;
@@ -393,6 +399,25 @@ class PluginNextoolDistributionClient {
       }
 
       require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+
+      try {
+         $this->extractPackageInto($filePath, $tmpExtract, $destination, $moduleKey);
+      } finally {
+         // Sucesso ou falha: a área de extração e o pacote não ficam no diretório temporário.
+         try {
+            if (is_dir($tmpExtract)) {
+               $this->deleteDir($tmpExtract);
+            }
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', sprintf("Falha ao limpar a extração de %s: %s\n", $moduleKey, $e->getMessage()));
+         }
+         if (is_file($filePath)) {
+            @unlink($filePath);
+         }
+      }
+   }
+
+   private function extractPackageInto(string $filePath, string $tmpExtract, string $destination, string $moduleKey): void {
 
       if (str_ends_with($filePath, '.tar.gz')) {
          // Formato preferencial - PharData (built-in, sem dependência externa)
@@ -460,12 +485,102 @@ class PluginNextoolDistributionClient {
          $this->ensureWritableDirectory($destination);
       }
 
-      $this->deleteDir($destination);
-      $this->recursiveCopy($candidate, $destination);
+      $this->replaceModuleDirectory($candidate, $destination, $moduleKey);
       $this->invalidateOpcache($destination, $moduleKey);
       $this->invalidateTranslationsCache();
-      $this->deleteDir($tmpExtract);
-      @unlink($filePath);
+   }
+
+   /**
+    * Troca o diretório do módulo pelo conteúdo extraído, sem janela em que o módulo fica sem arquivos.
+    *
+    * Até a 6.59.0 o destino era apagado e só depois recebia a cópia: uma falha no meio (disco cheio,
+    * permissão) deixava o módulo vazio ou parcial, e um módulo ATIVO com `require` faltando derruba o
+    * boot. Agora: copia para um diretório irmão (mesmo sistema de arquivos), confere a estrutura
+    * mínima, renomeia o atual para `.old`, renomeia o novo para o destino e só então apaga o antigo.
+    * Qualquer falha antes da troca deixa o módulo como estava; se a troca falhar no meio, o antigo é
+    * devolvido. Os irmãos começam por ponto: a descoberta de módulos (`glob('*')`) não os enxerga.
+    */
+   private function replaceModuleDirectory(string $source, string $destination, string $moduleKey): void {
+      $parent  = dirname($destination);
+      $name    = basename($destination);
+      $suffix  = uniqid();
+      $staging  = $parent . '/.' . $name . '.new-' . $suffix;
+      $previous = $parent . '/.' . $name . '.old-' . $suffix;
+
+      $this->cleanupReplaceLeftovers($parent, $name);
+
+      try {
+         $this->recursiveCopy($source, $staging);
+
+         // Estrutura mínima de um módulo (a mesma que a descoberta procura).
+         if (!is_file($staging . '/module.json') && !is_file($staging . '/inc/' . $moduleKey . '.class.php')) {
+            throw new RuntimeException(sprintf(
+               __('O pacote do módulo %s não tem a estrutura esperada (module.json ou classe principal).', 'nextool'),
+               $moduleKey
+            ));
+         }
+
+         $hadPrevious = is_dir($destination);
+         if ($hadPrevious && !@rename($destination, $previous)) {
+            throw new RuntimeException(sprintf(
+               __('Não foi possível substituir os arquivos do módulo %s. Verifique as permissões da pasta de módulos.', 'nextool'),
+               $moduleKey
+            ));
+         }
+         if (!@rename($staging, $destination)) {
+            if ($hadPrevious) {
+               @rename($previous, $destination);
+            }
+            throw new RuntimeException(sprintf(
+               __('Não foi possível substituir os arquivos do módulo %s. Verifique as permissões da pasta de módulos.', 'nextool'),
+               $moduleKey
+            ));
+         }
+      } catch (Throwable $e) {
+         try {
+            if (is_dir($staging)) {
+               $this->deleteDir($staging);
+            }
+         } catch (Throwable $cleanupError) {
+            // sobra é recolhida na próxima troca (cleanupReplaceLeftovers)
+         }
+         throw $e;
+      }
+
+      // A troca já valeu: falha ao apagar o antigo não desfaz nada (a sobra sai na próxima troca).
+      try {
+         if (is_dir($previous)) {
+            $this->deleteDir($previous);
+         }
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "Arquivos antigos do módulo %s não puderam ser removidos (%s): %s\n", $moduleKey, $previous, $e->getMessage()
+         ));
+      }
+   }
+
+   /** Remove sobras `.<módulo>.new-*` / `.<módulo>.old-*` de uma troca anterior interrompida. */
+   private function cleanupReplaceLeftovers(string $parent, string $name): void {
+      // Troca que parou entre os dois renames e não conseguiu devolver o antigo: o módulo ficou sem
+      // diretório e o `.old` é a ÚNICA cópia. Devolve em vez de apagar.
+      if (!is_dir($parent . '/' . $name)) {
+         $olds = glob($parent . '/.' . $name . '.old-*', GLOB_ONLYDIR) ?: [];
+         if ($olds !== []) {
+            rsort($olds);
+            if (@rename($olds[0], $parent . '/' . $name)) {
+               Toolbox::logInFile('plugin_nextool', sprintf("Diretório do módulo %s recuperado de uma troca interrompida.\n", $name));
+            }
+         }
+      }
+      foreach (['new', 'old'] as $kind) {
+         foreach (glob($parent . '/.' . $name . '.' . $kind . '-*', GLOB_ONLYDIR) ?: [] as $leftover) {
+            try {
+               $this->deleteDir($leftover);
+            } catch (Throwable $e) {
+               Toolbox::logInFile('plugin_nextool', sprintf("Sobra de troca não removida (%s): %s\n", $leftover, $e->getMessage()));
+            }
+         }
+      }
    }
 
    private function performRequest(string $url, array $options = []): array {
@@ -893,27 +1008,35 @@ class PluginNextoolDistributionClient {
          ]),
       ]), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-      $ch = curl_init($baseUrl . '/api/distribution/enroll');
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-      curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-      curl_setopt($ch, CURLOPT_POST, true);
-      curl_setopt($ch, CURLOPT_POSTFIELDS, $payload ?: '{}');
-      curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-      curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
       if (!isset($GLOBALS['nextool_request_group_id'])) {
          $GLOBALS['nextool_request_group_id'] = PluginNextoolConfig::generateRequestGroupId();
       }
-      curl_setopt($ch, CURLOPT_HTTPHEADER, [
+      $enrollHeaders = [
          'Content-Type: application/json',
          'X-Nextool-Caps: enroll-v2',
          'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'],
-      ]);
+      ];
 
-      $response  = curl_exec($ch);
-      $httpCode  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      $curlError = curl_error($ch);
-      $curlErrno = curl_errno($ch);
-      curl_close($ch);
+      // Transporte único (PluginNextoolFileHelper::httpSend): cliente do core, com o proxy do GLPI.
+      // $curlErrno segue sendo o errno do cURL quando a falha é de rede (0 se desconhecido).
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      $response = false;
+      $httpCode = 0;
+      $curlError = '';
+      $curlErrno = 0;
+      try {
+         $http = PluginNextoolFileHelper::httpSend($baseUrl . '/api/distribution/enroll', [
+            'method'  => 'POST',
+            'body'    => $payload ?: '{}',
+            'headers' => $enrollHeaders,
+            'timeout' => 30,
+         ]);
+         $response = (string) $http['body'];
+         $httpCode = (int) $http['http_code'];
+      } catch (Throwable $transportError) {
+         $curlError = $transportError->getMessage();
+         $curlErrno = (int) $transportError->getCode();
+      }
 
       if ($response === false) {
          Toolbox::logInFile('plugin_nextool', sprintf('Enroll falhou - erro de rede (curl errno %d): %s', $curlErrno, $curlError));
@@ -1044,20 +1167,26 @@ class PluginNextoolDistributionClient {
       }
       $headers[] = 'X-Request-Group-Id: ' . $GLOBALS['nextool_request_group_id'];
 
-      $ch = curl_init($baseUrl . '/api/distribution/migrate');
-      curl_setopt_array($ch, [
-         CURLOPT_RETURNTRANSFER => true,
-         CURLOPT_POST           => true,
-         CURLOPT_POSTFIELDS     => $payload,
-         CURLOPT_HTTPHEADER     => $headers,
-         CURLOPT_TIMEOUT        => 30,
-         CURLOPT_SSL_VERIFYPEER => true,
-         CURLOPT_SSL_VERIFYHOST => 2,
-      ]);
-      $response  = curl_exec($ch);
-      $httpCode  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      $curlError = curl_error($ch);
-      curl_close($ch);
+      // Transporte único (PluginNextoolFileHelper::httpSend): cliente do core, com o proxy do GLPI.
+      // $curlErrno segue sendo o errno do cURL quando a falha é de rede (0 se desconhecido).
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      $response = false;
+      $httpCode = 0;
+      $curlError = '';
+      $curlErrno = 0;
+      try {
+         $http = PluginNextoolFileHelper::httpSend($baseUrl . '/api/distribution/migrate', [
+            'method'  => 'POST',
+            'body'    => $payload,
+            'headers' => $headers,
+            'timeout' => 30,
+         ]);
+         $response = (string) $http['body'];
+         $httpCode = (int) $http['http_code'];
+      } catch (Throwable $transportError) {
+         $curlError = $transportError->getMessage();
+         $curlErrno = (int) $transportError->getCode();
+      }
 
       if ($response === false) {
          Toolbox::logInFile('plugin_nextool', sprintf('Migrate falhou - erro de rede: %s', $curlError));

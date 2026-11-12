@@ -244,8 +244,42 @@ trait PluginNextoolConfigBody {
     *               instance_token_plain:string, expires_at:string, grace_until:string,
     *               renewal_url:string, provider:string, synced_at:int}|null null = sem instância entregue/dados inválidos
     */
+   /**
+    * Leitura de um contexto de `glpi_configs` com memo por REQUISIÇÃO WEB.
+    *
+    * O vínculo e o direito do cloud link são consultados várias vezes na mesma página (cada
+    * `hasCloudProductLink()` de módulo lia 3 vezes as mesmas chaves) e o `Config` do core faz um
+    * SELECT por chamada. O memo vale só em requisição web, que é curta e grava por
+    * `PluginNextoolLicenseValidator::persistConfig()` (que o limpa). Em linha de comando (cron,
+    * testes) não há memo: um processo longo, ou um teste que grava direto no banco, lê sempre o
+    * valor atual.
+    *
+    * @return array<string,mixed>
+    */
+   public static function readConfigContext(string $context): array {
+      if (PHP_SAPI === 'cli') {
+         return Config::getConfigurationValues($context);
+      }
+      if (!isset(self::$configContextMemo[$context])) {
+         self::$configContextMemo[$context] = Config::getConfigurationValues($context);
+      }
+      return self::$configContextMemo[$context];
+   }
+
+   /** Esquece o memo de `readConfigContext()` (um contexto, ou todos). Chamar em TODO ponto que grava. */
+   public static function forgetConfigContext(?string $context = null): void {
+      if ($context === null) {
+         self::$configContextMemo = [];
+         return;
+      }
+      unset(self::$configContextMemo[$context]);
+   }
+
+   /** @var array<string,array<string,mixed>> */
+   private static array $configContextMemo = [];
+
    public static function getManagedService(string $service): ?array {
-      $stored = Config::getConfigurationValues(self::MANAGED_SERVICES_CONTEXT);
+      $stored = self::readConfigContext(self::MANAGED_SERVICES_CONTEXT);
       $raw = isset($stored[$service]) ? (string) $stored[$service] : '';
       if ($raw === '') {
          return null;
@@ -392,6 +426,12 @@ trait PluginNextoolConfigBody {
          return;
       }
       $configObj = new self();
+      if (!$configObj->getFromDB(1)) {
+         // Registro base ausente (apagado à mão): o getConfig() o recria. O boot não garante mais
+         // isso a cada requisição, então a garantia fica aqui, em quem grava.
+         self::$cachedConfig = null;
+         self::getConfig();
+      }
       if ($configObj->getFromDB(1)) {
          $configObj->update([
             'id' => 1,

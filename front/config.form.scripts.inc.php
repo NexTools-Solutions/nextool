@@ -1548,8 +1548,11 @@ function nextoolInitCoreUpdateModal() {
          var bl = blockers[b];
          var h = BLOCKER_HELP[bl.id] || null;
          var blData = bl.data || {};
-         var title = h ? h.title : (bl.message || bl.id || '?');
-         var desc = h ? (h.desc !== null ? h.desc : nextoolEscapeBlockerText(bl.message || '')) : (bl.message || '');
+         // Texto que vem do servidor (bl.message, bl.id, caminho, usuário) entra por innerHTML: sempre
+         // escapado. Só os textos do próprio plugin (BLOCKER_HELP) trazem marcação de propósito.
+         var title = h ? h.title : nextoolEscapeBlockerText(bl.message || bl.id || '?');
+         var desc = h ? (h.desc !== null ? h.desc : nextoolEscapeBlockerText(bl.message || '')) : nextoolEscapeBlockerText(bl.message || '');
+         var titleText = h ? h.title : (bl.message || bl.id || '?');
          var fix = h ? h.fix : '';
 
          var cmdText = '';
@@ -1568,18 +1571,20 @@ function nextoolInitCoreUpdateModal() {
             html += '<div class="small mt-1"><strong>' + LABEL_SOLUTION + '</strong> ' + fix + '</div>';
          }
          if (cmdText) {
-            var dockerExample = 'docker exec &lt;container&gt; ' + cmdText;
+            var cmdHtml = nextoolEscapeBlockerText(cmdText);
+            var dockerExample = 'docker exec &lt;container&gt; ' + cmdHtml;
             html += '<div class="small mt-1 p-2 bg-light rounded border" style="font-family:monospace;font-size:0.78rem;word-break:break-all">';
             html += '<div class="text-muted mb-1" style="font-size:0.7rem">' + LABEL_RUN_CMD + '</div>';
-            html += cmdText;
+            html += cmdHtml;
             html += '<div class="text-muted mt-2 pt-2 border-top" style="font-size:0.7rem">' + LABEL_DOCKER_HINT + '</div>';
             html += '<span class="text-muted">' + dockerExample + '</span>';
             html += '</div>';
          }
          html += '</div></div>';
 
-         clip.push(<?php echo json_encode(__('Problema:', 'nextool')); ?> + ' ' + title);
-         if (desc) clip.push(h && h.desc === null ? (bl.message || '') : desc);
+         // A área de transferência leva texto puro (sem as entidades do escape de tela).
+         clip.push(<?php echo json_encode(__('Problema:', 'nextool')); ?> + ' ' + titleText);
+         if (desc) clip.push(h && h.desc !== null ? desc : (bl.message || ''));
          if (fix) clip.push(LABEL_SOLUTION + ' ' + fix);
          if (cmdText) {
             clip.push(LABEL_RUN_CMD + '\n' + cmdText);
@@ -2422,7 +2427,7 @@ if (!empty($_nextoolUnreadAlerts)):
                      <div>
                         <div class="d-flex align-items-center gap-2 mb-1">
                            <strong><?php echo PluginNextoolCompat::escape($ua['title']); ?></strong>
-                           <span class="badge <?php echo $uaBadge; ?>" style="font-size: 0.65rem;"><?php echo ucfirst($ua['alert_type']); ?></span>
+                           <span class="badge <?php echo $uaBadge; ?>" style="font-size: 0.65rem;"><?php echo PluginNextoolCompat::escape(ucfirst((string) $ua['alert_type'])); ?></span>
                         </div>
                         <div class="small"><?php echo PluginNextoolAlertManager::sanitizeBody($ua['body']); ?></div>
                      </div>

@@ -333,10 +333,13 @@ class PluginNextoolJobDispatcher {
          'date_mod'         => date('Y-m-d H:i:s'),
       ];
       $chave = ['module_key' => $job['module_key'], 'job_key' => $job['key']];
+      // `last_message` é texto livre (mensagem de exceção): no GLPI 10 o banco não escapa valores e um
+      // apóstrofo quebrava o UPDATE, a rotina não registrava a falha e rodava de novo a cada minuto.
+      require_once NEXTOOL_PHP_DIR . '/inc/dbcompat.class.php';
       if ($row === null || empty($row['id'])) {
-         $DB->insert(self::TABLE, $chave + $dados);
+         $DB->insert(self::TABLE, PluginNextoolDbCompat::row($chave + $dados));
       } else {
-         $DB->update(self::TABLE, $dados, ['id' => (int) $row['id']]);
+         $DB->update(self::TABLE, PluginNextoolDbCompat::row($dados), ['id' => (int) $row['id']]);
       }
    }
 

@@ -22,7 +22,8 @@ require_once NEXTOOL_PHP_DIR . '/inc/compat.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
 
 $nextoolFooterEsc   = static fn($v): string => (string) PluginNextoolCompat::escape((string) $v);
-$nextoolFooterAdmin = PluginNextoolPermissionManager::canAccessAdminTabs();
+// Identificador do ambiente e atalho das licenças: mesmo bit da aba Licenciamento ("Ver licença").
+$nextoolFooterAdmin = PluginNextoolPermissionManager::canViewLicense();
 $nextoolFooterWeb   = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1&forcetab=';
 $nextoolFooterGlpi  = defined('GLPI_VERSION') ? (string) GLPI_VERSION : '-';
 ?>

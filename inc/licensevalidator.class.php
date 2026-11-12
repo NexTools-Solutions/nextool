@@ -207,6 +207,8 @@ class PluginNextoolLicenseValidator {
          // GLPI 10: os valores vêm do servidor (e-mail da conta, URL, JSON) e o Config::add/update não escapa; um
          // apóstrofo (`o'brien@x.com`) derrubava a gravação em silêncio (SQL 1064 só no sql-errors.log).
          Config::setConfigurationValues($namespace, PluginNextoolDbCompat::row($values));
+         // quem lê o contexto com memo (vínculo e direito do cloud link) passa a ver o valor novo
+         PluginNextoolConfig::forgetConfigContext($namespace);
       } catch (Throwable $e) {
          Toolbox::logInFile('plugin_nextool', sprintf(
             'LicenseValidator: falha ao persistir %s - %s',
@@ -1419,7 +1421,9 @@ class PluginNextoolLicenseValidator {
             $websiteUrl = null;
          }
          $icon = isset($entry['icon']) ? trim((string)$entry['icon']) : '';
-         if ($icon === '') {
+         // O ícone vira atributo `class` no card do módulo: só nomes de classe CSS são aceitos. Um
+         // valor fora disso (resposta adulterada do catálogo) cai no ícone padrão em vez de ir ao HTML.
+         if ($icon === '' || !preg_match('/^[A-Za-z0-9 _-]{1,80}$/', $icon)) {
             $icon = null;
          }
          $priceCents = isset($entry['price_cents']) && $entry['price_cents'] !== null ? (int)$entry['price_cents'] : null;
@@ -1670,101 +1674,40 @@ class PluginNextoolLicenseValidator {
       // a metadata na negação (este plugin trata metadata vazia sem quebrar -- TEST-03).
       $headers[] = 'X-Nextool-Caps: ' . self::capabilities();
 
-      if (function_exists('curl_init')) {
-         $ch = curl_init($apiEndpoint);
-         if ($ch === false) {
-            Toolbox::logInFile('plugin_nextool', 'LicenseValidator: curl_init() falhou ao chamar ContainerAPI.');
-            return null;
-         }
-
-         $start = microtime(true);
-         curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $body,
-            CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_TIMEOUT        => 15,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-         ]);
-
-         $response = curl_exec($ch);
-         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-         $error    = curl_error($ch);
-         curl_close($ch);
-         $responseTimeMs = (int) round((microtime(true) - $start) * 1000);
-
-         if ($response === false) {
-            Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha cURL ao chamar ContainerAPI - ' . $error);
-            return null;
-         }
-
-         $decoded = json_decode($response, true);
-         if (!is_array($decoded)) {
-            $snippet = trim(preg_replace('/\s+/', ' ', substr($response, 0, 500)));
-            $contentHint = '';
-            if ($snippet === '') {
-               $contentHint = 'body vazio';
-            } elseif (preg_match('/<(html|br|b|div|!DOCTYPE)/i', $snippet)) {
-               $contentHint = 'HTML detectado (provável erro PHP ou página de proxy/WAF)';
-            } else {
-               $contentHint = 'conteúdo não-JSON (json_last_error: ' . json_last_error_msg() . ')';
-            }
-            Toolbox::logInFile('plugin_nextool', sprintf(
-               'LicenseValidator: %s (HTTP %d). Body: %s',
-               $contentHint,
-               $httpCode ?: 0,
-               $snippet
-            ));
-            return null;
-         }
-
-         return $decoded;
-      }
-
-      $contextOpts = [
-         'http' => [
+      // Transporte único (PluginNextoolFileHelper::httpSend): cliente do core, com o proxy do GLPI.
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      $start = microtime(true);
+      try {
+         $http = PluginNextoolFileHelper::httpSend((string) $apiEndpoint, [
             'method'  => 'POST',
-            'header'  => implode("\r\n", $headers),
-            'content' => $body,
+            'body'    => $body,
+            'headers' => $headers,
             'timeout' => 15,
-         ],
-      ];
-
-      if (stripos($apiEndpoint, 'https://') === 0) {
-         $contextOpts['ssl'] = [
-            'verify_peer'      => true,
-            'verify_peer_name' => true,
-         ];
-      }
-
-      $context = stream_context_create($contextOpts);
-      $start   = microtime(true);
-      $response = @file_get_contents($apiEndpoint, false, $context);
-      $responseTimeMs = (int) round((microtime(true) - $start) * 1000);
-
-      if ($response === false) {
-         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: stream falhou ao chamar ContainerAPI.');
+         ]);
+      } catch (Throwable $e) {
+         $responseTimeMs = (int) round((microtime(true) - $start) * 1000);
+         $httpCode = 0;
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha de rede ao chamar ContainerAPI - ' . $e->getMessage());
          return null;
       }
-
-      if (isset($http_response_header) && is_array($http_response_header)) {
-         foreach ($http_response_header as $line) {
-            if (preg_match('#^HTTP/\S+\s+(\d{3})#', $line, $matches)) {
-               $httpCode = (int) $matches[1];
-               break;
-            }
-         }
-      }
+      $responseTimeMs = (int) round((microtime(true) - $start) * 1000);
+      $httpCode = (int) $http['http_code'];
+      $response = (string) $http['body'];
 
       $decoded = json_decode($response, true);
       if (!is_array($decoded)) {
          $snippet = trim(preg_replace('/\s+/', ' ', substr($response, 0, 500)));
-         $jsonError = json_last_error_msg();
+         if ($snippet === '') {
+            $contentHint = 'body vazio';
+         } elseif (preg_match('/<(html|br|b|div|!DOCTYPE)/i', $snippet)) {
+            $contentHint = 'HTML detectado (provável erro PHP ou página de proxy/WAF)';
+         } else {
+            $contentHint = 'conteúdo não-JSON (json_last_error: ' . json_last_error_msg() . ')';
+         }
          Toolbox::logInFile('plugin_nextool', sprintf(
-            'LicenseValidator: resposta JSON inválida (stream) do ContainerAPI (HTTP %d). JSON Error: %s. Response (primeiros 500 chars): %s',
-            $httpCode ?: 'unknown',
-            $jsonError,
+            'LicenseValidator: %s (HTTP %d). Body: %s',
+            $contentHint,
+            $httpCode ?: 0,
             $snippet
          ));
          return null;
@@ -1794,86 +1737,6 @@ class PluginNextoolLicenseValidator {
          return null;
       }
 
-      // Tenta usar cURL se disponível
-      if (function_exists('curl_init')) {
-         $ch = curl_init();
-         if ($ch === false) {
-            Toolbox::logInFile('plugin_nextool', 'LicenseValidator: curl_init() falhou ao preparar chamada para ' . $apiEndpoint);
-            return null;
-         }
-
-         $headers = [
-            'Content-Type: application/json',
-         ];
-
-         if (!empty($apiSecret)) {
-            $headers[] = 'X-License-Secret: ' . $apiSecret;
-         }
-
-         $body  = json_encode($payload);
-         $start = microtime(true);
-
-         curl_setopt_array($ch, [
-            CURLOPT_URL            => $apiEndpoint,
-            CURLOPT_POST           => true,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_POSTFIELDS     => $body,
-            CURLOPT_TIMEOUT        => 10,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-         ]);
-
-         $response = curl_exec($ch);
-         $end      = microtime(true);
-
-         $responseTimeMs = (int)round(($end - $start) * 1000);
-
-         if ($response === false) {
-            $error = curl_error($ch);
-            Toolbox::logInFile(
-               'plugin_nextool',
-               'LicenseValidator: erro cURL ao chamar ' . $apiEndpoint . ' - ' . $error
-            );
-            $httpCode = null;
-            curl_close($ch);
-            return null;
-         }
-
-         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-         if ($httpCode < 200 || $httpCode >= 300) {
-            // Para evitar poluir os logs com HTML completo de páginas de erro do GLPI,
-            // registramos apenas um resumo do body (primeiros caracteres em uma linha).
-            $snippet = trim(preg_replace('/\s+/', ' ', substr($response, 0, 200)));
-            Toolbox::logInFile(
-               'plugin_nextool',
-               sprintf(
-                  'LicenseValidator: resposta HTTP %d de %s. Body (primeiros 200 chars): %s',
-                  $httpCode,
-                  $apiEndpoint,
-                  $snippet
-               )
-            );
-            curl_close($ch);
-            return null;
-         }
-
-         curl_close($ch);
-
-         $data = json_decode($response, true);
-         if (!is_array($data)) {
-            Toolbox::logInFile(
-               'plugin_nextool',
-               'LicenseValidator: resposta JSON inválida de ' . $apiEndpoint . ' - Body: ' . substr($response, 0, 1000)
-            );
-            return null;
-         }
-
-         return $data;
-      }
-
-      // Fallback sem cURL: tenta usar file_get_contents com stream_context
       $headers = [
          'Content-Type: application/json',
       ];
@@ -1881,52 +1744,37 @@ class PluginNextoolLicenseValidator {
          $headers[] = 'X-License-Secret: ' . $apiSecret;
       }
 
-      $body = json_encode($payload);
-      $context = stream_context_create(array_merge([
-         'http' => [
+      // Transporte único (PluginNextoolFileHelper::httpSend): cliente do core, com o proxy do GLPI.
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      $start = microtime(true);
+      try {
+         $http = PluginNextoolFileHelper::httpSend((string) $apiEndpoint, [
             'method'  => 'POST',
-            'header'  => implode("\r\n", $headers),
-            'content' => $body,
+            'body'    => (string) json_encode($payload),
+            'headers' => $headers,
             'timeout' => 10,
-         ],
-      ], stripos($apiEndpoint, 'https://') === 0 ? [
-         'ssl' => [
-            'verify_peer'      => true,
-            'verify_peer_name' => true,
-         ],
-      ] : []));
-
-      $start    = microtime(true);
-      $response = @file_get_contents($apiEndpoint, false, $context);
-      $end      = microtime(true);
-
-      $responseTimeMs = (int)round(($end - $start) * 1000);
-
-      if ($response === false) {
+         ]);
+      } catch (Throwable $e) {
+         $responseTimeMs = (int) round((microtime(true) - $start) * 1000);
          Toolbox::logInFile(
             'plugin_nextool',
-            'LicenseValidator: file_get_contents() falhou ao chamar ' . $apiEndpoint
+            'LicenseValidator: erro de rede ao chamar ' . $apiEndpoint . ' - ' . $e->getMessage()
          );
          $httpCode = null;
          return null;
       }
+      $responseTimeMs = (int) round((microtime(true) - $start) * 1000);
+      $httpCode = (int) $http['http_code'];
+      $response = (string) $http['body'];
 
-      // Extrai HTTP code dos headers, se disponíveis
-      if (isset($http_response_header) && is_array($http_response_header)) {
-         foreach ($http_response_header as $headerLine) {
-            if (preg_match('#^HTTP/\S+\s+(\d{3})#', $headerLine, $matches)) {
-               $httpCode = (int)$matches[1];
-               break;
-            }
-         }
-      }
-
-      if ($httpCode !== null && ($httpCode < 200 || $httpCode >= 300)) {
+      if ($httpCode < 200 || $httpCode >= 300) {
+         // Para evitar poluir os logs com HTML completo de páginas de erro do GLPI,
+         // registramos apenas um resumo do body (primeiros caracteres em uma linha).
          $snippet = trim(preg_replace('/\s+/', ' ', substr($response, 0, 200)));
          Toolbox::logInFile(
             'plugin_nextool',
             sprintf(
-               'LicenseValidator: resposta HTTP %d (stream) de %s. Body (primeiros 200 chars): %s',
+               'LicenseValidator: resposta HTTP %d de %s. Body (primeiros 200 chars): %s',
                $httpCode,
                $apiEndpoint,
                $snippet
@@ -1937,10 +1785,9 @@ class PluginNextoolLicenseValidator {
 
       $data = json_decode($response, true);
       if (!is_array($data)) {
-         $snippet = trim(preg_replace('/\s+/', ' ', substr($response, 0, 200)));
          Toolbox::logInFile(
             'plugin_nextool',
-            'LicenseValidator: resposta JSON inválida (stream) de ' . $apiEndpoint . ' - Body (primeiros 200 chars): ' . $snippet
+            'LicenseValidator: resposta JSON inválida de ' . $apiEndpoint . ' - Body: ' . substr($response, 0, 1000)
          );
          return null;
       }
@@ -2337,6 +2184,7 @@ class PluginNextoolLicenseValidator {
          return;
       }
       Config::deleteConfigurationValues(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [self::ENTITLEMENT_KEY, self::ENTITLEMENT_SYNCED_AT_KEY]);
+      PluginNextoolConfig::forgetConfigContext(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT);
    }
 
    /**
@@ -2345,7 +2193,7 @@ class PluginNextoolLicenseValidator {
     * @return array<string, array{status: string, ever_licensed: bool}>
     */
    public static function getModulesEntitlement(): array {
-      $raw = Config::getConfigurationValue(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, self::ENTITLEMENT_KEY) ?? '';
+      $raw = (string) (PluginNextoolConfig::readConfigContext(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT)[self::ENTITLEMENT_KEY] ?? '');
       if ($raw === '') {
          return [];
       }
@@ -2361,10 +2209,8 @@ class PluginNextoolLicenseValidator {
     * derruba o modo nuvem até o próximo /validate. A chave com '0' NÃO cai nessa regra.
     */
    public static function getModulesEntitlementSyncedAt(): int {
-      $values = Config::getConfigurationValues(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [
-         self::ENTITLEMENT_SYNCED_AT_KEY,
-         'entitlement_token_synced_at',
-      ]);
+      // mesma leitura (com memo) do getModulesEntitlement(): uma consulta para as duas chaves
+      $values = PluginNextoolConfig::readConfigContext(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT);
       if (array_key_exists(self::ENTITLEMENT_SYNCED_AT_KEY, $values)) {
          return max(0, (int) $values[self::ENTITLEMENT_SYNCED_AT_KEY]);
       }
@@ -2465,7 +2311,15 @@ class PluginNextoolLicenseValidator {
                $moduleKey, $origin
             ));
             if ($manager->isEnabled($moduleKey)) {
-               $manager->disableModule($moduleKey);
+               $disabled = $manager->disableModule($moduleKey);
+               if (empty($disabled['success'])) {
+                  // O aviso afirma "módulo desativado": só sai se o desativar de fato aconteceu.
+                  Toolbox::logInFile('plugin_nextool', sprintf(
+                     "[ENTITLEMENT] Módulo \"%s\" NÃO pôde ser desativado: %s\n",
+                     $moduleKey, (string) ($disabled['message'] ?? '')
+                  ));
+                  continue;
+               }
             }
             self::raiseUnsupervisedEntitlementAlert($manager, $moduleKey);
             continue;
@@ -2476,9 +2330,17 @@ class PluginNextoolLicenseValidator {
             $moduleKey
          ));
 
-         // Desativar se ativo
+         // Desativar se ativo. Se falhar, não segue para desinstalar nem remover arquivos de um
+         // módulo que continua ativo (arquivo faltando no boot derruba o GLPI).
          if ($manager->isEnabled($moduleKey)) {
-            $manager->disableModule($moduleKey);
+            $disabled = $manager->disableModule($moduleKey);
+            if (empty($disabled['success'])) {
+               Toolbox::logInFile('plugin_nextool', sprintf(
+                  "[ENTITLEMENT] Módulo \"%s\" NÃO pôde ser desativado; remoção adiada: %s\n",
+                  $moduleKey, (string) ($disabled['message'] ?? '')
+               ));
+               continue;
+            }
          }
 
          // O aviso da cron (se houve) deixa de valer: a remoção supervisionada está acontecendo.

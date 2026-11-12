@@ -48,9 +48,16 @@ $canPurgeModules    = PluginNextoolPermissionManager::canPurgeModuleData();
 $canViewAdminTabs   = PluginNextoolPermissionManager::canAccessAdminTabs();
 $canManageAdminTabs = PluginNextoolPermissionManager::canManageAdminTabs();
 $canViewAnyModule   = PluginNextoolPermissionManager::canViewAnyModule();
+// Um gate por bit do direito base (PERMISSIONS.md § 2.1): os MESMOS helpers do servidor
+// (ajax/core_update.php, front/config.save.php, PluginNextoolEventLog::canView).
+$canViewLicense     = PluginNextoolPermissionManager::canViewLicense();
+$canViewBaseLogs    = PluginNextoolPermissionManager::canViewBaseLogs();
+$canSyncLicense     = PluginNextoolPermissionManager::canSyncLicense();
+$canViewCoreVersion = PluginNextoolPermissionManager::canViewCoreVersion();
+$canApplyCoreUpdate = PluginNextoolPermissionManager::canApplyCoreUpdate();
 
 $coreUpdateAvailable = false;
-if ($canViewAdminTabs) {
+if ($canViewCoreVersion) {
    require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
    $coreUpdateState = PluginNextoolCoreUpdater::getState();
    $coreUpdateAvailable = !empty($coreUpdateState['update_available'])
@@ -59,7 +66,7 @@ if ($canViewAdminTabs) {
 }
 // Versão nova que este servidor não pode instalar (#285): o hero diz o requisito que falta.
 $coreUpdateBlockedText = '';
-if ($canViewAdminTabs && $canManageAdminTabs && !$coreUpdateAvailable) {
+if ($canApplyCoreUpdate && !$coreUpdateAvailable) {
    $coreUpdateBlocked = PluginNextoolCoreUpdater::getBlocked($coreUpdateState);
    if ($coreUpdateBlocked !== null) {
       $coreUpdateBlockedText = PluginNextoolCoreUpdater::describeBlocked($coreUpdateBlocked);
@@ -119,15 +126,23 @@ require_once NEXTOOL_PHP_DIR . '/inc/validationattempt.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/modulecatalog.class.php';
 require_once NEXTOOL_PHP_DIR . '/inc/modulecardhelper.class.php';
 
+// A montagem dos cards (descoberta a frio, sync de direitos e o laço por módulo) só serve à guia
+// Módulos. Até a 6.59.0 TODA guia da base (Licenciamento, Novidades, Logs, Serviços, Manutenção,
+// Sobre) rodava o bloco inteiro e descartava o resultado: cerca de 170 consultas por clique.
+// As demais guias só precisam do catálogo em memória (hero e contagem da guia Sobre).
+$nextoolNeedsCatalog = !isset($GLOBALS['nextool_show_only_tab']) || $GLOBALS['nextool_show_only_tab'] === 'modules';
+
 $manager = PluginNextoolModuleManager::getInstance();
 // Catálogo = fonte da verdade do admin: descoberta sempre A FRIO (como as páginas de
 // config dos módulos), para que uma pasta restaurada/copiada manualmente apareça na hora,
 // sem esperar a janela de confiança do manifesto de boot (#249, lote B). ~11 ms.
-$manager->discoverModules(true);
-$loadedModules = $manager->getAllModules();
+if ($nextoolNeedsCatalog) {
+   $manager->discoverModules(true);
+}
+$loadedModules = $nextoolNeedsCatalog ? $manager->getAllModules() : [];
 // Módulos bloqueados por manifesto (#237): module_key => motivo. Sem isto o card
 // aparecia normal e o bloqueio era invisível na UI (motivo só no log).
-$blockedModules = $manager->getBlockedModules();
+$blockedModules = $nextoolNeedsCatalog ? $manager->getBlockedModules() : [];
 
 // Catálogo agora vem direto do banco (fonte única da verdade)
 // PluginNextoolModuleCatalog::all() já lê de glpi_plugin_nextool_main_modules
@@ -171,16 +186,18 @@ $stats = [
 
 // Mapeamento module_key -> tabNum para links "Configurações" apontarem para a aba do módulo em nextoolconfig
 $moduleConfigTabMap = [];
-if (class_exists('PluginNextoolMainConfig')) {
+if ($nextoolNeedsCatalog && class_exists('PluginNextoolMainConfig')) {
    foreach (PluginNextoolMainConfig::getModuleConfigTabs() as $tabNum => $tabMeta) {
       $moduleConfigTabMap[$tabMeta['module_key'] ?? ''] = $tabNum;
    }
 }
 $nextoolConfigBaseUrl = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1';
 
-// Catálogo já contém todos os módulos do banco
-$allModuleKeys = array_keys($catalogMeta);
-PluginNextoolPermissionManager::syncModuleRights($allModuleKeys);
+// Catálogo já contém todos os módulos do banco (lista vazia fora da guia Módulos: o laço não roda)
+$allModuleKeys = $nextoolNeedsCatalog ? array_keys($catalogMeta) : [];
+if ($nextoolNeedsCatalog) {
+   PluginNextoolPermissionManager::syncModuleRights($allModuleKeys);
+}
 
 $currentPluginVersion = null;
 if (function_exists('plugin_version_nextool')) {
@@ -447,7 +464,9 @@ foreach ($allModuleKeys as $moduleKey) {
          'upgrade_url'             => NEXTOOL_SITE_URL,
          'data_url'                => PluginNextoolCompat::webDir() . '/front/module_data.php?module=' . urlencode($moduleKey),
          'config_url'              => $configUrl,
-         'show_config_button'      => $isInstalled && $moduleHasConfig && $moduleCanView,
+         // Botão Configurações: a máscara que a página de configuração do módulo exige (nextool-dev#319), não só a de
+         // ver o módulo. Sem isso, quem só usa o módulo via o botão e recebia "sem permissão para administrar".
+         'show_config_button'      => $isInstalled && $moduleHasConfig && PluginNextoolPermissionManager::canViewModuleConfig($moduleKey),
          // Assistente de primeira configuração: pendente vira o botão "Continuar configuração"; com assistente, o menu
          // ganha "Assistente de configuração" para rever (só para quem configura o módulo).
          'wizard_pending'          => $isInstalled && $isEnabled && $configUrl !== null && $moduleCanManage && PluginNextoolSetupWizard::isPending($moduleKey),
@@ -512,14 +531,16 @@ $nextool_is_standalone = ($nextool_show_only_tab !== null);
 if ($nextool_is_standalone) {
    $tabsRegistry = [
       'modules' => ['id' => 'rt-tab-modulos', 'label' => __('Módulos', 'nextool'), 'icon' => 'ti ti-puzzle', 'allowed' => $canViewAnyModule],
-      'licenca' => ['id' => 'rt-tab-licenca', 'label' => __('Licenciamento', 'nextool'), 'icon' => 'ti ti-key', 'allowed' => $canViewAdminTabs],
-      'logs'    => ['id' => 'rt-tab-logs', 'label' => __('Logs', 'nextool'), 'icon' => 'ti ti-report-analytics', 'allowed' => $canViewAdminTabs],
+      'licenca' => ['id' => 'rt-tab-licenca', 'label' => __('Licenciamento', 'nextool'), 'icon' => 'ti ti-key', 'allowed' => $canViewLicense],
+      'logs'    => ['id' => 'rt-tab-logs', 'label' => __('Logs', 'nextool'), 'icon' => 'ti ti-report-analytics', 'allowed' => $canViewBaseLogs],
       'servicos'  => ['id' => 'rt-tab-servicos', 'label' => __('Serviços', 'nextool'), 'icon' => 'ti ti-briefcase', 'allowed' => $canViewAdminTabs],
       'manutencao' => ['id' => 'rt-tab-manutencao', 'label' => __('Manutenção', 'nextool'), 'icon' => 'ti ti-tool', 'allowed' => $canViewAdminTabs],
       'sobre'     => ['id' => 'rt-tab-sobre', 'label' => __('Sobre', 'nextool'), 'icon' => 'ti ti-info-circle', 'allowed' => $canViewAdminTabs],
    ];
    $canShow = ($nextool_show_only_tab === 'modules' && $canViewAnyModule)
-      || (in_array($nextool_show_only_tab, ['licenca', 'logs', 'alertas', 'servicos', 'sobre', 'manutencao'], true) && $canViewAdminTabs);
+      || ($nextool_show_only_tab === 'licenca' && $canViewLicense)
+      || ($nextool_show_only_tab === 'logs' && $canViewBaseLogs)
+      || (in_array($nextool_show_only_tab, ['alertas', 'servicos', 'sobre', 'manutencao'], true) && $canViewAdminTabs);
    echo "<div class='m-3' id='nextool-config-form'>";
    if (!$canShow) {
       echo "<div class='alert alert-warning'><i class='ti ti-lock me-2'></i>" . __('Sem permissão para acessar esta seção.', 'nextool') . "</div>";
@@ -540,7 +561,7 @@ $tabsRegistry = $tabsRegistry ?? [
       'id'      => 'rt-tab-licenca',
       'label'   => __('Licenciamento', 'nextool'),
       'icon'    => 'ti ti-key',
-      'allowed' => $canViewAdminTabs,
+      'allowed' => $canViewLicense,
    ],
    'servicos' => [
       'id'      => 'rt-tab-servicos',
@@ -565,7 +586,7 @@ $tabsRegistry = $tabsRegistry ?? [
       'id'      => 'rt-tab-logs',
       'label'   => __('Logs', 'nextool'),
       'icon'    => 'ti ti-report-analytics',
-      'allowed' => $canViewAdminTabs,
+      'allowed' => $canViewBaseLogs,
    ],
 ];
 $firstTabKey = null;
@@ -578,14 +599,14 @@ foreach ($tabsRegistry as $key => $meta) {
 
 // Hero "Plano atual" reutilizável nas abas administrativas em modo standalone.
 // Exibido para qualquer perfil que enxergue a tela (informativo). Botões Sincronizar
-// e "Atualização Disponível" são ocultados para perfis sem canManageAdminTabs.
+// e "Atualização Disponível" seguem o bit de cada um ("Sincronizar licença" / "Aplicar atualização").
 $nextool_hero_standalone = '';
 if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'logs', 'alertas', 'servicos', 'sobre', 'manutencao'], true)) {
    ob_start();
    $nextoolHeroWithMarginTop = false;
    $nextoolHeroDisableSync = false;
-   $nextoolHeroHideSync = $requiresPolicyAcceptance || !$canManageAdminTabs;
-   $nextoolHeroShowCoreUpdate = $coreUpdateAvailable && $canManageAdminTabs;
+   $nextoolHeroHideSync = $requiresPolicyAcceptance || !$canSyncLicense;
+   $nextoolHeroShowCoreUpdate = $coreUpdateAvailable && $canApplyCoreUpdate;
    $nextoolHeroCoreUpdateBlocked = $coreUpdateBlockedText;
    $nextoolHeroForcetabMap = [
       'modules' => 'PluginNextoolMainConfig$1',
@@ -631,12 +652,11 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
      </ul>
       <?php
          // Hero informativo: visível para todo perfil que enxerga a tela.
-         // Sincronizar e "Atualização Disponível" são ocultados via flags abaixo
-         // para perfis sem canManageAdminTabs.
+         // Sincronizar e "Atualização Disponível" seguem o bit de cada um, via flags abaixo.
          $nextoolHeroWithMarginTop = true;
          $nextoolHeroDisableSync = false;
-         $nextoolHeroHideSync = $requiresPolicyAcceptance || !$canManageAdminTabs;
-         $nextoolHeroShowCoreUpdate = $coreUpdateAvailable && $canManageAdminTabs;
+         $nextoolHeroHideSync = $requiresPolicyAcceptance || !$canSyncLicense;
+         $nextoolHeroShowCoreUpdate = $coreUpdateAvailable && $canApplyCoreUpdate;
          $nextoolHeroCoreUpdateBlocked = $coreUpdateBlockedText;
          // Em modo não-standalone, o JS resolve a aba ativa dinamicamente.
          $nextoolHeroForcetab = '';

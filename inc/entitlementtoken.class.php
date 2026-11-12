@@ -110,7 +110,10 @@ class PluginNextoolEntitlementToken {
     * @return array<string,mixed>|null
     */
    public static function decodeAndVerifySignature(string $token): ?array {
-      if (!extension_loaded('sodium') || $token === '') {
+      // Testa a FUNÇÃO, não a extensão: o GLPI embarca o polyfill sodium_compat, que fornece a
+      // verificação Ed25519 em servidor sem php-sodium. Exigir a extensão descartava o token nesses
+      // servidores e a graça offline da licença nunca valia.
+      if ($token === '' || !function_exists('sodium_crypto_sign_verify_detached')) {
          return null;
       }
       $parts = explode('.', $token);
@@ -272,7 +275,8 @@ class PluginNextoolEntitlementToken {
       if ($binary === null) {
          $binary = $raw;
       }
-      if (strlen($binary) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES) {
+      // 32 = tamanho da chave pública Ed25519 (a constante só existe com sodium ou com o polyfill carregado)
+      if (strlen($binary) !== (defined('SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES') ? SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES : 32)) {
          return null;
       }
       return $binary;

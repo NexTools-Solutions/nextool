@@ -154,6 +154,50 @@ class PluginNextoolPermissionManager {
       }
    }
 
+   // ---------------------------------------------------------------------
+   // Bloco base: UM gate por bit (PERMISSIONS.md § 2.1). Cada coluna da matriz
+   // do perfil libera o que o rótulo diz e nada mais; todos negam no helpdesk
+   // (via canBase). Tela e endpoint usam o MESMO helper.
+   // ---------------------------------------------------------------------
+
+   /** "Ver licença": aba Licenciamento e identificador do ambiente no rodapé. */
+   public static function canViewLicense(): bool {
+      return self::canBase(self::BASE_VIEW_LICENSE);
+   }
+
+   /** "Sincronizar licença": botão Sincronizar (validate_license). */
+   public static function canSyncLicense(): bool {
+      return self::canBase(self::BASE_SYNC_LICENSE);
+   }
+
+   /** "Aceitar políticas": aceite das políticas de uso (dispara o registro do ambiente). */
+   public static function canAcceptPolicy(): bool {
+      return self::canBase(self::BASE_ACCEPT_POLICY);
+   }
+
+   /** "Ver logs": aba Logs e a grade de eventos. */
+   public static function canViewBaseLogs(): bool {
+      return self::canBase(self::BASE_VIEW_LOGS);
+   }
+
+   /** "Exportar logs": exportação da grade de eventos (exige também "Ver logs"). */
+   public static function canExportBaseLogs(): bool {
+      return self::canBase(self::BASE_VIEW_LOGS) && self::canBase(self::BASE_EXPORT_LOGS);
+   }
+
+   /** "Aplicar atualização": preparar, aplicar e cancelar a atualização da base e restaurar backup. */
+   public static function canApplyCoreUpdate(): bool {
+      return self::canBase(self::BASE_APPLY_UPDATE);
+   }
+
+   /**
+    * "Ver versão": consultar versão disponível, pré-requisitos e backups da base. Quem pode
+    * aplicar a atualização também consulta (o fluxo de aplicar começa pela consulta).
+    */
+   public static function canViewCoreVersion(): bool {
+      return self::canBase(self::BASE_VIEW_VERSION) || self::canBase(self::BASE_APPLY_UPDATE);
+   }
+
    // =====================================================================
    // Modulos: usabilidade e administracao
    // =====================================================================
@@ -297,28 +341,49 @@ class PluginNextoolPermissionManager {
    public static function canRunModuleAction(string $action, string $moduleKey): bool {
       switch ($action) {
          case 'install':
-         case 'download':
             return self::canInstallModules();
+         case 'download':
          case 'redownload':
-            // Reparo de artefato: serve tanto ao fluxo de instalacao quanto ao
-            // de atualizacao de um modulo ja presente.
-            return self::canUpdateModule($moduleKey) || self::canInstallModules();
+         case 'finalize_update':
+            // Sobre módulo JÁ INSTALADO estas três ações trocam os arquivos e rodam a migração:
+            // é uma atualização, e exige o bit "Atualizar" do módulo. `BASE_INSTALL` vale só
+            // enquanto o módulo ainda não está instalado (baixar, reparar o pacote baixado).
+            // Até a 6.59.0 quem tinha só "Instalar módulo" atualizava qualquer módulo por aqui.
+            if (self::isModuleInstalled($moduleKey)) {
+               return self::canUpdateModule($moduleKey);
+            }
+            return self::canInstallModules() || self::canUpdateModule($moduleKey);
          case 'enable':
          case 'disable':
             return self::canToggleModule($moduleKey);
          case 'update':
             return self::canUpdateModule($moduleKey);
-         case 'finalize_update':
-            // Fase 2 do update (issue #158): conclui a migração iniciada por
-            // update/redownload/download. Quem pode INICIAR pode concluir -- por isso o
-            // mesmo veredito do 'redownload', que cobre os dois pontos de entrada.
-            return self::canUpdateModule($moduleKey) || self::canInstallModules();
          case 'uninstall':
             return self::canUninstallModule($moduleKey);
          case 'purge_data':
             return self::canPurgeModuleDataForModule($moduleKey);
       }
       return false;
+   }
+
+   /**
+    * O módulo está instalado neste ambiente? Decide qual bit as ações de pacote exigem
+    * (ver canRunModuleAction). Lê o estado do banco pelo ModuleManager; se não der para saber,
+    * responde "instalado" (fail-closed: exige o bit mais restrito).
+    */
+   private static function isModuleInstalled(string $moduleKey): bool {
+      $key = self::normalizeModuleKey($moduleKey);
+      if ($key === '') {
+         return true;
+      }
+      try {
+         if (!class_exists('PluginNextoolModuleManager')) {
+            require_once NEXTOOL_PHP_DIR . '/inc/modulemanager.class.php';
+         }
+         return PluginNextoolModuleManager::getInstance()->isInstalled($key);
+      } catch (\Throwable $e) {
+         return true;
+      }
    }
 
    /** Porteiro do endpoint de acoes: quem nao ve o catalogo nem modulo algum
@@ -341,9 +406,16 @@ class PluginNextoolPermissionManager {
    public static function canAccessAdminTabs(): bool {
       return self::canBaseAny();
    }
+   /**
+    * Ações de escrita da configuração que NÃO têm bit próprio (desvincular o ambiente, modo de
+    * desinstalação, rotinas, feed de novidades, salvar a configuração, anexar relatório técnico):
+    * só o super-direito. Até a 6.59.0 bastava QUALQUER um de "Sincronizar licença", "Aceitar
+    * políticas" ou "Aplicar atualização" (OR de máscara), o que também liberava o self-update a
+    * quem só tinha um dos outros dois, e o gate não negava no helpdesk. As ações com bit usam os
+    * helpers `canSyncLicense()`, `canAcceptPolicy()`, `canApplyCoreUpdate()` etc.
+    */
    public static function canManageAdminTabs(): bool {
-      return self::hasGlobalAdminAccess()
-         || self::haveRight(self::RIGHT_BASE, self::BASE_SYNC_LICENSE | self::BASE_ACCEPT_POLICY | self::BASE_APPLY_UPDATE);
+      return self::hasGlobalAdminAccess();
    }
 
    public static function assertCanViewModule(string $moduleKey): void {
@@ -761,6 +833,34 @@ class PluginNextoolPermissionManager {
     * o modulo pode declarar uma MASCARA de visualizacao (getViewMask) -- necessario
     * quando o modulo troca o bit generico "acessar" por um Ver por menu.
     */
+   /**
+    * O perfil pode ABRIR a configuração do módulo (catálogo e submenu Nextools oferecem o link)? Usa o
+    * getConfigViewMask() do módulo, que por padrão é o getViewMask() (nextool-dev#319). Só central.
+    */
+   public static function canViewModuleConfig(string $moduleKey): bool {
+      if (self::isHelpdeskInterface()) {
+         return false;
+      }
+      if (self::hasGlobalAdminAccess()) {
+         return true;
+      }
+      $mask = self::moduleViewMask($moduleKey);
+      try {
+         if (class_exists('PluginNextoolModuleManager')) {
+            $mod = PluginNextoolModuleManager::getInstance()->getModule(self::normalizeModuleKey($moduleKey));
+            if ($mod && method_exists($mod, 'getConfigViewMask')) {
+               $declared = (int) $mod->getConfigViewMask();
+               if ($declared > 0) {
+                  $mask = $declared;
+               }
+            }
+         }
+      } catch (\Throwable $e) {
+         // mantem a mascara de visualizacao
+      }
+      return self::haveModuleRight($moduleKey, $mask);
+   }
+
    public static function canViewModuleAny(string $moduleKey): bool {
       if (self::isHelpdeskInterface()) {
          return false;

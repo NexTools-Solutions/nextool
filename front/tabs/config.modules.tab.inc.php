@@ -262,7 +262,7 @@ declare(strict_types=1);
                         <span class="nextool-badge-ribbon <?php echo $ribbonClass; ?>"><?php echo $ribbonLabel; ?></span>
                         <div class="card-body d-flex flex-column">
                            <div class="d-flex align-items-start gap-2 mb-2">
-                              <i class="<?php echo $module['icon']; ?> fs-2x <?php echo $tierColor; ?> mt-1"></i>
+                              <i class="<?php echo PluginNextoolCompat::escape((string) $module['icon']); ?> fs-2x <?php echo $tierColor; ?> mt-1"></i>
                               <div class="flex-grow-1" style="min-width: 0;">
                                  <div class="d-flex align-items-baseline justify-content-between">
                                     <h5 class="card-title mb-0 <?php echo $tierColor; ?>"><?php

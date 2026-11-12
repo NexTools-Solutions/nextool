@@ -29,6 +29,18 @@ class PluginNextoolFileHelper {
     * @throws RuntimeException quando $throwOnFailure é true e rmdir/unlink falhar
     */
    public static function deleteDirectory(string $dir, bool $throwOnFailure = false): void {
+      // Link simbólico nunca é seguido: remove-se o LINK, não o destino. Até a 6.59.0 o caminho vinha
+      // de getRealPath(), que resolve o link: um link dentro da pasta apagava o arquivo de FORA dela
+      // (e um link quebrado abortava a operação com TypeError).
+      if (is_link($dir)) {
+         if (!@unlink($dir) && $throwOnFailure) {
+            throw new RuntimeException(sprintf(
+               __('Falha ao remover arquivo %s. Verifique permissões.', 'nextool'),
+               $dir
+            ));
+         }
+         return;
+      }
       if (!is_dir($dir)) {
          return;
       }
@@ -39,7 +51,16 @@ class PluginNextoolFileHelper {
       );
 
       foreach ($iterator as $item) {
-         $path = $item->getRealPath();
+         $path = $item->getPathname();
+         if ($item->isLink()) {
+            if (!@unlink($path) && $throwOnFailure) {
+               throw new RuntimeException(sprintf(
+                  __('Falha ao remover arquivo %s. Verifique permissões.', 'nextool'),
+                  $path
+               ));
+            }
+            continue;
+         }
          if ($item->isDir()) {
             if (!@rmdir($path)) {
                if ($throwOnFailure) {
@@ -145,45 +166,163 @@ class PluginNextoolFileHelper {
     * @return array{body: string, http_code: int, date: ?string}
     */
    private static function performHttpRequestOnce(string $url, array $options): array {
-      $method = strtoupper((string)($options['method'] ?? 'GET'));
-      $date = null;
-      $ch = curl_init($url);
-      curl_setopt($ch, CURLOPT_HEADERFUNCTION, static function ($handle, string $line) use (&$date): int {
-         if (stripos($line, 'Date:') === 0) {
-            $date = trim(substr($line, 5));
+      try {
+         return self::httpSend($url, $options + ['follow_redirects' => true]);
+      } catch (RuntimeException $e) {
+         throw new RuntimeException(sprintf(__('Erro ao comunicar com ContainerAPI: %s', 'nextool'), $e->getMessage()), (int) $e->getCode(), $e);
+      }
+   }
+
+   /**
+    * Requisição HTTP pelo cliente do core (`PluginNextoolCompat::httpClient`), com o PROXY de
+    * Configurar > Geral nos três majors (Guzzle do GLPI 10/11, adaptador sobre o HttpClient do 12).
+    *
+    * Ponto único de saída HTTP do licenciamento e da distribuição. Até a 6.59.0 validate, bootstrap,
+    * enroll, migrate, downloads e a consulta de horário montavam cURL próprio em 9 lugares e nenhum
+    * aplicava o proxy: um GLPI que só sai por proxy nunca licenciava nem baixava módulo.
+    *
+    * 3xx (quando não segue), 4xx e 5xx são RESPOSTA, não exceção. Sem resposta (rede, DNS, TLS, proxy
+    * fora) lança RuntimeException cujo código é o errno do cURL quando conhecido (0 se não); a mensagem
+    * nunca leva a URL (links de download são assinados).
+    *
+    * @param array{method?: string, timeout?: int, body?: string, headers?: string[], follow_redirects?: bool} $options
+    * @return array{body: string, http_code: int, date: ?string}
+    * @throws RuntimeException
+    */
+   public static function httpSend(string $url, array $options = []): array {
+      $method = strtoupper((string) ($options['method'] ?? 'GET'));
+      try {
+         $client = self::httpClientFor($url, $options);
+         $request = ['headers' => self::headerLinesToMap($options['headers'] ?? [])];
+         if ($method !== 'GET' && $method !== 'HEAD') {
+            $request['body'] = (string) ($options['body'] ?? '');
          }
-         return strlen($line);
-      });
-
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-      curl_setopt($ch, CURLOPT_TIMEOUT, (int)($options['timeout'] ?? 30));
-      curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-      curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-      curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-
-      if ($method === 'POST') {
-         curl_setopt($ch, CURLOPT_POST, true);
-         curl_setopt($ch, CURLOPT_POSTFIELDS, $options['body'] ?? '');
+         $response = $client->request($method, $url, $request);
+         $date = trim((string) $response->getHeaderLine('Date'));
+         return [
+            'body'      => $method === 'HEAD' ? '' : (string) $response->getBody(),
+            'http_code' => (int) $response->getStatusCode(),
+            'date'      => $date !== '' ? $date : null,
+         ];
+      } catch (Throwable $e) {
+         throw self::transportException($e, $url);
       }
+   }
 
-      if (!empty($options['headers']) && is_array($options['headers'])) {
-         curl_setopt($ch, CURLOPT_HTTPHEADER, $options['headers']);
+   /**
+    * Baixa uma URL para um arquivo, pelo mesmo cliente de `httpSend()` (com o proxy do GLPI).
+    * Resposta fora de 2xx NÃO deixa arquivo: devolve o código e quem chama decide a mensagem.
+    *
+    * @param array{timeout?: int, headers?: string[]} $options
+    * @return array{http_code: int, bytes: int}
+    * @throws RuntimeException sem resposta ou falha ao gravar o arquivo
+    */
+   public static function downloadToFile(string $url, string $targetPath, array $options = []): array {
+      $bytes = 0;
+      try {
+         $client = self::httpClientFor($url, $options + ['follow_redirects' => true]);
+         $request = ['headers' => self::headerLinesToMap($options['headers'] ?? [])];
+         $isGuzzle = $client instanceof \GuzzleHttp\ClientInterface;
+         if ($isGuzzle) {
+            // Guzzle grava direto no arquivo (não carrega o pacote em memória).
+            $request['sink'] = $targetPath;
+         }
+         $response = $client->request('GET', $url, $request);
+         $code = (int) $response->getStatusCode();
+         if ($code < 200 || $code >= 300) {
+            @unlink($targetPath);
+            return ['http_code' => $code, 'bytes' => 0];
+         }
+         if (!$isGuzzle) {
+            // Adaptador do GLPI 12: sem `sink`; lê o corpo em blocos.
+            $fp = @fopen($targetPath, 'wb');
+            if ($fp === false) {
+               throw new \UnexpectedValueException(sprintf(__('Não foi possível criar arquivo temporário: %s', 'nextool'), $targetPath));
+            }
+            try {
+               $body = $response->getBody();
+               while (!$body->eof()) {
+                  $chunk = $body->read(65536);
+                  if ($chunk === '') {
+                     continue;
+                  }
+                  if (fwrite($fp, $chunk) === false) {
+                     throw new \UnexpectedValueException(sprintf(__('Não foi possível criar arquivo temporário: %s', 'nextool'), $targetPath));
+                  }
+               }
+            } finally {
+               fclose($fp);
+            }
+         }
+         clearstatcache(true, $targetPath);
+         $bytes = is_file($targetPath) ? (int) filesize($targetPath) : 0;
+         return ['http_code' => $code, 'bytes' => $bytes];
+      } catch (\UnexpectedValueException $e) {
+         // falha LOCAL ao gravar o arquivo (não é falha de rede): segue como está
+         @unlink($targetPath);
+         throw $e;
+      } catch (Throwable $e) {
+         @unlink($targetPath);
+         throw self::transportException($e, $url);
       }
+   }
 
-      $body = curl_exec($ch);
-      $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      $err = curl_error($ch);
-      curl_close($ch);
-
-      if ($body === false) {
-         throw new RuntimeException(sprintf(__('Erro ao comunicar com ContainerAPI: %s', 'nextool'), $err));
-      }
-
-      return [
-         'body' => (string)$body,
-         'http_code' => $httpCode,
-         'date' => $date,
+   /** Cliente do core já com timeout, redirecionamento e (no GLPI 12) a liberação de `http://`. */
+   private static function httpClientFor(string $url, array $options) {
+      require_once NEXTOOL_PHP_DIR . '/inc/compat.class.php';
+      $timeout = max(1, (int) ($options['timeout'] ?? 30));
+      $clientOptions = [
+         'timeout'         => $timeout,
+         // o padrão do core (5 s) é curto para link lento; nunca maior que o tempo total
+         'connect_timeout' => min($timeout, 15),
+         'http_errors'     => false,
+         'allow_redirects' => !empty($options['follow_redirects']),
       ];
+      // GLPI 12: o adaptador só aceita https por padrão; ContainerAPI de laboratório em http segue aceito.
+      if (stripos($url, 'http://') === 0 && defined('PluginNextoolCompat::HTTP_ALLOW_HTTP_OPTION')) {
+         $clientOptions[PluginNextoolCompat::HTTP_ALLOW_HTTP_OPTION] = true;
+      }
+      return PluginNextoolCompat::httpClient($clientOptions);
+   }
+
+   /**
+    * Converte cabeçalhos no formato do cURL (`['Nome: valor', ...]`) para o mapa que o cliente usa.
+    *
+    * @param string[] $lines
+    * @return array<string,string>
+    */
+   private static function headerLinesToMap(array $lines): array {
+      $map = [];
+      foreach ($lines as $name => $line) {
+         if (is_string($name) && $name !== '') {
+            $map[$name] = (string) $line;
+            continue;
+         }
+         $pos = strpos((string) $line, ':');
+         if ($pos === false || $pos === 0) {
+            continue;
+         }
+         $map[trim(substr((string) $line, 0, $pos))] = trim(substr((string) $line, $pos + 1));
+      }
+      return $map;
+   }
+
+   /** Normaliza a falha de transporte: código = errno do cURL (se houver), mensagem sem a URL. */
+   private static function transportException(Throwable $e, string $url): RuntimeException {
+      $errno = 0;
+      $message = $e->getMessage();
+      if (method_exists($e, 'getHandlerContext')) {
+         $context = (array) $e->getHandlerContext();
+         $errno = (int) ($context['errno'] ?? 0);
+         if (!empty($context['error']) && is_string($context['error'])) {
+            $message = $context['error'];
+         }
+      }
+      $message = trim(str_replace($url, '', $message));
+      if ($message === '') {
+         $message = get_class($e);
+      }
+      return new RuntimeException($message, $errno, $e);
    }
 
    /**

@@ -164,30 +164,14 @@ final class PluginNextoolClock {
 
    /** HEAD no endpoint só para ler o Date (servidor antigo, sem server_time no 401). */
    private static function fetchServerTime(string $url): ?int {
-      if (!function_exists('curl_init')) {
+      // Transporte único (PluginNextoolFileHelper::httpSend): cliente do core, com o proxy do GLPI.
+      try {
+         require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+         $http = PluginNextoolFileHelper::httpSend($url, ['method' => 'HEAD', 'timeout' => 10]);
+      } catch (Throwable $e) {
          return null;
       }
-      $ch = curl_init($url);
-      if ($ch === false) {
-         return null;
-      }
-      $date = null;
-      curl_setopt_array($ch, [
-         CURLOPT_NOBODY         => true,
-         CURLOPT_RETURNTRANSFER => true,
-         CURLOPT_TIMEOUT        => 10,
-         CURLOPT_SSL_VERIFYPEER => true,
-         CURLOPT_SSL_VERIFYHOST => 2,
-         CURLOPT_HEADERFUNCTION => static function ($handle, string $line) use (&$date): int {
-            if (stripos($line, 'Date:') === 0) {
-               $date = trim(substr($line, 5));
-            }
-            return strlen($line);
-         },
-      ]);
-      curl_exec($ch);
-      curl_close($ch);
-      return $date === null ? null : self::parseHttpDate($date);
+      return $http['date'] === null ? null : self::parseHttpDate((string) $http['date']);
    }
 
    private static function persist(int $offset): void {
