@@ -25,12 +25,6 @@ declare(strict_types=1);
          </h4>
       </div>
       <div class="card-body">
-         <p class="text-muted">
-            <?php echo __('Validações de licença, alterações de configuração e ações em módulos (instalar, ativar, atualizar) num só registro. Use os critérios para filtrar por tipo, módulo, resultado ou período. Registros com mais de 120 dias são removidos automaticamente.', 'nextool'); ?>
-         </p>
-
-         <hr class="my-4">
-
          <?php
          $GLOBALS['nextool_eventlog_forcetab_url'] = PluginNextoolCompat::webDir()
             . '/front/nextoolconfig.form.php?id=1&forcetab=PluginNextoolMainConfig$5';

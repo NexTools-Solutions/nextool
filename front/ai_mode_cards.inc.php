@@ -15,7 +15,12 @@
  *      'title'    => __('Modo de tradução', ...), // título da seção
  *      'managed'  => ['subtitle' => '...', 'pros' => ['...', ...]],
  *      'own'      => ['title' => '...', 'subtitle' => '...', 'cons' => ['...', ...], 'help' => '...'],
+ *      // opcionais (nextool-mod-aiassist#74, 12/11/2026):
+ *      'values'   => ['managed' => 'cloud_managed', 'own' => 'direct'], // valor gravado de cada cartão (padrão: as chaves)
+ *      'managed'  => [..., 'notes' => ['R$ 5,00 vencem em ...', ...]], // linhas abaixo do saldo (texto, escapado aqui)
+ *      'balance_refresh_url' => '...', // GET que devolve {success, balance_brl}: o saldo ao vivo chega depois da carga
  *   ];
+ * `value` aceita a chave (managed|own) ou o valor gravado. O evento `nextool:ai-mode` leva `{mode, value}`.
  *   include NEXTOOL_PHP_DIR . '/front/ai_mode_cards.inc.php';
  * O CSS é o `.nextool-ai-mode-*` do front/nextool-tabs.css.php. Textos dos cartões são do módulo (domínio dele); os
  * genéricos (Saldo, Comprar créditos, Recomendado) são da base.
@@ -34,7 +39,16 @@ $nxAm = is_array($GLOBALS['nextool_ai_mode_cards'] ?? null) ? $GLOBALS['nextool_
 unset($GLOBALS['nextool_ai_mode_cards']);
 $nxAmPrefix = preg_replace('/[^a-z0-9_-]/', '', (string) ($nxAm['prefix'] ?? 'nx')) ?: 'nx';
 $nxAmField  = preg_replace('/[^a-z0-9_]/', '', (string) ($nxAm['field'] ?? 'ai_mode')) ?: 'ai_mode';
-$nxAmValue  = ($nxAm['value'] ?? 'managed') === 'own' ? 'own' : 'managed';
+$nxAmVals   = ['managed' => 'managed', 'own' => 'own'];
+foreach ($nxAmVals as $nxAmK => $nxAmV) {
+   $nxAmCustom = is_array($nxAm['values'] ?? null) ? (string) ($nxAm['values'][$nxAmK] ?? '') : '';
+   if (preg_match('/^[a-z0-9_]{1,40}$/', $nxAmCustom)) {
+      $nxAmVals[$nxAmK] = $nxAmCustom;
+   }
+}
+$nxAmRaw    = (string) ($nxAm['value'] ?? 'managed');
+$nxAmValue  = ($nxAmRaw === 'own' || $nxAmRaw === $nxAmVals['own']) ? 'own' : 'managed';
+$nxAmRefresh = (string) ($nxAm['balance_refresh_url'] ?? '');
 $nxAmDis    = !empty($nxAm['disabled']) ? 'disabled' : '';
 $nxAmHide   = (string) ($nxAm['hide'] ?? '');
 $nxAmMan    = is_array($nxAm['managed'] ?? null) ? $nxAm['managed'] : [];
@@ -61,7 +75,7 @@ $nxAmId     = $nxAmPrefix . '-ai-mode';
                   <span class="avatar avatar-md bg-primary text-white flex-shrink-0"><i class="ti ti-sparkles fs-2"></i></span>
                   <div class="flex-fill">
                      <div class="d-flex align-items-center flex-wrap gap-2">
-                        <input type="radio" class="form-check-input nextool-ai-mode-radio m-0" id="<?php echo $nxAmId; ?>-managed" name="<?php echo $nxAmField; ?>" value="managed" <?php echo $nxAmValue === 'managed' ? 'checked' : ''; ?> <?php echo $nxAmDis; ?>>
+                        <input type="radio" class="form-check-input nextool-ai-mode-radio m-0" id="<?php echo $nxAmId; ?>-managed" name="<?php echo $nxAmField; ?>" value="<?php echo $nxAmVals['managed']; ?>" data-mode="managed" <?php echo $nxAmValue === 'managed' ? 'checked' : ''; ?> <?php echo $nxAmDis; ?>>
                         <label class="fw-bold fs-3 mb-0" for="<?php echo $nxAmId; ?>-managed"><?php echo __('Gerenciado pela NexTool', 'nextool'); ?></label>
                         <span class="badge bg-primary text-white"><?php echo __('Recomendado', 'nextool'); ?></span>
                      </div>
@@ -77,7 +91,12 @@ $nxAmId     = $nxAmPrefix . '-ai-mode';
                         <?php if ($nxAmCred !== null): ?>
                            <div>
                               <div class="small text-secondary"><?php echo __('Saldo', 'nextool'); ?></div>
-                              <div class="fs-2 fw-bold lh-1 nextool-ai-mode-balance"><?php echo $nxAmEsc($nxAmCred['balance_brl']); ?></div>
+                              <div class="fs-2 fw-bold lh-1 nextool-ai-mode-balance"<?php echo $nxAmRefresh !== '' ? ' data-refresh-url="' . $nxAmEsc($nxAmRefresh) . '"' : ''; ?>><?php echo $nxAmEsc($nxAmCred['balance_brl']); ?></div>
+                              <?php foreach ((array) ($nxAmMan['notes'] ?? []) as $nxAmNote): ?>
+                                 <?php if ((string) $nxAmNote !== ''): ?>
+                                    <div class="small text-secondary mt-1"><?php echo $nxAmEsc($nxAmNote); ?></div>
+                                 <?php endif; ?>
+                              <?php endforeach; ?>
                            </div>
                         <?php endif; ?>
                         <a class="btn btn-primary ms-auto" href="<?php echo $nxAmEsc($nxAmBuy); ?>" target="_blank" rel="noopener"><i class="ti ti-shopping-cart me-1"></i><?php echo __('Comprar créditos', 'nextool'); ?></a>
@@ -92,7 +111,7 @@ $nxAmId     = $nxAmPrefix . '-ai-mode';
                   <span class="avatar avatar-md bg-secondary text-white flex-shrink-0"><i class="ti ti-key fs-2"></i></span>
                   <div class="flex-fill">
                      <div class="d-flex align-items-center flex-wrap gap-2">
-                        <input type="radio" class="form-check-input nextool-ai-mode-radio m-0" id="<?php echo $nxAmId; ?>-own" name="<?php echo $nxAmField; ?>" value="own" <?php echo $nxAmValue === 'own' ? 'checked' : ''; ?> <?php echo $nxAmDis; ?>>
+                        <input type="radio" class="form-check-input nextool-ai-mode-radio m-0" id="<?php echo $nxAmId; ?>-own" name="<?php echo $nxAmField; ?>" value="<?php echo $nxAmVals['own']; ?>" data-mode="own" <?php echo $nxAmValue === 'own' ? 'checked' : ''; ?> <?php echo $nxAmDis; ?>>
                         <label class="fw-bold fs-3 mb-0" for="<?php echo $nxAmId; ?>-own"><?php echo $nxAmEsc($nxAmOwn['title'] ?? __('Sua chave', 'nextool')); ?></label>
                         <?php if (!empty($nxAmOwn['help'])): ?>
                            <span class="form-help" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="<?php echo $nxAmEsc($nxAmOwn['help']); ?>">?</span>
@@ -122,12 +141,20 @@ setTimeout(function () {
    root.dataset.nxBound = '1';
    function apply() {
       var checked = root.querySelector('.nextool-ai-mode-radio:checked');
-      var mode = checked ? checked.value : 'managed';
+      var mode = checked ? (checked.dataset.mode || checked.value) : 'managed';
       root.querySelectorAll('.nextool-ai-mode-card').forEach(function (c) { c.classList.toggle('is-selected', c.dataset.mode === mode); });
       if (root.dataset.hide) {
          document.querySelectorAll(root.dataset.hide).forEach(function (el) { el.style.display = mode === 'managed' ? 'none' : ''; });
       }
-      root.dispatchEvent(new CustomEvent('nextool:ai-mode', { bubbles: true, detail: { mode: mode } }));
+      root.dispatchEvent(new CustomEvent('nextool:ai-mode', { bubbles: true, detail: { mode: mode, value: checked ? checked.value : '' } }));
+   }
+   // Saldo ao vivo depois da carga (opcional): a aba não espera a nuvem para abrir.
+   var bal = root.querySelector('.nextool-ai-mode-balance[data-refresh-url]');
+   if (bal && window.fetch) {
+      fetch(bal.dataset.refreshUrl, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+         .then(function (r) { return r.ok ? r.json() : null; })
+         .then(function (j) { if (j && j.success && j.balance_brl) { bal.textContent = j.balance_brl; } })
+         .catch(function () {});
    }
    root.querySelectorAll('.nextool-ai-mode-radio').forEach(function (r) { r.addEventListener('change', apply); });
    root.querySelectorAll('.nextool-ai-mode-card').forEach(function (card) {

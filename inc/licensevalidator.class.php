@@ -2277,7 +2277,7 @@ class PluginNextoolLicenseValidator {
       }
 
       // (#246) Contexto SUPERVISIONADO = há um humano na tela (Sincronizar, instalar/atualizar
-      // módulo, aceitar políticas...). A cron catalogSync (6/6h) roda sem ninguém olhando:
+      // módulo, aceitar políticas...). A cron catalogSync (de hora em hora) roda sem ninguém olhando:
       // nela o passo destrutivo (desinstalar + apagar arquivos) NÃO acontece -- só desativa
       // e avisa na aba Novidades. Um falso negativo de entitlement no servidor deixa de
       // apagar módulo pago à noite; a remoção fica para a próxima validação supervisionada,

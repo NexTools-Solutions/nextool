@@ -279,6 +279,18 @@ if ($action === 'unlink_environment') {
    // antes de re-provisionar do zero. NOTA: o ambiente continua provisionado no
    // SERVIDOR -- um novo bootstrap só terá sucesso após o administrador resetar
    // o provisionamento (ritecadmin), senão retornará 409.
+   // Confirmação digitada no popup da aba Manutenção: a mesma palavra traduzível da tela. A tela já trava o
+   // botão; aqui é a garantia para envio fora dela.
+   $palavra = mb_strtolower(trim(__('apagar', 'nextool')));
+   if (mb_strtolower(trim((string) ($_POST['confirm_word'] ?? ''))) !== $palavra) {
+      Session::addMessageAfterRedirect(
+         sprintf(__('Segredo de comunicação mantido: para apagar, digite "%s" no campo de confirmação.', 'nextool'), $palavra),
+         false,
+         ERROR
+      );
+      plugin_nextool_redirect_after_action();
+      exit;
+   }
    $distributionSettings = PluginNextoolConfig::getDistributionSettings();
    $clientIdentifier = trim((string)($distributionSettings['client_identifier'] ?? ''));
 

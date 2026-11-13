@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.60.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.61.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -832,10 +832,12 @@ function plugin_init_nextool() {
             }
             plugin_nextool_prof_stop('dispatch_menus');
 
-            // Vigia das rotinas pela web (cron do servidor parado não roda o vigia). Depois dos
-            // módulos: o sino (sink) já está registrado. Um stat por request; checagem a cada 10 min.
+            // Vigia das rotinas pela web (cron do servidor parado não roda o vigia). No post_init, depois
+            // de TODOS os plugins: aqui, no init do nextool, os plugins seguintes ainda não carregaram e a
+            // gravação da checagem caía em gancho de outro plugin sem a classe dele (PluginFieldsContainer
+            // no DEV, 12/11/2026). Um stat por request; checagem a cada 10 min.
             if (!$nxAssetFastPath && class_exists('PluginNextoolJobWatchdog')) {
-               PluginNextoolJobWatchdog::maybeRunFromWeb();
+               $PLUGIN_HOOKS['post_init']['nextool'] = 'plugin_nextool_post_init';
             }
          } catch (Exception $e) {
             Toolbox::logInFile('plugin_nextool', "Erro ao carregar módulos: " . $e->getMessage());
@@ -1026,7 +1028,7 @@ function _plugin_nextool_ensure_schema(): void {
 }
 
 /**
- * Registra as CronTasks do NexTool: `catalogSync` (6 h) e `cloudPurge` (1 h, retenção do cloud link).
+ * Registra as CronTasks do NexTool: `catalogSync` (1 h) e `cloudPurge` (1 h, retenção do cloud link).
  * Idempotente: CronTask::register faz early-return se a task
  * já existe (ver learning_crontask_register_idempotent). MODE_EXTERNAL obrigatório para
  * poll/integração (web-hit MODE_INTERNAL trava em state=2). Chamado no install/upgrade (F2).
@@ -1043,24 +1045,36 @@ function _plugin_nextool_register_crons() {
       }
    }
    if (class_exists('PluginNextoolCronCatalogSync')) {
-      CronTask::register('PluginNextoolCronCatalogSync', 'catalogSync', 6 * HOUR_TIMESTAMP, [
+      CronTask::register('PluginNextoolCronCatalogSync', 'catalogSync', HOUR_TIMESTAMP, [
          'comment' => 'Sincroniza o catálogo de módulos NexTool com a plataforma',
          'mode'    => CronTask::MODE_EXTERNAL,
       ]);
-      // register() faz early-return se a task já existe -> não atualiza a frequência de quem
-      // instalou com o antigo DAY_TIMESTAMP (24h). Migra 24h -> 6h SÓ para quem está no default
-      // antigo, e SÓ UMA VEZ (#162): sem a flag, o UPDATE re-rodava a cada install/upgrade e
-      // revertia um admin que tivesse escolhido deliberadamente 24h em Ações automáticas.
+      // register() faz early-return se a task já existe -> não atualiza a frequência de quem já tem a
+      // task. Migra para 1 h SÓ quem está num padrão antigo, e SÓ UMA VEZ por padrão (#162): sem a flag,
+      // o UPDATE re-rodava a cada install/upgrade e revertia um admin que tivesse escolhido outra
+      // frequência em Ações automáticas. Padrões antigos: 24 h (até a 5.x) e 6 h (até a 6.60).
+      // Quem passou pela migração 24 h -> 6 h (`catalogsync_freq_migrated`) e está em 24 h escolheu
+      // 24 h de propósito: fica.
       global $DB;
       if (isset($DB) && $DB->tableExists('glpi_crontasks') && class_exists('Config')) {
-         $flags = Config::getConfigurationValues('plugin:nextool_distribution', ['catalogsync_freq_migrated']);
-         if (empty($flags['catalogsync_freq_migrated'])) {
-            $DB->update('glpi_crontasks', ['frequency' => 6 * HOUR_TIMESTAMP], [
+         $flags = Config::getConfigurationValues(
+            'plugin:nextool_distribution',
+            ['catalogsync_freq_migrated', 'catalogsync_freq_1h_migrated']
+         );
+         if (empty($flags['catalogsync_freq_1h_migrated'])) {
+            $padroesAntigos = [6 * HOUR_TIMESTAMP];
+            if (empty($flags['catalogsync_freq_migrated'])) {
+               $padroesAntigos[] = DAY_TIMESTAMP;
+            }
+            $DB->update('glpi_crontasks', ['frequency' => HOUR_TIMESTAMP], [
                'itemtype'  => 'PluginNextoolCronCatalogSync',
                'name'      => 'catalogSync',
-               'frequency' => DAY_TIMESTAMP,
+               'frequency' => $padroesAntigos,
             ]);
-            Config::setConfigurationValues('plugin:nextool_distribution', ['catalogsync_freq_migrated' => '1']);
+            Config::setConfigurationValues('plugin:nextool_distribution', [
+               'catalogsync_freq_migrated'    => '1',
+               'catalogsync_freq_1h_migrated' => '1',
+            ]);
          }
       }
    }

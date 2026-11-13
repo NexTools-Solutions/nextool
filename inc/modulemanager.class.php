@@ -926,7 +926,7 @@ class PluginNextoolModuleManager {
       }
 
       // Cloud link (B2, nextool-dev#279): módulo com ferramentas de entrada decide se o endereço
-      // declarado à nuvem gera aviso. Redeclara depois da resposta, sem esperar o ciclo de 6 h.
+      // declarado à nuvem gera aviso. Redeclara depois da resposta, sem esperar o ciclo de 1 h.
       try {
          $tools = $module->getCloudTools();
       } catch (\Throwable $e) {
@@ -938,7 +938,7 @@ class PluginNextoolModuleManager {
             try {
                PluginNextoolCloudClient::afterInboundChange();
             } catch (\Throwable $e) {
-               // Sem vínculo legível: a reafirmação do ciclo de 6 h cobre.
+               // Sem vínculo legível: a reafirmação do ciclo de 1 h cobre.
             }
          }
       }

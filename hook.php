@@ -582,6 +582,18 @@ function plugin_nextool_pre_show_tab($params) {
  * Hook display_central - faixa "rotinas do NexTool paradas" na página inicial (#300), só para quem
  * enxerga as abas administrativas do NexTool e só enquanto a ação `nextoolJobs` não roda.
  */
+/** Gancho `post_init` (depois de todos os plugins): checagem do vigia das rotinas pela web. */
+function plugin_nextool_post_init() {
+   try {
+      if (!class_exists('PluginNextoolJobWatchdog')) {
+         require_once __DIR__ . '/inc/jobwatchdog.class.php';
+      }
+      PluginNextoolJobWatchdog::maybeRunFromWeb();
+   } catch (\Throwable $e) {
+      // o vigia nunca derruba a requisição.
+   }
+}
+
 function plugin_nextool_display_central() {
    try {
       if (!class_exists('PluginNextoolJobWatchdog')) {

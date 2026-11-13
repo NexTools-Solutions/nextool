@@ -255,7 +255,11 @@ class PluginNextoolOfferBanner {
 
    // ------------------------------------------------------------------ CSS + JS
 
-   private static function assets(): string {
+   /**
+    * CSS + JS da variação C (paleta, fonte e a constelação animada de `[data-nxo-dots]`), impressos uma vez por
+    * requisição. Público para a guia Serviços da base reaproveitar o efeito de fundo sem duplicar o script.
+    */
+   public static function assets(): string {
       if (self::$assetsPrinted) {
          return '';
       }

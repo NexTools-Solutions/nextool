@@ -28,16 +28,16 @@ $nextoolFooterWeb   = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form
 $nextoolFooterGlpi  = defined('GLPI_VERSION') ? (string) GLPI_VERSION : '-';
 ?>
 <div class="nextool-config-footer d-flex flex-wrap align-items-center gap-3 text-muted small border-top pt-3 mt-3 mx-3 mb-3">
-   <span><i class="ti ti-tool me-1"></i>NexTool <strong>v<?php echo $nextoolFooterEsc(PLUGIN_NEXTOOL_VERSION); ?></strong></span>
+   <span title="NexTool"><i class="ti ti-tool me-1"></i><strong>v<?php echo $nextoolFooterEsc(PLUGIN_NEXTOOL_VERSION); ?></strong></span>
    <span><i class="ti ti-server me-1"></i>GLPI <strong><?php echo $nextoolFooterEsc($nextoolFooterGlpi); ?></strong> · PHP <?php echo $nextoolFooterEsc(PHP_VERSION); ?></span>
    <?php if ($nextoolFooterAdmin):
       $nextoolFooterId = trim((string) (PluginNextoolConfig::getDistributionSettings()['client_identifier'] ?? ''));
    ?>
-   <span><i class="ti ti-fingerprint me-1"></i><?php echo __('Ambiente', 'nextool'); ?>
-      <?php echo $nextoolFooterId !== '' ? '<code>' . $nextoolFooterEsc($nextoolFooterId) . '</code>' : '<em>' . $nextoolFooterEsc(__('não identificado', 'nextool')) . '</em>'; ?>
-   </span>
+   <span title="<?php echo $nextoolFooterEsc(__('Ambiente', 'nextool')); ?>"><i class="ti ti-fingerprint me-1"></i><?php echo $nextoolFooterId !== '' ? '<code>' . $nextoolFooterEsc($nextoolFooterId) . '</code>' : '<em>' . $nextoolFooterEsc(__('não identificado', 'nextool')) . '</em>'; ?></span>
    <?php endif; ?>
-   <span class="ms-auto">
+   <?php // Links ocupam o que sobra da linha e quebram o texto dentro do bloco; sem isto o bloco inteiro (largura
+         // do texto todo) descia para a linha de baixo em tela menor. Só desce inteiro abaixo de 16rem. ?>
+   <span class="ms-auto text-end" style="flex: 1 1 0; min-width: 16rem;">
       <?php if ($nextoolFooterAdmin): ?>
       <a href="<?php echo $nextoolFooterEsc($nextoolFooterWeb . rawurlencode('PluginNextoolMainConfig$3')); ?>" class="text-decoration-underline"><?php echo __('Minhas licenças', 'nextool'); ?></a> ·
       <?php endif; ?>

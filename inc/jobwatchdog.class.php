@@ -211,7 +211,7 @@ class PluginNextoolJobWatchdog {
       $jobsTask = self::loadTask('PluginNextoolJobDispatcher', PluginNextoolJobDispatcher::TASK_NAME);
       if ($jobsTask !== null && PluginNextoolJobDispatcher::isEnabled()) {
          $estado = (int) $jobsTask['state'];
-         $lastrun = empty($jobsTask['lastrun']) ? 0 : (int) strtotime((string) $jobsTask['lastrun']);
+         $lastrun = self::epoch($jobsTask, 'lastrun');
          $idade = $lastrun > 0 ? $now - $lastrun : 0;
          if ($estado === CronTask::STATE_RUNNING && $lastrun > 0) {
             $livre = PluginNextoolJobDispatcher::isLockFree(PluginNextoolJobDispatcher::roundLockName());
@@ -249,12 +249,17 @@ class PluginNextoolJobWatchdog {
       $saude = self::health($now);
       if (!$saude['ok'] && $saude['reason'] !== 'task_stuck') {
          $texto = self::healthText($saude, $now);
+         $url = $saude['task_id'] > 0 && $saude['reason'] !== 'never_ran' ? self::cronTaskUrl($saude['task_id']) : self::routinesUrl();
+         if ($saude['reason'] === 'cron_busy') {
+            $url = !empty($saude['busy_task_id']) ? self::cronTaskUrl((int) $saude['busy_task_id']) : self::routinesUrl();
+         }
          $abertos[self::SRC_CRON_STOPPED] = [
             'source_key' => self::SRC_CRON_STOPPED,
             'title'      => $texto['title'],
             'message'    => $saude['reason'] === 'cron_stopped' ? $texto['message'] : trim($texto['message'] . ' ' . $texto['action']),
-            'url'        => $saude['task_id'] > 0 && $saude['reason'] !== 'never_ran' ? self::cronTaskUrl($saude['task_id']) : self::routinesUrl(),
-            'severity'   => 'critical',
+            'url'        => $url,
+            // Cron ativo com a fila presa é atenção (amarelo), não parada (vermelho).
+            'severity'   => self::isWarningReason((string) $saude['reason']) ? 'warning' : 'critical',
             'dedup_key'  => self::SRC_CRON_STOPPED,
          ];
       }
@@ -263,7 +268,7 @@ class PluginNextoolJobWatchdog {
       if ($origem === 'web') {
          $vigia = self::loadTask(self::class, self::TASK_NAME);
          if ($vigia !== null && (int) $vigia['state'] === CronTask::STATE_RUNNING && !empty($vigia['lastrun'])
-             && $now - (int) strtotime((string) $vigia['lastrun']) > 2 * self::FREQUENCY
+             && $now - self::epoch($vigia, 'lastrun') > 2 * self::FREQUENCY
              && PluginNextoolJobDispatcher::isLockFree(self::lockName()) === true
              && self::unlockTask((int) $vigia['id'])) {
             $registra('nextoolWatchdog destravada (processo inexistente)');
@@ -297,13 +302,14 @@ class PluginNextoolJobWatchdog {
       // 4) Outras ações automáticas do NexTool presas em execução (critério do core: 2x a frequência
       //    ou 2 h). Sem trava, não há prova de morte: só avisa.
       foreach ($DB->request([
-         'FROM'  => 'glpi_crontasks',
-         'WHERE' => ['state' => CronTask::STATE_RUNNING, 'itemtype' => ['LIKE', 'PluginNextool%']],
+         'SELECT' => self::taskColumns(),
+         'FROM'   => 'glpi_crontasks',
+         'WHERE'  => ['state' => CronTask::STATE_RUNNING, 'itemtype' => ['LIKE', 'PluginNextool%']],
       ]) as $task) {
          if (in_array((string) $task['itemtype'], ['PluginNextoolJobDispatcher', self::class], true) || empty($task['lastrun'])) {
             continue;
          }
-         $idade = $now - (int) strtotime((string) $task['lastrun']);
+         $idade = $now - self::epoch($task, 'lastrun');
          if ($idade <= 2 * (int) $task['frequency'] && $idade <= 2 * HOUR_TIMESTAMP) {
             continue;
          }
@@ -315,13 +321,16 @@ class PluginNextoolJobWatchdog {
          self::publish($payload);
       }
 
-      // 5) O que estava aberto e normalizou: aviso verde que encerra o vermelho.
+      // 5) O que estava aberto e normalizou: aviso verde que encerra o vermelho. A lista nova é gravada
+      //    ANTES de publicar: se a gravação falhar, nada sai (e a próxima checagem tenta de novo); se a
+      //    publicação falhar, o verde não se repete a cada checagem.
       $antes = self::loadOpen();
-      foreach (array_diff($antes, array_keys($abertos)) as $chave) {
+      $normalizados = array_diff($antes, array_keys($abertos));
+      self::saveOpen(array_keys($abertos));
+      foreach ($normalizados as $chave) {
          self::publishResolved((string) $chave);
          $registra('normalizado: ' . $chave);
       }
-      self::saveOpen(array_keys($abertos));
 
       $out['open'] = array_keys($abertos);
       return $out;
@@ -331,14 +340,17 @@ class PluginNextoolJobWatchdog {
     * Fonte única da saúde das rotinas (nextool-dev#300): a ação automática `nextoolJobs` está rodando?
     * Uma consulta a `glpi_crontasks`. Sino, tela de Rotinas, abas dos módulos e página inicial leem daqui.
     *
-    * Motivos: `task_missing` (a ação não existe), `task_disabled` (desativada), `never_ran` (criada há mais
+    * Motivos: `cron_busy` (não roda há mais de STOPPED_AFTER, mas o cron do GLPI está ativo: fila presa; vem com
+    * busy_task/busy_task_id/busy_since_ts), `task_missing` (a ação não existe), `task_disabled` (desativada), `never_ran` (criada há mais
     * de GRACE_SECONDS e nunca rodou), `cron_stopped` (não roda há mais de STOPPED_AFTER), `task_stuck`
     * (em execução, com a trava segurada, há mais de HUNG_AFTER).
     *
     * Responde ok com a chave das rotinas desligada de propósito e dentro da carência de GRACE_SECONDS
     * depois de instalar/atualizar o plugin.
     *
-    * @return array{ok:bool, reason:string, since:?string, task_id:int}
+    * Idades sempre pelo epoch convertido no banco (`taskColumns()`), nunca `strtotime()` da string: ver lá.
+    *
+    * @return array{ok:bool, reason:string, since:?string, task_id:int, since_ts?:int}
     */
    public static function health(?int $now = null): array {
       global $DB;
@@ -366,9 +378,9 @@ class PluginNextoolJobWatchdog {
       if ($estado === CronTask::STATE_DISABLE) {
          return ['ok' => false, 'reason' => 'task_disabled', 'since' => empty($task['date_mod']) ? null : (string) $task['date_mod'], 'task_id' => $id];
       }
-      $lastrun = empty($task['lastrun']) ? 0 : (int) strtotime((string) $task['lastrun']);
+      $lastrun = self::epoch($task, 'lastrun');
       if ($lastrun <= 0) {
-         $criada = empty($task['date_creation']) ? 0 : (int) strtotime((string) $task['date_creation']);
+         $criada = self::epoch($task, 'date_creation');
          if ($criada > 0 && ($now - $criada) <= self::GRACE_SECONDS) {
             return ['ok' => true, 'reason' => '', 'since' => null, 'task_id' => $id];
          }
@@ -385,9 +397,92 @@ class PluginNextoolJobWatchdog {
          // Sem a trava da rodada o processo morreu: o vigia destrava; se o cron não voltar, é cron parado.
       }
       if ($idade > self::STOPPED_AFTER) {
-         return ['ok' => false, 'reason' => 'cron_stopped', 'since' => (string) $task['lastrun'], 'task_id' => $id];
+         $parado = ['ok' => false, 'reason' => 'cron_stopped', 'since' => (string) $task['lastrun'], 'task_id' => $id, 'since_ts' => $lastrun];
+         // Outras ações do GLPI rodaram há pouco: o cron está ativo, mas a fila não chega às ações dos plugins
+         // (o GLPI roda poucas por vez, as dele primeiro, e uma ação lenta segura a rodada). Ex.: DEV em 12/11/2026,
+         // queuednotification levando 8 min por rodada com o Office 365 lento, nextoolJobs 2 h sem vez.
+         $fila = self::cronActivity($now);
+         if ($fila !== null) {
+            return ['reason' => 'cron_busy'] + $fila + $parado;
+         }
+         return $parado;
       }
       return ['ok' => true, 'reason' => '', 'since' => null, 'task_id' => $id];
+   }
+
+   /**
+    * Atividade recente do cron do GLPI fora das ações do NexTool: null se nada rodou nos últimos STOPPED_AFTER
+    * (cron do servidor parado de verdade). Senão, a ação em execução há mais tempo, se houver (a que segura a
+    * rodada). Epoch convertido pelo banco, como em taskColumns().
+    *
+    * @return array{busy_task:string, busy_task_id:int, busy_since_ts:int}|null
+    */
+   private static function cronActivity(int $now): ?array {
+      global $DB;
+      $proprias = ['PluginNextoolJobDispatcher', self::class];
+      $ultima = $DB->request([
+         'SELECT' => [PluginNextoolCompat::queryExpression('MAX(UNIX_TIMESTAMP(`lastrun`)) AS `ts`')],
+         'FROM'   => 'glpi_crontasks',
+         'WHERE'  => ['NOT' => ['itemtype' => $proprias], 'state' => ['>', CronTask::STATE_DISABLE]],
+      ])->current();
+      $ts = (int) ($ultima['ts'] ?? 0);
+      if ($ts <= 0 || $ts > $now + 60 || ($now - $ts) > self::STOPPED_AFTER) {
+         return null;
+      }
+      $presa = $DB->request([
+         'SELECT' => self::taskColumns(),
+         'FROM'   => 'glpi_crontasks',
+         'WHERE'  => ['NOT' => ['itemtype' => $proprias], 'state' => CronTask::STATE_RUNNING, ['NOT' => ['lastrun' => null]]],
+         'ORDER'  => ['lastrun ASC'],
+         'LIMIT'  => 1,
+      ])->current();
+      return [
+         'busy_task'     => $presa ? (string) $presa['name'] : '',
+         'busy_task_id'  => $presa ? (int) $presa['id'] : 0,
+         'busy_since_ts' => $presa ? self::epoch($presa, 'lastrun') : 0,
+      ];
+   }
+
+   /** Limite de ações por rodada (`cron_limit`) a partir do qual não sugerimos aumentar: o padrão do GLPI é 5. */
+   public const CRON_LIMIT_OK = 6;
+
+   /**
+    * Sugestão de aumentar o "Número máximo de ações automáticas (executadas através da CLI)" do GLPI.
+    *
+    * O GLPI roda no máximo `cron_limit` ações por rodada, as dele primeiro; com o padrão (5) e várias ações de
+    * 1 minuto, a `nextoolJobs` espera a vez e as rotinas atrasam. Sugere quando o limite está no padrão ou
+    * abaixo, ou quando é menor que o número de ações ativas de 1 minuto (o mesmo critério do aviso do GLPI).
+    *
+    * @return array{limit:int, per_minute:int, suggested:int}|null null quando o limite está folgado.
+    */
+   public static function cronLimitAdvice(): ?array {
+      global $CFG_GLPI, $DB;
+      $limite = (int) ($CFG_GLPI['cron_limit'] ?? 0);
+      if ($limite <= 0) {
+         return null;
+      }
+      $porMinuto = 0;
+      try {
+         $porMinuto = (int) countElementsInTable('glpi_crontasks', [
+            'frequency' => ['<=', MINUTE_TIMESTAMP],
+            'state'     => ['>', CronTask::STATE_DISABLE],
+         ]);
+      } catch (Throwable $e) {
+         $porMinuto = 0;
+      }
+      if ($limite >= self::CRON_LIMIT_OK && $limite >= $porMinuto) {
+         return null;
+      }
+      return [
+         'limit'      => $limite,
+         'per_minute' => $porMinuto,
+         'suggested'  => min(30, max(10, $porMinuto + 3)),
+      ];
+   }
+
+   /** Problema que pede atenção, mas não é parada: cron ativo com a fila presa (aviso amarelo). */
+   public static function isWarningReason(string $reason): bool {
+      return $reason === 'cron_busy';
    }
 
    /**
@@ -427,8 +522,25 @@ class PluginNextoolJobWatchdog {
                'message' => sprintf(__('A ação automática "nextoolJobs" está em execução desde %s, muito além do tempo normal, e não roda de novo enquanto isso.', 'nextool'), $desde) . ' ' . $efeito,
                'action'  => __('Se o processo não existe mais, libere a ação em Configurar > Ações automáticas.', 'nextool'),
             ];
+         case 'cron_busy':
+            $desdeTs = isset($saude['since_ts']) ? (int) $saude['since_ts'] : 0;
+            $min = $desdeTs > 0 ? (int) floor(max(0, $now - $desdeTs) / 60) : 0;
+            $presa = (string) ($saude['busy_task'] ?? '');
+            $presaMin = !empty($saude['busy_since_ts']) ? (int) floor(max(0, $now - (int) $saude['busy_since_ts']) / 60) : 0;
+            return [
+               'title'   => sprintf(__('As rotinas do NexTool estão atrasadas há %d minutos', 'nextool'), $min),
+               'message' => $presa !== ''
+                  ? sprintf(__('O cron do GLPI está ativo, mas a fila de ações automáticas está presa: a ação "%1$s" está em execução há %2$d minutos e as ações dos plugins esperam a vez. As rotinas do NexTool não rodam desde %3$s.', 'nextool'), $presa, $presaMin, $desde)
+                  : sprintf(__('O cron do GLPI está ativo, mas as ações dos plugins não estão tendo vez: o GLPI roda poucas ações automáticas por vez e as dele vêm primeiro. As rotinas do NexTool não rodam desde %s.', 'nextool'), $desde),
+               'action'  => $presa !== ''
+                  ? sprintf(__('Abra a ação "%s" para ver o que a deixa lenta (na fila de e-mails, costuma ser o servidor de e-mail).', 'nextool'), $presa)
+                  : __('Confira as ações automáticas do GLPI que rodam com mais frequência em Configurar > Ações automáticas.', 'nextool'),
+            ];
          case 'cron_stopped':
-            $min = !empty($saude['since']) ? (int) floor(max(0, $now - (int) strtotime((string) $saude['since'])) / 60) : 0;
+            // `since_ts` vem do banco (imune ao fuso do PHP); a string só para quem chama sem ele.
+            $desdeTs = isset($saude['since_ts']) ? (int) $saude['since_ts']
+               : (!empty($saude['since']) ? (int) strtotime((string) $saude['since']) : 0);
+            $min = $desdeTs > 0 ? (int) floor(max(0, $now - $desdeTs) / 60) : 0;
             return [
                'title'   => sprintf(__('As rotinas do NexTool não rodam há %d minutos', 'nextool'), $min),
                'message' => sprintf(
@@ -524,9 +636,10 @@ class PluginNextoolJobWatchdog {
          // GLPI 10 usa Font Awesome nos avisos da página inicial; 11 e 12, Tabler.
          $icone = PluginNextoolCompat::glpiMajor() < 11 ? 'fas fa-3x fa-exclamation-triangle' : 'ti ti-alert-triangle fs-3x';
 
+         $cor = self::isWarningReason($motivo) ? 'alert-warning' : 'alert-danger';
          if ($contexto === 'central') {
             return '<div class="message-area nextool-jobs-health-alert" data-reason="' . $esc($motivo) . '">'
-               . '<div class="alert alert-important alert-danger d-flex" role="alert">'
+               . '<div class="alert alert-important ' . $cor . ' d-flex" role="alert">'
                . '<i class="' . $icone . '"></i><ul>'
                . '<li>' . $esc($texto['title'] . '. ' . $texto['message']) . ' '
                . '<a class="text-white fw-bold text-decoration-underline" href="' . $esc($urlRotinas) . '">' . $esc(__('Ver as rotinas do NexTool', 'nextool')) . '</a></li>'
@@ -543,7 +656,13 @@ class PluginNextoolJobWatchdog {
                   . ' <code class="text-white bg-transparent border border-white px-1">'
                   . $esc('* * * * * php ' . rtrim((string) GLPI_ROOT, '/') . '/front/cron.php') . '</code></div>';
             }
-            if ($motivo === 'task_missing') {
+            if ($motivo === 'cron_busy') {
+               $acao = !empty($saude['busy_task_id'])
+                  ? '<a class="btn btn-sm btn-light text-nowrap" href="' . $esc($raiz . self::cronTaskUrl((int) $saude['busy_task_id'])) . '"><i class="ti ti-external-link me-1"></i>'
+                     . $esc(__('Abrir a ação presa', 'nextool')) . '</a>'
+                  : '<a class="btn btn-sm btn-light text-nowrap" href="' . $esc($raiz . '/front/crontask.php') . '"><i class="ti ti-external-link me-1"></i>'
+                     . $esc(__('Abrir as ações automáticas', 'nextool')) . '</a>';
+            } elseif ($motivo === 'task_missing') {
                if (PluginNextoolPermissionManager::canManageAdminTabs()) {
                   $acao = '<form method="post" action="' . $esc(PluginNextoolCompat::webDir() . '/front/config.save.php') . '" class="m-0">'
                      . '<input type="hidden" name="action" value="job_task_recreate">'
@@ -564,7 +683,7 @@ class PluginNextoolJobWatchdog {
                . $esc(__('Abrir Rotinas do NexTool', 'nextool')) . '</a>';
          }
 
-         $html = '<div class="alert alert-important alert-danger d-flex align-items-center gap-3 mb-3 nextool-jobs-health-alert nextool-jobs-health-strip" role="alert"'
+         $html = '<div class="alert alert-important ' . $cor . ' d-flex align-items-center gap-3 mb-3 nextool-jobs-health-alert nextool-jobs-health-strip" role="alert"'
             . ' data-reason="' . $esc($motivo) . '" data-snooze="' . (int) self::STRIP_SNOOZE_SECONDS . '" style="display:none !important;">'
             . '<i class="ti ti-clock-off fs-1"></i>'
             . '<div class="flex-fill"><div class="fw-bold">' . $esc($texto['title']) . '</div>'
@@ -667,8 +786,44 @@ JS;
 
    private static function loadTask(string $itemtype, string $name): ?array {
       global $DB;
-      $row = $DB->request(['FROM' => 'glpi_crontasks', 'WHERE' => ['itemtype' => $itemtype, 'name' => $name], 'LIMIT' => 1])->current();
+      $row = $DB->request([
+         'SELECT' => self::taskColumns(),
+         'FROM'   => 'glpi_crontasks',
+         'WHERE'  => ['itemtype' => $itemtype, 'name' => $name],
+         'LIMIT'  => 1,
+      ])->current();
       return $row ?: null;
+   }
+
+   /**
+    * Colunas da CronTask + `lastrun` e `date_creation` em epoch, convertidos PELO BANCO.
+    *
+    * O core grava `lastrun` com o NOW() do banco, no fuso da sessão do banco. Converter a string com
+    * `strtotime()` usa o fuso do processo PHP: quando o php.ini do CLI e o da web têm `date.timezone`
+    * diferentes (ou o PHP difere do banco, sem `use_timezones`), a idade ganha a diferença inteira. Cliente
+    * em 12/11/2026: o cron via "não rodam há 240 minutos" com a rotina acabando de rodar e a web via "ok",
+    * e o sino alternava vermelho e "voltaram a rodar" a cada checagem. O core compara no SQL pelo mesmo
+    * motivo (`CronTask::getNeedToRun`).
+    *
+    * @return array<int, mixed>
+    */
+   private static function taskColumns(): array {
+      return [
+         'glpi_crontasks.*',
+         PluginNextoolCompat::queryExpression('UNIX_TIMESTAMP(`glpi_crontasks`.`lastrun`) AS `lastrun_ts`'),
+         PluginNextoolCompat::queryExpression('UNIX_TIMESTAMP(`glpi_crontasks`.`date_creation`) AS `date_creation_ts`'),
+      ];
+   }
+
+   /** Epoch de `lastrun`/`date_creation` de uma linha de `taskColumns()`; 0 quando vazio. */
+   private static function epoch(array $task, string $coluna): int {
+      if (empty($task[$coluna])) {
+         return 0;
+      }
+      if (isset($task[$coluna . '_ts']) && is_numeric($task[$coluna . '_ts'])) {
+         return (int) $task[$coluna . '_ts'];
+      }
+      return (int) strtotime((string) $task[$coluna]);
    }
 
    /** Volta para "aguardando" só se ainda estiver "em execução" (duas checagens ao mesmo tempo não brigam). */

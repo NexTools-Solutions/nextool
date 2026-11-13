@@ -29,7 +29,11 @@ $nextoolHeroHideSync = !empty($nextoolHeroHideSync);
 $nextoolHeroForcetab = isset($nextoolHeroForcetab) ? trim((string) $nextoolHeroForcetab) : '';
 $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
 ?>
-<div class="card shadow-sm border-0<?php echo $nextoolHeroWithMarginTop ? ' mt-3' : ''; ?>" style="background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 40%, #14b8a6 100%);">
+<?php // Espaço igual em todas as abas (hero -> primeiro bloco e entre blocos = 1rem): todo .nextool-tab-card tem
+      // margin-top 1rem (config.form.styles), e Módulos, Licenciamento, Novidades e Sobre ainda põem os blocos num
+      // contêiner "d-flex flex-column gap-3", que somava outro 1rem. Dentro desse contêiner vale só o gap. ?>
+<style>.gap-3 > .nextool-tab-card { margin-top: 0 !important; }</style>
+<div class="card shadow-sm border-0 nextool-hero-card<?php echo $nextoolHeroWithMarginTop ? ' mt-3' : ''; ?>" style="background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 40%, #14b8a6 100%);">
    <div class="card-body text-white">
       <div class="row g-3 align-items-start">
          <div class="col-12 col-lg-8">

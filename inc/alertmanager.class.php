@@ -430,6 +430,26 @@ class PluginNextoolAlertManager {
       };
    }
 
+   /**
+    * Nome do tipo para exibir no selo (traduzível). Antes saía o código cru com ucfirst ("Warning").
+    */
+   public static function getTypeLabel(string $type): string {
+      return match ($type) {
+         'critical'  => __('Crítico', 'nextool'),
+         'warning'   => __('Alerta', 'nextool'),
+         'promo'     => __('Promoção', 'nextool'),
+         'info'      => __('Informação', 'nextool'),
+         'novidades' => __('Novidade', 'nextool'),
+         'servicos'  => __('Serviço', 'nextool'),
+         default     => ucfirst($type),
+      };
+   }
+
+   /** Grupo do tipo para filtro e cor: os tipos sem cor própria caem em "info", como em getTypeIcon(). */
+   public static function getTypeGroup(string $type): string {
+      return in_array($type, ['critical', 'warning', 'promo'], true) ? $type : 'info';
+   }
+
    public static function getTypeBadgeClass(string $type): string {
       return match ($type) {
          'warning'  => 'bg-warning text-white',

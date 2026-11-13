@@ -33,7 +33,7 @@ class PluginNextoolCronCatalogSync {
     * Orçamento da execução (auditoria das crons, achado 52). O pior caso somava ~135 s (validate 15 s +
     * auto-cura 30+15 s + manifesto do core 60 s + endpoint do cloud link 15 s), segurando o cron.php do GLPI
     * inteiro. Passado o orçamento depois da validação, as etapas seguintes (aviso de versão, pré-requisitos,
-    * reafirmação do endpoint) ficam para o próximo ciclo: nenhuma delas perde dado por esperar 6 h.
+    * reafirmação do endpoint) ficam para o próximo ciclo: nenhuma delas perde dado por esperar 1 h.
     */
    public const BUDGET_SECONDS = 45;
 
@@ -164,7 +164,7 @@ class PluginNextoolCronCatalogSync {
    /**
     * (#162) Detecta update disponível (core + módulos) e avisa o admin via alerta
     * LOCAL (popup/aba Novidades + sino), com dedup por versão/conjunto -- a mesma
-    * situação nunca re-alerta a cada tick de 6h. Nada é baixado/instalado aqui.
+    * situação nunca re-alerta a cada tick de 1 h. Nada é baixado/instalado aqui.
     */
    private static function notifyPendingUpdates(CronTask $task): void {
       foreach (['coreupdater', 'alertmanager', 'modulecatalog'] as $inc) {
@@ -244,7 +244,7 @@ class PluginNextoolCronCatalogSync {
 
    /**
     * (nextool-dev#260) Pré-requisitos que exigem humano, com fatos frescos do sync
-    * remoto (core check e catálogo acima). Carona no ciclo de 6 h -- não é cron nova.
+    * remoto (core check e catálogo acima). Carona no ciclo de 1 h -- não é cron nova.
     */
    private static function runPrereqCheck(CronTask $task): void {
       try {

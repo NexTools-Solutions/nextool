@@ -4,7 +4,7 @@
  * da auditoria de 2026-09-24, HI-02).
  *
  * Depois de uma rotação do segredo, o cérebro passa a assinar com a chave nova na hora, e a base só a
- * recebe no próximo `/validate` (até 6 h pelo catalogSync, ou nunca, se ele falhar). No intervalo, só
+ * recebe no próximo `/validate` (até 1 h pelo catalogSync, ou nunca, se ele falhar). No intervalo, só
  * quem tem a chave antiga, que pode ser a vazada, consegue executar no GLPI. Com o kid, as duas pontas
  * percebem a diferença: um `X-Nx-Kid` que não é o desta instalação na entrada (`kid_unknown`) ou o
  * `401 E_AUTH_KID` na saída pedem um `/validate` agora, e a chave nova chega em segundos.

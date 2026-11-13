@@ -286,7 +286,7 @@ class PluginNextoolCloudClient {
    /** Só no E2E (CLI): fixa a resposta de hasInboundTools(). */
    public static ?bool $inboundOverride = null;
 
-   /** Na 3ª recusa seguida (~18 h com o ciclo de 6 h do catalogSync) vira alerta. */
+   /** Na 3ª recusa seguida (~3 h com o ciclo de 1 h do catalogSync) vira alerta. */
    private const REJECT_ALERT_AFTER = 3;
 
    /** Família do alerta local (prefixo até o ':' no AlertManager). Pública para a tarefa cloudPurge. */
@@ -404,6 +404,14 @@ class PluginNextoolCloudClient {
     * nome interno, http) é recusada. Os avisos de "pendente" e "recusado" são verdadeiros para quem
     * recebe chamadas e falsos aqui. A declaração continua (versão, capacidades e o `_base`); só os
     * avisos dependem disto. O `_base` (ping) não conta: ele existe para os módulos de entrada.
+    *
+    * Só conta módulo em modo nuvem EFETIVO (`getCloudModeInfo()`: vínculo + produto do módulo, sem o
+    * modo local forçado). Fora dele o executor recusa as ferramentas do módulo (`unavailable`), e o
+    * cérebro não o chama: o whatsappbot com a Evolution própria ou gerenciada, sem o produto
+    * `feature_whatsapp_bot`, declara as ferramentas mas não recebe nada. Até a 6.60.0 contava, e o
+    * GLPI recebia o aviso de "pendente" sem nenhuma troca de endereço a fazer (cliente
+    * glpi.matra.com.br, 13/11/2026). Módulo sem `getCloudModeInfo()` (anterior ao modo nuvem) ou que
+    * falha ao responder segue contando, como antes.
     */
    public static function hasInboundTools(): bool {
       if (self::$inboundOverride !== null && PHP_SAPI === 'cli') {
@@ -414,13 +422,32 @@ class PluginNextoolCloudClient {
          require_once NEXTOOL_PHP_DIR . '/inc/cloudbasetools.class.php';
          unset($ferramentas[PluginNextoolCloudBaseTools::SERVICE]);
       }
+      foreach (array_keys($ferramentas) as $chave) {
+         if (self::moduloEmModoNuvem((string) $chave)) {
+            return true;
+         }
+      }
 
-      return $ferramentas !== [];
+      return false;
+   }
+
+   /** O módulo está em modo nuvem efetivo? Sem como saber (módulo antigo, exceção), conta como sim. */
+   private static function moduloEmModoNuvem(string $chave): bool {
+      try {
+         $modulo = PluginNextoolModuleManager::getInstance()->getModule($chave);
+         if (!is_object($modulo) || !method_exists($modulo, 'getCloudModeInfo')) {
+            return true;
+         }
+
+         return ($modulo->getCloudModeInfo()['mode'] ?? '') !== PluginNextoolBaseModule::CLOUD_MODE_LOCAL;
+      } catch (\Throwable $e) {
+         return true;
+      }
    }
 
    /**
     * Um módulo com ferramentas de entrada foi ativado ou desativado (B2): redeclara logo depois da
-    * resposta, sem esperar o ciclo de 6 h do catalogSync, e o aviso do endereço volta (ou se recolhe)
+    * resposta, sem esperar o ciclo de 1 h do catalogSync, e o aviso do endereço volta (ou se recolhe)
     * na hora. Sem vínculo ativo ou sem URL, nada.
     *
     * @return string `scheduled` | `inactive` | `no_url`
@@ -468,7 +495,7 @@ class PluginNextoolCloudClient {
     *  - vínculo suspenso ou revogado: apaga a impressão guardada, para a reativação sempre redeclarar.
     *
     * Servidor que não solta a resposta antes (mod_php) não redeclara aqui: a reafirmação do ciclo
-    * seguinte (6 h) cobre.
+    * seguinte (1 h) cobre.
     *
     * @return string `scheduled` | `unchanged` | `forgotten` | `inactive` | `no_url`
     */
@@ -661,7 +688,8 @@ class PluginNextoolCloudClient {
    /**
     * O que fazer com o `destino` da resposta (contrato 1.1, §2.13.2), sem efeito colateral:
     *  - `em_uso`: limpa o aviso;
-    *  - `pendente`: limpa até 24 h (a 1ª URL é promovida na 1ª chamada); depois, aviso;
+    *  - `pendente`: limpa até 24 h; depois, aviso. Com `primeira_url: true` (não há URL em uso no
+    *    cérebro, e ela é promovida sozinha na 1ª chamada), só limpa;
     *  - `conflito` e `recusado`: aviso crítico, com o motivo;
     *  - sem `destino` (cérebro anterior ao K2) ou estado desconhecido: nada.
     *
@@ -691,6 +719,14 @@ class PluginNextoolCloudClient {
          case 'em_uso':
             return ['acao' => 'limpar', 'estado' => $estado];
          case 'pendente':
+            // Primeira URL (o cérebro não tem URL em uso): ela é promovida sozinha na primeira chamada
+            // válida, e não há troca a pedir a ninguém. Num GLPI em que o canal de entrada ainda não foi
+            // usado, a nuvem não chama e ela fica pendente para sempre; o aviso dizia "a nuvem continua
+            // chamando outro endereço", o que não era verdade. Cérebro anterior a 13/11/2026 não manda o
+            // campo: segue a regra das 24 h.
+            if (($d['primeira_url'] ?? null) === true) {
+               return ['acao' => 'limpar', 'estado' => $estado];
+            }
             $inicio = $desde !== '' ? strtotime($desde) : false;
             if ($inicio === false || $now - $inicio < self::PENDENTE_AVISO_APOS) {
                return ['acao' => 'limpar', 'estado' => $estado];

@@ -86,7 +86,7 @@ class PluginNextoolCronCloudPurge {
          $task->log('cloud_endpoint: ' . self::refreshEndpointIfAlert()); // sem_aviso | reported:<destino> | failed:<erro>
       });
       // Ressincronização pedida por um kid desconhecido e que ficou pendente (servidor sem PHP-FPM, que
-      // não solta a resposta antes): atendida aqui em até 1 h, em vez de esperar o catalogSync (6 h).
+      // não solta a resposta antes): atendida aqui em até 1 h, em vez de esperar o catalogSync (1 h).
       $etapa('cloud_resync', static function () use ($task): void {
          $resync = NEXTOOL_PHP_DIR . '/inc/cloudresync.class.php';
          if (!is_file($resync)) {
@@ -161,7 +161,7 @@ class PluginNextoolCronCloudPurge {
 
    /**
     * Aviso do endereço aberto (destino em conflito, recusado ou pendente há mais de 24 h, ou declaração recusada
-    * três vezes seguidas): redeclara AGORA, em vez de esperar a reafirmação do ciclo de 6 h. A base só fica
+    * três vezes seguidas): redeclara AGORA, em vez de esperar a reafirmação do ciclo do catalogSync. A base só fica
     * sabendo do estado do destino na resposta da declaração, então um estado passageiro do cérebro (o 401 do
     * 1º ping de uma rotação de chave, um conflito que o suporte resolveu promovendo a URL) deixava o aviso aberto
     * por até 6 h; assim ele se corrige em até 1 h. Sem aviso aberto, nada muda. A declaração é idempotente no

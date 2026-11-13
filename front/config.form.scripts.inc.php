@@ -2427,7 +2427,7 @@ if (!empty($_nextoolUnreadAlerts)):
                      <div>
                         <div class="d-flex align-items-center gap-2 mb-1">
                            <strong><?php echo PluginNextoolCompat::escape($ua['title']); ?></strong>
-                           <span class="badge <?php echo $uaBadge; ?>" style="font-size: 0.65rem;"><?php echo PluginNextoolCompat::escape(ucfirst((string) $ua['alert_type'])); ?></span>
+                           <span class="badge <?php echo $uaBadge; ?>" style="font-size: 0.65rem;"><?php echo PluginNextoolCompat::escape(PluginNextoolAlertManager::getTypeLabel((string) $ua['alert_type'])); ?></span>
                         </div>
                         <div class="small"><?php echo PluginNextoolAlertManager::sanitizeBody($ua['body']); ?></div>
                      </div>

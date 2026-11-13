@@ -600,8 +600,10 @@ foreach ($tabsRegistry as $key => $meta) {
 // Hero "Plano atual" reutilizável nas abas administrativas em modo standalone.
 // Exibido para qualquer perfil que enxergue a tela (informativo). Botões Sincronizar
 // e "Atualização Disponível" seguem o bit de cada um ("Sincronizar licença" / "Aplicar atualização").
+// A guia Serviços fica de fora de propósito: é a vitrine e usa a tela inteira (licença e atualização
+// continuam no hero das demais guias).
 $nextool_hero_standalone = '';
-if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'logs', 'alertas', 'servicos', 'sobre', 'manutencao'], true)) {
+if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules', 'licenca', 'logs', 'alertas', 'sobre', 'manutencao'], true)) {
    ob_start();
    $nextoolHeroWithMarginTop = false;
    $nextoolHeroDisableSync = false;
@@ -613,7 +615,6 @@ if ($nextool_is_standalone && in_array($nextool_standalone_output_tab, ['modules
       'licenca' => 'PluginNextoolMainConfig$3',
       'alertas' => 'PluginNextoolMainConfig$4',
       'logs'      => 'PluginNextoolMainConfig$5',
-      'servicos'  => 'PluginNextoolMainConfig$' . PluginNextoolMainConfig::TAB_SERVICOS,
       'sobre'     => 'PluginNextoolMainConfig$' . PluginNextoolMainConfig::TAB_SOBRE,
       'manutencao' => 'PluginNextoolMainConfig$' . PluginNextoolMainConfig::TAB_MANUTENCAO,
    ];

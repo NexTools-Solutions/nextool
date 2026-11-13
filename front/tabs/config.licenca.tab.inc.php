@@ -1,12 +1,14 @@
 <?php
 declare(strict_types=1);
 /**
- * Aba Licenciamento do Nextool.
+ * Aba Licenciamento do Nextool: card "Licenças" (tabela das licenças do ambiente) e card "Ambiente" (código,
+ * conta vinculada e comunicação com o servidor), no padrão das outras abas (2026-11-12; antes era
+ * um card só com duas caixas cinzas e a lista de módulos repetida).
  * Contexto/variáveis esperadas: $nextool_is_standalone, $nextool_standalone_output_tab,
  * $canViewAdminTabs, $nextool_hero_standalone, $licensesSnapshot,
  * $licenseStatusCode, $config, $distributionBaseUrl, $distributionClientIdentifier,
  * $distributionClientSecret, $allowedModules, $licenseWarnings,
- * $canManageAdminTabs.
+ * $canManageAdminTabs, $accountLinked, $accountEmail.
  *
  * @author Richard Loureiro - https://linkedin.com/in/richard-ti/ - https://github.com/RPGMais/nextool
  * @license GPLv3+
@@ -15,7 +17,29 @@ declare(strict_types=1);
 
 <!-- TAB 2: Licenciamento -->
 <?php $show_licenca = (!$nextool_is_standalone || $nextool_standalone_output_tab === 'licenca') && !empty($canViewLicense); if ($show_licenca): ?>
+<?php
+   $nxLicEsc = static fn ($v): string => (string) PluginNextoolCompat::escape((string) $v);
+   // Nome do módulo pelo catálogo (idioma da sessão); chave crua só se o módulo não estiver no catálogo.
+   $nxLicManager = PluginNextoolModuleManager::getInstance();
+   $nxLicModuleName = static fn (string $key): string => $nxLicManager->getDisplayName($key, $key);
+   // Botão de copiar só com ícone; o texto vai na dica. Atributo onclick: funciona com a aba carregada por AJAX.
+   $nxLicCopy = static function (string $valor) use ($nxLicEsc): string {
+      $rotulo = __('Copiar', 'nextool');
+      return '<button type="button" class="btn btn-sm btn-icon btn-ghost-secondary ms-1" title="' . $nxLicEsc($rotulo) . '" aria-label="' . $nxLicEsc($rotulo) . '"'
+         . ' data-copy="' . $nxLicEsc($valor) . '"'
+         . ' onclick="var b=this;navigator.clipboard.writeText(b.getAttribute(\'data-copy\'));var i=b.querySelector(\'i\');i.className=\'ti ti-check text-success\';setTimeout(function(){i.className=\'ti ti-copy\';},1500);">'
+         . '<i class="ti ti-copy"></i></button>';
+   };
+   $nxLicRow = static function (string $rotulo, string $valorHtml, string $ajuda = '') use ($nxLicEsc): string {
+      $help = $ajuda === '' ? '' : ' <span class="form-help" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true" data-bs-title="' . $nxLicEsc($ajuda) . '">?</span>';
+      return '<div class="row align-items-center py-2 border-bottom">'
+         . '<div class="col-sm-4 col-lg-3 text-sm-end text-muted fw-semibold">' . $nxLicEsc($rotulo) . $help . '</div>'
+         . '<div class="col-sm-8 col-lg-9">' . $valorHtml . '</div>'
+         . '</div>';
+   };
+?>
 <?php if (!$nextool_is_standalone): ?><div class="tab-pane fade" id="rt-tab-licenca" role="tabpanel" aria-labelledby="rt-tab-licenca-link"><?php endif; ?>
+   <?php // O form segue: o "Sincronizar" do hero usa o form em que está (nextoolValidateLicense -> btn.form). ?>
    <form method="post" action="<?php echo PluginNextoolCompat::webDir() . '/front/config.save.php'; ?>" id="configForm">
       <?php if (!PluginNextoolCompat::csrfTokenless()) { echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); } ?>
       <?php echo Html::hidden('forcetab', ['value' => $nextool_is_standalone ? 'PluginNextoolMainConfig$3' : 'PluginNextoolSetup$1']); ?>
@@ -29,233 +53,161 @@ declare(strict_types=1);
                   <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
                      <i class="fs-2x ti ti-key"></i>
                   </div>
-                  <span><?php echo __('Tipo de licença e status do ambiente', 'nextool'); ?></span>
+                  <span><?php echo __('Licenças', 'nextool'); ?></span>
                </h4>
             </div>
-            <div class="card-body">
+            <div class="card-body pt-0">
                <?php if (!empty($licensesSnapshot) && $licenseStatusCode === 'SUSPENDED'): ?>
-                  <div class="alert alert-warning mb-4">
+                  <div class="alert alert-warning">
                      <i class="ti ti-alert-triangle me-2"></i>
                      <?php echo __('Licença suspensa. Os módulos já instalados continuam funcionando normalmente. Renove seu contrato para restaurar o acesso a suporte técnico, atualizações e novos downloads.', 'nextool'); ?>
                   </div>
                <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode === 'CANCELLED'): ?>
-                  <div class="alert alert-danger mb-4">
+                  <div class="alert alert-danger">
                      <i class="ti ti-ban me-2"></i>
                      <?php echo __('Licença cancelada. Os módulos licenciados ficarão bloqueados até a regularização com o suporte NexTool.', 'nextool'); ?>
                   </div>
                <?php elseif (!empty($licensesSnapshot) && $licenseStatusCode === 'INACTIVE'): ?>
-                  <div class="alert alert-info mb-4">
+                  <div class="alert alert-info">
                      <i class="ti ti-info-circle me-2"></i>
                      <?php echo __('A licença ainda não está ativa. O ambiente segue apenas com os módulos gratuitos até que uma licença válida seja vinculada.', 'nextool'); ?>
                   </div>
                <?php endif; ?>
 
-               <div class="row g-3">
-                  <div class="col-12">
-                     <div class="border rounded p-3 h-100 bg-light text-dark">
-                        <h6 class="fw-semibold mb-3 text-dark"><?php echo __('Licenças ativas no ambiente', 'nextool'); ?></h6>
-                        <?php if (empty($licensesSnapshot)): ?>
-                           <p class="text-muted mb-0">
-                              <?php echo __('Nenhuma licença ativa foi encontrada no momento. Fale com o suporte NexTool para liberar os módulos contratados.', 'nextool'); ?>
-                           </p>
-                        <?php else: ?>
-                           <div class="table-responsive">
-                              <table class="table table-sm align-middle mb-0">
-                                 <thead>
-                                    <tr>
-                                       <th><?php echo __('Licença', 'nextool'); ?></th>
-                                       <th><?php echo __('Tipo de licença', 'nextool'); ?></th>
-                                       <th><?php echo __('Status', 'nextool'); ?></th>
-                                       <th><?php echo __('Início', 'nextool'); ?></th>
-                                       <th><?php echo __('Validade da licença', 'nextool'); ?></th>
-                                       <th><?php echo __('Módulos liberados', 'nextool'); ?></th>
-                                    </tr>
-                                 </thead>
-                                 <tbody>
-                                    <?php foreach ($licensesSnapshot as $licenseRow):
-                                       $rowKey = $licenseRow['license_key'] ?? __('(desconhecida)', 'nextool');
-                                       $rowPlan = strtoupper($licenseRow['plan'] ?? 'FREE');
-                                       $rowStatus = strtoupper($licenseRow['license_status'] ?? 'INACTIVE');
-                                       $rowExpires = $licenseRow['expires_at'] ?? null;
-                                       $rowStarts = $licenseRow['starts_at'] ?? null;
-                                       $rowModules = [];
-                                       if (!empty($licenseRow['allowed_modules']) && is_array($licenseRow['allowed_modules'])) {
-                                          $rowModules = $licenseRow['allowed_modules'];
-                                       }
-                                       // Tipo de licença: rótulo e cor centralizados (aceita os códigos legados).
-                                       $planBadge = PluginNextoolConfigViewState::getPlanBadgeClass($rowPlan);
-                                       $planLabel = PluginNextoolConfigViewState::getPlanLabel($rowPlan);
-                                       $statusBadge = [
-                                          'ACTIVE'    => 'bg-green',
-                                          'INACTIVE'  => 'bg-red',
-                                          'SUSPENDED' => 'bg-orange',
-                                          'CANCELLED' => 'bg-red',
-                                          'EXPIRED'   => 'bg-red',
-                                       ][$rowStatus] ?? 'bg-secondary';
-                                       $statusLabel = [
-                                          'ACTIVE'    => __('Ativa', 'nextool'),
-                                          'INACTIVE'  => __('Inativa', 'nextool'),
-                                          'SUSPENDED' => __('Suspensa', 'nextool'),
-                                          'CANCELLED' => __('Cancelada', 'nextool'),
-                                          'EXPIRED'   => __('Expirada', 'nextool'),
-                                       ][$rowStatus] ?? $rowStatus;
-                                       $startDisplay = '-';
-                                       if (!empty($rowStarts)) {
-                                          $startDisplay = class_exists('Html') ? Html::convDateTime($rowStarts) : $rowStarts;
-                                       }
-                                       $validityDisplay = __('Sem expiração', 'nextool');
-                                       if (!empty($rowExpires)) {
-                                          $formatted = $rowExpires;
-                                          if (class_exists('Html')) {
-                                             $formatted = Html::convDateTime($rowExpires);
-                                          }
-                                          $validityDisplay = $formatted;
-                                       }
-                                    ?>
-                                    <tr>
-                                       <td><code><?php echo PluginNextoolCompat::escape($rowKey); ?></code></td>
-                                       <td><span class="badge text-white <?php echo $planBadge; ?>"><?php echo PluginNextoolCompat::escape($planLabel); ?></span></td>
-                                       <td><span class="badge text-white <?php echo $statusBadge; ?>"><?php echo PluginNextoolCompat::escape($statusLabel); ?></span></td>
-                                       <td><?php echo PluginNextoolCompat::escape($startDisplay); ?></td>
-                                       <td><?php echo PluginNextoolCompat::escape($validityDisplay); ?></td>
-                                       <td>
-                                          <?php if (in_array('*', $rowModules, true)): ?>
-                                             <span class="badge text-white bg-purple"><?php echo __('Todos os módulos', 'nextool'); ?></span>
-                                          <?php elseif (empty($rowModules)): ?>
-                                             <span class="text-muted"><?php echo __('Nenhum módulo', 'nextool'); ?></span>
-                                          <?php else: ?>
-                                             <?php foreach ($rowModules as $moduleKey): ?>
-                                                <span class="badge text-white bg-teal me-1 mb-1"><?php echo PluginNextoolCompat::escape($moduleKey); ?></span>
-                                             <?php endforeach; ?>
-                                          <?php endif; ?>
-                                       </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                 </tbody>
-                              </table>
-                           </div>
-                        <?php endif; ?>
-                     </div>
+               <?php if (empty($licensesSnapshot)): ?>
+                  <p class="text-muted mb-0">
+                     <?php echo __('Nenhuma licença ativa foi encontrada no momento. Fale com o suporte NexTool para liberar os módulos contratados.', 'nextool'); ?>
+                  </p>
+               <?php else: ?>
+                  <div class="table-responsive">
+                     <table class="table table-vcenter mb-0">
+                        <thead>
+                           <tr>
+                              <th><?php echo __('Licença', 'nextool'); ?></th>
+                              <th><?php echo __('Tipo', 'nextool'); ?></th>
+                              <th><?php echo __('Status', 'nextool'); ?></th>
+                              <th><?php echo __('Início', 'nextool'); ?></th>
+                              <th><?php echo __('Validade', 'nextool'); ?></th>
+                              <th><?php echo __('Módulos', 'nextool'); ?></th>
+                           </tr>
+                        </thead>
+                        <tbody>
+                           <?php foreach ($licensesSnapshot as $licenseRow):
+                              $rowKey = $licenseRow['license_key'] ?? __('(desconhecida)', 'nextool');
+                              $rowPlan = strtoupper($licenseRow['plan'] ?? 'FREE');
+                              $rowStatus = strtoupper($licenseRow['license_status'] ?? 'INACTIVE');
+                              $rowModules = (!empty($licenseRow['allowed_modules']) && is_array($licenseRow['allowed_modules'])) ? $licenseRow['allowed_modules'] : [];
+                              // Tipo de licença: rótulo e cor centralizados (aceita os códigos legados).
+                              $planBadge = PluginNextoolConfigViewState::getPlanBadgeClass($rowPlan);
+                              $planLabel = PluginNextoolConfigViewState::getPlanLabel($rowPlan);
+                              $statusBadge = [
+                                 'ACTIVE'    => 'bg-green',
+                                 'INACTIVE'  => 'bg-red',
+                                 'SUSPENDED' => 'bg-orange',
+                                 'CANCELLED' => 'bg-red',
+                                 'EXPIRED'   => 'bg-red',
+                              ][$rowStatus] ?? 'bg-secondary';
+                              $statusLabel = [
+                                 'ACTIVE'    => __('Ativa', 'nextool'),
+                                 'INACTIVE'  => __('Inativa', 'nextool'),
+                                 'SUSPENDED' => __('Suspensa', 'nextool'),
+                                 'CANCELLED' => __('Cancelada', 'nextool'),
+                                 'EXPIRED'   => __('Expirada', 'nextool'),
+                              ][$rowStatus] ?? $rowStatus;
+                              // Datas sem hora: a validade é de dia; a hora completa fica na dica.
+                              $nxDate = static fn ($v): string => empty($v) ? '' : (string) Html::convDate((string) $v);
+                              $nxDateTitle = static fn ($v): string => empty($v) ? '' : (string) Html::convDateTime((string) $v);
+                           ?>
+                           <tr>
+                              <td><code><?php echo $nxLicEsc($rowKey); ?></code></td>
+                              <td><span class="badge text-white <?php echo $planBadge; ?>"><?php echo $nxLicEsc($planLabel); ?></span></td>
+                              <td><span class="badge text-white <?php echo $statusBadge; ?>"><?php echo $nxLicEsc($statusLabel); ?></span></td>
+                              <td class="text-nowrap"><?php echo empty($licenseRow['starts_at']) ? '-' : '<span title="' . $nxLicEsc($nxDateTitle($licenseRow['starts_at'])) . '">' . $nxLicEsc($nxDate($licenseRow['starts_at'])) . '</span>'; ?></td>
+                              <td class="text-nowrap"><?php echo empty($licenseRow['expires_at']) ? $nxLicEsc(__('Sem expiração', 'nextool')) : '<span title="' . $nxLicEsc($nxDateTitle($licenseRow['expires_at'])) . '">' . $nxLicEsc($nxDate($licenseRow['expires_at'])) . '</span>'; ?></td>
+                              <td>
+                                 <?php if (in_array('*', $rowModules, true)): ?>
+                                    <span class="badge text-white bg-purple"><?php echo __('Todos os módulos', 'nextool'); ?></span>
+                                 <?php elseif (empty($rowModules)): ?>
+                                    <span class="text-muted"><?php echo __('Nenhum módulo', 'nextool'); ?></span>
+                                 <?php else: ?>
+                                    <?php echo $nxLicEsc(implode(', ', array_map(static fn ($k): string => $nxLicModuleName((string) $k), $rowModules))); ?>
+                                 <?php endif; ?>
+                              </td>
+                           </tr>
+                           <?php endforeach; ?>
+                        </tbody>
+                     </table>
                   </div>
+               <?php endif; ?>
 
-                  <div class="col-12">
-                     <div class="border rounded p-3 h-100 bg-light text-dark">
-                        <h6 class="fw-semibold mb-3 text-dark"><?php echo __('Dados do ambiente', 'nextool'); ?></h6>
-                        <div class="row g-3 small">
-                           <div class="col-12 col-lg-6">
-                              <div class="mb-3">
-                                 <div class="text-muted fw-semibold mb-1"><?php echo __('Código do ambiente', 'nextool'); ?></div>
-                                 <?php if (!empty($config['client_identifier'])): ?>
-                                    <div class="input-group input-group-sm">
-                                       <input type="text"
-                                              class="form-control"
-                                              id="rt-client-identifier"
-                                              value="<?php echo PluginNextoolCompat::escape($config['client_identifier']); ?>"
-                                              readonly>
-                                       <button type="button"
-                                               class="btn btn-outline-secondary"
-                                               onclick="navigator.clipboard.writeText(document.getElementById('rt-client-identifier').value); this.innerText='Copiado!'; setTimeout(() => { this.innerText='Copiar'; }, 2000);">
-                                          <i class="ti ti-copy me-1"></i><?php echo __('Copiar', 'nextool'); ?>
-                                       </button>
-                                    </div>
-                                 <?php else: ?>
-                                    <span class="text-muted"><?php echo __('Não configurado', 'nextool'); ?></span>
-                                 <?php endif; ?>
-                              </div>
-
-                              <div>
-                                 <div class="text-muted fw-semibold mb-1"><?php echo __('URL da plataforma NexTool', 'nextool'); ?></div>
-                                 <div class="input-group input-group-sm">
-                                    <input type="url"
-                                           class="form-control bg-light"
-                                           id="rt-endpoint-url"
-                                           name="endpoint_url"
-                                           value="<?php echo PluginNextoolCompat::escape($distributionBaseUrl); ?>"
-                                           placeholder="<?php echo PluginNextoolCompat::escape(PluginNextoolConfig::DEFAULT_CONTAINERAPI_BASE_URL); ?>"
-                                           readonly>
-                                    <button type="button"
-                                            class="btn btn-outline-secondary"
-                                            onclick="const el=document.getElementById('rt-endpoint-url'); navigator.clipboard.writeText(el ? el.value : ''); this.innerText='Copiado!'; setTimeout(() => { this.innerText='Copiar'; }, 2000);">
-                                       <i class="ti ti-copy me-1"></i><?php echo __('Copiar', 'nextool'); ?>
-                                    </button>
-                                 </div>
-                                 <div class="form-text">
-                                    <i class="ti ti-lock me-1"></i><?php echo __('Gerenciada pela plataforma NexTool e atualizada automaticamente na sincronização (não editável).', 'nextool'); ?>
-                                 </div>
-                              </div>
-
-                              <div class="mt-3">
-                                 <div class="text-muted fw-semibold mb-1"><?php echo __('Conta NexTool vinculada', 'nextool'); ?></div>
-                                 <?php if (!empty($accountLinked)): ?>
-                                    <span class="badge text-white bg-success me-2"><i class="ti ti-user-check me-1"></i><?php echo __('Vinculada', 'nextool'); ?></span>
-                                    <?php if (($accountEmail ?? '') !== ''): ?><span class="fw-semibold"><?php echo PluginNextoolCompat::escape($accountEmail); ?></span><?php endif; ?>
-                                    <div class="form-text"><?php echo __('Este ambiente está vinculado a uma conta do portal NexTool. Abra "Conta" no topo para ver detalhes ou desvincular.', 'nextool'); ?></div>
-                                 <?php else: ?>
-                                    <span class="badge bg-secondary text-white me-2"><i class="ti ti-user-off me-1"></i><?php echo __('Não vinculada', 'nextool'); ?></span>
-                                    <button type="button" class="btn btn-sm btn-outline-primary ms-1" data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal" onclick="nextoolRefreshLinkStatus();">
-                                       <i class="ti ti-user-check me-1"></i><?php echo __('Vincular conta', 'nextool'); ?>
-                                    </button>
-                                 <?php endif; ?>
-                              </div>
-                           </div>
-
-                           <div class="col-12 col-lg-6">
-                              <div class="mb-3">
-                                 <div class="text-muted fw-semibold mb-1"><?php echo __('Chave de segurança', 'nextool'); ?></div>
-                                 <?php if ($distributionClientIdentifier === ''): ?>
-                                    <span class="text-muted"><?php echo __('Defina primeiro o código do ambiente para habilitar a chave de segurança.', 'nextool'); ?></span>
-                                 <?php elseif ($distributionClientSecret !== ''): ?>
-                                    <span class="badge text-white bg-success me-2"><?php echo __('Provisionado', 'nextool'); ?></span>
-                                    <div class="form-text">
-                                       <?php echo __('Atualizado após a última sincronização bem-sucedida.', 'nextool'); ?>
-                                    </div>
-                                    <?php // F5 -- botão "Regerar chave" removido: a rotação de segredo/identidade é
-                                          // coordenada pelo servidor (re-enroll/migrate). O botão local SEMPRE falhava por
-                                          // design (CR-01 recusa reemitir secret de ambiente já provisionado -> 409). ?>
-                                 <?php else: ?>
-                                    <span class="text-muted d-block"><?php echo __('A chave de segurança é provisionada automaticamente na sincronização com o servidor de licenciamento.', 'nextool'); ?></span>
-                                    <div class="d-flex flex-wrap gap-2 mt-2">
-                                       <a href="<?= NEXTOOL_TERMS_URL ?>"
-                                          target="_blank"
-                                          class="btn btn-link px-0 text-decoration-underline">
-                                          <?php echo __('Revisar políticas de uso', 'nextool'); ?>
-                                       </a>
-                                    </div>
-                                 <?php endif; ?>
-                              </div>
-
-                              <div>
-                                 <div class="text-muted fw-semibold mb-1"><?php echo __('Módulos liberados', 'nextool'); ?></div>
-                                 <?php if (empty($allowedModules)): ?>
-                                    <span class="text-muted">
-                                       <?php echo __('Ainda não recebemos a lista de módulos liberados. Clique em "Sincronizar" para atualizar.', 'nextool'); ?>
-                                    </span>
-                                 <?php elseif (in_array('*', $allowedModules, true)): ?>
-                                    <span class="badge text-white bg-purple"><?php echo __('Todos os módulos liberados', 'nextool'); ?></span>
-                                 <?php else: ?>
-                                    <p class="mb-0">
-                                       <?php foreach ($allowedModules as $allowedKey): ?>
-                                          <span class="badge text-white bg-teal me-1 mb-1"><?php echo PluginNextoolCompat::escape($allowedKey); ?></span>
-                                       <?php endforeach; ?>
-                                    </p>
-                                 <?php endif; ?>
-                              </div>
-
-                              <?php if (!empty($licenseWarnings)): ?>
-                                 <div class="mt-3">
-                                    <div class="text-muted fw-semibold mb-1"><?php echo __('Observações', 'nextool'); ?></div>
-                                    <ul class="list-unstyled mb-0">
-                                       <?php foreach ($licenseWarnings as $warning): ?>
-                                          <li><i class="ti ti-alert-triangle text-warning me-1"></i><?php echo PluginNextoolCompat::escape($warning); ?></li>
-                                       <?php endforeach; ?>
-                                    </ul>
-                                 </div>
-                              <?php endif; ?>
-                           </div>
-                        </div>
-                     </div>
+               <?php if (!empty($licenseWarnings)): ?>
+                  <div class="alert alert-warning mt-3 mb-0">
+                     <ul class="list-unstyled mb-0">
+                        <?php foreach ($licenseWarnings as $warning): ?>
+                           <li><i class="ti ti-alert-triangle me-1"></i><?php echo $nxLicEsc($warning); ?></li>
+                        <?php endforeach; ?>
+                     </ul>
                   </div>
-               </div>
+               <?php endif; ?>
+            </div>
+         </div>
+
+         <div class="card shadow-sm nextool-tab-card">
+            <div class="card-header mb-3 pt-2 border-top rounded-0">
+               <h4 class="card-title ms-5 mb-0">
+                  <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-purple s-1">
+                     <i class="fs-2x ti ti-server"></i>
+                  </div>
+                  <span><?php echo __('Ambiente', 'nextool'); ?></span>
+               </h4>
+            </div>
+            <div class="card-body pt-0">
+               <?php
+                  // Código do ambiente
+                  $nxEnvId = trim((string) ($config['client_identifier'] ?? ''));
+                  echo $nxLicRow(
+                     __('Código do ambiente', 'nextool'),
+                     $nxEnvId !== ''
+                        ? '<code>' . $nxLicEsc($nxEnvId) . '</code>' . $nxLicCopy($nxEnvId)
+                        : '<span class="text-muted">' . $nxLicEsc(__('Não configurado', 'nextool')) . '</span>',
+                     __('Identifica este GLPI na NexTool. Informe este código ao suporte.', 'nextool')
+                  );
+
+                  // Conta NexTool
+                  if (!empty($accountLinked)) {
+                     // Link para o perfil da conta no portal NexTool.
+                     $nxPortalConta = 'https://app.nextoolsolutions.com/painel/profile';
+                     $nxConta = '<span class="badge text-white bg-success me-2"><i class="ti ti-user-check me-1"></i>' . $nxLicEsc(__('Vinculada', 'nextool')) . '</span>'
+                        . '<a href="' . $nxLicEsc($nxPortalConta) . '" target="_blank" rel="noopener" title="' . $nxLicEsc(__('Abrir minha conta no portal NexTool', 'nextool')) . '">'
+                        . (($accountEmail ?? '') !== '' ? $nxLicEsc($accountEmail) : $nxLicEsc(__('Minha conta no portal', 'nextool')))
+                        . '<i class="ti ti-external-link ms-1"></i></a>';
+                  } else {
+                     $nxConta = '<span class="badge bg-secondary text-white me-2"><i class="ti ti-user-off me-1"></i>' . $nxLicEsc(__('Não vinculada', 'nextool')) . '</span>'
+                        . '<button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal" onclick="nextoolRefreshLinkStatus();">'
+                        . '<i class="ti ti-user-check me-1"></i>' . $nxLicEsc(__('Vincular conta', 'nextool')) . '</button>';
+                  }
+                  echo $nxLicRow(
+                     __('Conta NexTool', 'nextool'),
+                     $nxConta,
+                     __('Conta do portal NexTool vinculada a este ambiente. Abra "Conta", no topo da página, para ver detalhes ou desvincular.', 'nextool')
+                  );
+
+                  // Comunicação com o servidor (chave de segurança)
+                  if ($distributionClientIdentifier === '') {
+                     $nxChave = '<span class="text-muted">' . $nxLicEsc(__('Aguardando o código do ambiente.', 'nextool')) . '</span>';
+                  } elseif ($distributionClientSecret !== '') {
+                     $nxChave = '<span class="badge text-white bg-success"><i class="ti ti-shield-check me-1"></i>' . $nxLicEsc(__('Chave provisionada', 'nextool')) . '</span>';
+                  } else {
+                     $nxChave = '<span class="badge bg-secondary text-white me-2">' . $nxLicEsc(__('Sem chave', 'nextool')) . '</span>'
+                        . '<span class="text-muted small">' . $nxLicEsc(__('É gerada sozinha na próxima sincronização.', 'nextool')) . '</span>';
+                  }
+                  echo $nxLicRow(
+                     __('Comunicação com o servidor', 'nextool'),
+                     $nxChave,
+                     __('Chave de segurança que este GLPI usa para falar com o servidor de licenças. É criada e renovada na sincronização.', 'nextool')
+                  );
+
+               ?>
             </div>
          </div>
       </div>
