@@ -27,7 +27,9 @@ $nextoolFooterAdmin = PluginNextoolPermissionManager::canViewLicense();
 $nextoolFooterWeb   = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1&forcetab=';
 $nextoolFooterGlpi  = defined('GLPI_VERSION') ? (string) GLPI_VERSION : '-';
 ?>
-<div class="nextool-config-footer d-flex flex-wrap align-items-center gap-3 text-muted small border-top pt-3 mt-3 mx-3 mb-3">
+<?php // Sem a classe `small` no bloco: o GLPI 10 tem `#page .small { width: 1% }`, que espremia o rodapé numa
+      // coluna de 9px (versão, ambiente e links empilhados). A fonte menor vem do estilo próprio. ?>
+<div class="nextool-config-footer d-flex flex-wrap align-items-center gap-3 text-muted border-top pt-3 mt-3 mx-3 mb-3" style="font-size: .875em;">
    <span title="NexTool"><i class="ti ti-tool me-1"></i><strong>v<?php echo $nextoolFooterEsc(PLUGIN_NEXTOOL_VERSION); ?></strong></span>
    <span><i class="ti ti-server me-1"></i>GLPI <strong><?php echo $nextoolFooterEsc($nextoolFooterGlpi); ?></strong> · PHP <?php echo $nextoolFooterEsc(PHP_VERSION); ?></span>
    <?php if ($nextoolFooterAdmin):

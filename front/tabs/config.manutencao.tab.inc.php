@@ -86,7 +86,7 @@ declare(strict_types=1);
                      (int) $nextoolCronLimit['suggested']
                   )); ?>
                   <?php if (!$nextoolCronLimitCfg): ?>
-                     <div class="small text-muted"><?php echo PluginNextoolCompat::escape($nextoolCronLimitField); ?></div>
+                     <div class="text-muted" style="font-size: .875em;"><?php echo PluginNextoolCompat::escape($nextoolCronLimitField); ?></div>
                   <?php endif; ?>
                </div>
                <?php if ($nextoolCronLimitCfg): ?>
