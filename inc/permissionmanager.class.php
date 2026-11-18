@@ -99,6 +99,8 @@ class PluginNextoolPermissionManager {
     * @var array<string,int>
     */
    private static array $helpdeskRightsCache = [];
+   /** @var array<int, true> perfis helpdesk cujos direitos NexTool já foram carregados em bloco */
+   private static array $helpdeskRightsLoaded = [];
 
    // =====================================================================
    // Super-direito e base
@@ -523,6 +525,12 @@ class PluginNextoolPermissionManager {
          }
          $rightName = self::getModuleRightName($normalized);
          if (isset(self::$syncedModuleRights[$rightName])) {
+            continue;
+         }
+         // Uma leitura para todos os direitos de módulo (era 1 COUNT por chave do catálogo, #315).
+         $existing = $existing ?? self::existingModuleRightNames();
+         if (isset($existing[$rightName])) {
+            self::$syncedModuleRights[$rightName] = true;
             continue;
          }
          // A heranca declarada nao acontece (o addProfileRights do core ja grava rights=0 em todos
@@ -959,6 +967,26 @@ class PluginNextoolPermissionManager {
          return false;
       }
       $cacheKey = $profilesId . ':' . $rightName;
+      // Primeiro fallback da requisição: todos os direitos NexTool do perfil em uma consulta (era uma
+      // por direito distinto; medido em 2026-11-18: 0,46 ms cada, 49 direitos = 22 ms, #316 ME-37).
+      if (!isset(self::$helpdeskRightsLoaded[$profilesId])) {
+         self::$helpdeskRightsLoaded[$profilesId] = true;
+         global $DB;
+         foreach ($DB->request([
+            'SELECT' => ['name', 'rights'],
+            'FROM'   => 'glpi_profilerights',
+            'WHERE'  => [
+               'profiles_id' => $profilesId,
+               'OR'          => [
+                  ['name' => ['LIKE', 'nextool%']],
+                  ['name' => ['LIKE', 'plugin_nextool%']],
+               ],
+            ],
+         ]) as $row) {
+            self::$helpdeskRightsCache[$profilesId . ':' . $row['name']] = (int) $row['rights'];
+         }
+      }
+      // Direito sem linha na carga (criado depois dela, ou nome fora dos prefixos): consulta própria.
       if (!isset(self::$helpdeskRightsCache[$cacheKey])) {
          global $DB;
          $row = $DB->request([
@@ -976,6 +1004,21 @@ class PluginNextoolPermissionManager {
       Session::addMessageAfterRedirect($message, false, ERROR);
       Html::back();
       exit;
+   }
+
+   /** @return array<string, true> nomes de direito de módulo que já existem em glpi_profilerights */
+   private static function existingModuleRightNames(): array {
+      global $DB;
+      $names = [];
+      foreach ($DB->request([
+         'SELECT'   => 'name',
+         'DISTINCT' => true,
+         'FROM'     => 'glpi_profilerights',
+         'WHERE'    => ['name' => ['LIKE', self::MODULE_RIGHT_PREFIX . '%']],
+      ]) as $row) {
+         $names[(string) $row['name']] = true;
+      }
+      return $names;
    }
 
    private static function rightExists(string $rightName): bool {

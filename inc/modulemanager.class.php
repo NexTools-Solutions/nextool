@@ -129,6 +129,15 @@ class PluginNextoolModuleManager {
    private $moduleDataTablesCache = [];
 
    /**
+    * Tabelas `glpi_plugin_nextool_%` que existem no banco, lidas UMA vez por requisição (nome => true).
+    * O `$DB->tableExists()` do core só guarda as tabelas que existem: cada módulo sem tabela custava
+    * uma consulta ao information_schema por pergunta (#315; no GLPI 12 do DEV, 23 das 52 consultas da
+    * guia Módulos). Null = ainda não lido; zerado em dropTablesForModule().
+    * @var array<string, true>|null
+    */
+   private $nextoolTablesCache = null;
+
+   /**
     * Cache per-request das linhas de glpi_plugin_nextool_main_modules.
     * Evita queries repetidas em isInstalled/isEnabled/getBillingTier no mesmo request.
     * Invalidado em clearCache() e em rotas que mutam o estado de módulos.
@@ -2680,13 +2689,36 @@ class PluginNextoolModuleManager {
    public function moduleHasData(string $moduleKey): bool {
       global $DB;
 
+      $known = $this->getNextoolTables();
       foreach ($this->getModuleDataTables($moduleKey) as $table) {
-         if ($DB->tableExists($table)) {
+         // Tabela do NexTool: responde pela lista da requisição. Fora do prefixo (raro), o core decide.
+         $exists = strpos((string) $table, 'glpi_plugin_nextool_') === 0
+            ? isset($known[$table])
+            : $DB->tableExists($table);
+         if ($exists) {
             return true;
          }
       }
 
       return false;
+   }
+
+   /** @return array<string, true> tabelas glpi_plugin_nextool_% existentes (ver $nextoolTablesCache) */
+   private function getNextoolTables(): array {
+      global $DB;
+      if ($this->nextoolTablesCache !== null) {
+         return $this->nextoolTablesCache;
+      }
+      $tables = [];
+      if (isset($DB)) {
+         foreach ($DB->listTables('glpi\\_plugin\\_nextool\\_%') as $row) {
+            if (!empty($row['TABLE_NAME'])) {
+               $tables[(string) $row['TABLE_NAME']] = true;
+            }
+         }
+      }
+      $this->nextoolTablesCache = $tables;
+      return $tables;
    }
 
    /**
@@ -2814,19 +2846,18 @@ class PluginNextoolModuleManager {
 
       // Fallback: convenção de nome - tabelas com prefixo glpi_plugin_nextool_{moduleKey}_.
       // Permite limpar corretamente módulos que não sobrescreveram getDataTables() (senão suas
-      // tabelas ficariam órfãs no purge/uninstall). O '_' é wildcard no LIKE de listTables(),
-      // então o prefixo fixo e a moduleKey são escapados; o sufixo '_' literal evita casar
-      // chaves que sejam prefixo de outra (ex.: "mail" não captura "mailanalyzer").
-      global $DB;
+      // tabelas ficariam órfãs no purge/uninstall). Filtro em PHP sobre a lista da requisição (era
+      // 1 listTables por módulo, #315); o sufixo '_' do prefixo evita casar chaves que sejam prefixo
+      // de outra (ex.: "mail" não captura "mailanalyzer").
       $tables = [];
-      if (isset($DB) && $moduleKey !== '') {
-         $likeModule = str_replace(['_', '%'], ['\\_', '\\%'], $moduleKey);
-         $pattern = 'glpi\\_plugin\\_nextool\\_' . $likeModule . '\\_%';
-         foreach ($DB->listTables($pattern) as $row) {
-            if (!empty($row['TABLE_NAME'])) {
-               $tables[] = $row['TABLE_NAME'];
+      if ($moduleKey !== '') {
+         $prefix = 'glpi_plugin_nextool_' . $moduleKey . '_';
+         foreach (array_keys($this->getNextoolTables()) as $name) {
+            if (strpos($name, $prefix) === 0) {
+               $tables[] = $name;
             }
          }
+         sort($tables);
       }
       $this->moduleDataTablesCache[$moduleKey] = $tables;
       return $tables;
@@ -2883,6 +2914,9 @@ class PluginNextoolModuleManager {
 
    private function dropTablesForModule(string $moduleKey): bool {
       global $DB;
+
+      // A lista de tabelas da requisição deixa de valer com o DROP abaixo.
+      $this->nextoolTablesCache = null;
 
       $tables = $this->getModuleDataTables($moduleKey);
       if (empty($tables)) {

@@ -184,6 +184,9 @@ class PluginNextoolModuleCatalog {
             'name'         => self::localized($row['name_i18n'] ?? null, (string) $row['name']),
             'description'  => self::localized($row['description_i18n'] ?? null, (string) ($row['description'] ?? '')),
             'version'      => $row['available_version'] ?? $row['version'],
+            // As duas versões separadas ('version' acima colapsa): a tela compara sem reler a linha (#315).
+            'installed_version' => $row['version'] ?? null,
+            'available_version' => $row['available_version'] ?? null,
             'icon'         => $row['icon'] ?? self::DEFAULT_ICON,
             'billing_tier' => $row['billing_tier'] ?? 'FREE',
             'has_config'   => isset($row['has_config']) ? (bool)$row['has_config'] : self::DEFAULT_HAS_CONFIG,

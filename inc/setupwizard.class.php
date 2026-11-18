@@ -68,8 +68,26 @@ class PluginNextoolSetupWizard {
       return $row ?: null;
    }
 
-   public static function isPending(string $key): bool {
-      $s = self::state($key);
+   /**
+    * Estado de todos os assistentes em uma consulta, para telas que percorrem o catálogo (#315).
+    *
+    * @return array<string, array> module_key => linha
+    */
+   public static function allStates(): array {
+      global $DB;
+      if (!self::ready()) {
+         return [];
+      }
+      $states = [];
+      foreach ($DB->request(['FROM' => self::TABLE]) as $row) {
+         $states[(string) $row['module_key']] = $row;
+      }
+      return $states;
+   }
+
+   /** `$states`: resultado de allStates(), para não consultar por módulo. */
+   public static function isPending(string $key, ?array $states = null): bool {
+      $s = $states !== null ? ($states[$key] ?? null) : self::state($key);
       return $s !== null && in_array((string) $s['status'], [self::STATUS_PENDING, self::STATUS_PAUSED], true) && self::hasWizard($key);
    }
 

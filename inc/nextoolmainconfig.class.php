@@ -147,10 +147,14 @@ trait PluginNextoolMainConfigBody {
          return $tabs;
       }
 
+      // Só as colunas usadas abaixo: roda em toda página (redefine_menus) e o SELECT * trazia os textos
+      // de catálogo de todos os módulos ativos (medido em 2026-11-18: 1,97 ms -> 0,64 ms, #316 ME-10).
+      // Continua no banco por causa do ORDER: a ordem numera as guias (forcetab).
       $iterator = $DB->request([
-         'FROM'  => $table,
-         'WHERE' => ['is_installed' => 1, 'is_enabled' => 1],
-         'ORDER' => 'name',
+         'SELECT' => ['module_key', 'name', 'name_i18n'],
+         'FROM'   => $table,
+         'WHERE'  => ['is_installed' => 1, 'is_enabled' => 1],
+         'ORDER'  => 'name',
       ]);
 
       $manager = PluginNextoolModuleManager::getInstance();

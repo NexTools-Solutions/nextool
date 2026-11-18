@@ -5,7 +5,8 @@
  *    NextoolWizard.open('aiassist');           // abre do passo em que parou
  *    NextoolWizard.open('aiassist', true);     // reabre do início (menu do card)
  *
- * Nas páginas de módulo (front/modules.php?module=X) pergunta ao servidor se há assistente pendente e abre sozinho;
+ * Nas páginas de módulo (front/modules.php?module=X) abre sozinho se houver assistente pendente: o estado vem na
+ * própria página (meta nextool-wizard, emitida por plugin_nextool_wizard_header_tag); sem a tag, pergunta ao servidor;
  * `&nextool_wizard=1` na URL reabre. Fechar só pausa. Endpoint: ajax/module_wizard.php.
  *
  * Servido sem query string (o GLPI 10 valida o path do hook com file_exists): vale nos 3 majors.
@@ -206,6 +207,13 @@ $nxWizCfg = [
       var key = (u.searchParams.get('module') || u.searchParams.get('nextool_wizard_module') || '').toLowerCase();
       if (!/^[a-z0-9_-]+$/.test(key)) { return; }
       if (u.searchParams.get('nextool_wizard') === '1') { open(key, true); return; }
+      // O servidor já disse na própria página (meta nextool-wizard, "<chave>:<0|1>"): sem POST só para ouvir "não".
+      var tag = document.querySelector('meta[name="nextool-wizard"]');
+      var told = tag ? String(tag.getAttribute('content') || '').split(':') : [];
+      if (told.length === 2 && told[0] === key) {
+         if (told[1] === '1') { open(key, false); }
+         return;
+      }
       post({ action: 'pending', module: key }).then(function (j) { if (j && j.pending) { open(key, false); } });
    }
    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', auto); } else { auto(); }

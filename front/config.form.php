@@ -212,6 +212,8 @@ if (function_exists('plugin_version_nextool')) {
 require_once NEXTOOL_PHP_DIR . '/inc/coreupdater.class.php';
 $missingPackageExtensions = PluginNextoolCoreUpdater::missingRequiredExtensions();
 
+$nextoolWizardStates = $nextoolNeedsCatalog ? PluginNextoolSetupWizard::allStates() : [];
+
 foreach ($allModuleKeys as $moduleKey) {
    $meta = $catalogMeta[$moduleKey] ?? [];
 
@@ -254,22 +256,14 @@ foreach ($allModuleKeys as $moduleKey) {
       && PluginNextoolLicenseValidator::isDevModuleGrantedByLicense($moduleKey, $modulesEntitlement);
    $isDevByPlan = $isDevModule && !$isDevByLicense;
 
-   // Para detectar update, precisamos buscar version instalada do banco
-   $updateAvailable = false;
-   if ($isInstalled && $DB->tableExists('glpi_plugin_nextool_main_modules')) {
-      $rowCheck = $DB->request([
-         'FROM'  => 'glpi_plugin_nextool_main_modules',
-         'WHERE' => ['module_key' => $moduleKey],
-         'LIMIT' => 1
-      ]);
-      if (count($rowCheck)) {
-         $row = $rowCheck->current();
-         $installedVersion = $row['version'] ?? null;
-         $availableVersion = $row['available_version'] ?? $installedVersion;
-         $updateAvailable = ($installedVersion && $availableVersion)
-            ? version_compare($availableVersion, $installedVersion, '>')
-            : false;
-      }
+      $updateAvailable = false;
+   if ($isInstalled) {
+      // O catálogo já leu a linha: versão instalada e disponível vêm dele (era 1 SELECT por módulo, #315).
+      $installedVersion = $meta['installed_version'] ?? null;
+      $availableVersion = $meta['available_version'] ?? $installedVersion;
+      $updateAvailable = ($installedVersion && $availableVersion)
+         ? version_compare((string) $availableVersion, (string) $installedVersion, '>')
+         : false;
    }
    // Se a pasta do módulo não existe, não sinalizar atualização (trata como download pendente)
    if (!$moduleDownloaded || $isDiscontinued) {
@@ -469,7 +463,7 @@ foreach ($allModuleKeys as $moduleKey) {
          'show_config_button'      => $isInstalled && $moduleHasConfig && PluginNextoolPermissionManager::canViewModuleConfig($moduleKey),
          // Assistente de primeira configuração: pendente vira o botão "Continuar configuração"; com assistente, o menu
          // ganha "Assistente de configuração" para rever (só para quem configura o módulo).
-         'wizard_pending'          => $isInstalled && $isEnabled && $configUrl !== null && $moduleCanManage && PluginNextoolSetupWizard::isPending($moduleKey),
+         'wizard_pending'          => $isInstalled && $isEnabled && $configUrl !== null && $moduleCanManage && PluginNextoolSetupWizard::isPending($moduleKey, $nextoolWizardStates),
          'wizard_available'        => $isInstalled && $isEnabled && $configUrl !== null && $moduleCanManage && PluginNextoolSetupWizard::hasWizard($moduleKey),
          'can_manage_admin_tabs'   => $canManageAdminTabs,
          'can_manage_modules'      => $canManageModules,

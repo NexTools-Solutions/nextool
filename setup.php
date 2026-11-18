@@ -39,7 +39,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.61.2');
+define('PLUGIN_NEXTOOL_VERSION', '6.61.3');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -151,6 +151,41 @@ function plugin_nextool_is_asset_request(): bool {
       || (bool) preg_match('#/nextool/front/[\w.-]+\.(?:js|css)\.php$#', $path);
    return $is;
 }
+/**
+ * Página de módulo: emite no cabeçalho se há assistente de primeira configuração pendente
+ * (`<meta name="nextool-wizard" content="<chave>:<0|1>">`). O nextool-wizard.js lê a tag e só consulta
+ * o endpoint quando ela não veio; antes, toda abertura de página de módulo custava um POST com boot
+ * completo só para ouvir "não" (#316, ME-07). Mesmas condições do `action=pending` do endpoint.
+ */
+function plugin_nextool_wizard_header_tag(): void {
+   global $PLUGIN_HOOKS;
+   if (PHP_SAPI === 'cli' || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+      return;
+   }
+   $path = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+   if (!preg_match('#/front/(?:modules|config\.form)\.php$#', $path)) {
+      return;
+   }
+   $key = strtolower(trim((string) ($_GET['module'] ?? ($_GET['nextool_wizard_module'] ?? ''))));
+   if (!preg_match('/^[a-z0-9_-]{1,64}$/', $key)) {
+      return;
+   }
+   $pending = false;
+   try {
+      require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
+      if (PluginNextoolPermissionManager::canAdmin($key, PluginNextoolPermissionManager::CONFIGURE)) {
+         require_once NEXTOOL_PHP_DIR . '/inc/setupwizard.class.php';
+         $pending = PluginNextoolSetupWizard::ready() && PluginNextoolSetupWizard::isPending($key);
+      }
+   } catch (\Throwable $e) {
+      return; // sem a tag o script volta a perguntar ao endpoint
+   }
+   $PLUGIN_HOOKS['add_header_tag']['nextool'][] = [
+      'tag'        => 'meta',
+      'properties' => ['name' => 'nextool-wizard', 'content' => $key . ':' . ($pending ? '1' : '0')],
+   ];
+}
+
 function plugin_nextool_boot_fast_path_enabled(): bool {
    if (defined('NEXTOOL_BOOT_FAST_PATH')) {
       return (bool) NEXTOOL_BOOT_FAST_PATH;
@@ -715,6 +750,9 @@ function plugin_init_nextool() {
                }
             }
             plugin_nextool_prof_stop('classScan');
+
+            // Assistente de primeira configuração: o estado vai junto com a página do módulo.
+            plugin_nextool_wizard_header_tag();
 
             plugin_nextool_prof_start('dispatch_menus');
             // Menu "Nextools" (nativo) + menus de módulos via redefine_menus
