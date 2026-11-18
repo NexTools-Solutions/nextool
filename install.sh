@@ -596,8 +596,8 @@ main() {
   echo
   echo "Proximos passos (dentro do GLPI):"
   echo "  1. Configurar > Plugins > localizar 'NexTool Solutions' > Instalar > Ativar"
-  echo "  2. Menu 'NexTool Solutions' > aba Licenciamento > clicar em 'Sincronizar'"
-  echo "  3. Aba Modulos > baixar/ativar os modulos desejados"
+  echo "  2. Menu 'NexTool' > Modulos > 'Vincular conta' > 'Gerar codigo' e confirmar no portal"
+  echo "  3. Aba Modulos > 'Baixar e ativar' nos modulos desejados"
   echo
   echo "IMPORTANTE: se for instalar/ativar pelo console (bin/console plugin:install),"
   echo "  rode SEMPRE como o usuario do servidor web (ex.: --user ${web_user}), NUNCA"

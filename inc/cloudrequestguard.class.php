@@ -72,6 +72,9 @@ class PluginNextoolCloudRequestGuard {
     */
    private const HEALTH_TOUCH = 60;
 
+   /** Prefixo das chaves do limitador de recusas (PluginNextoolCloudThrottle): uma janela por motivo. */
+   private const THROTTLE_PREFIX = 'recusa_';
+
    /**
     * Autentica a requisição.
     *
@@ -207,8 +210,9 @@ class PluginNextoolCloudRequestGuard {
     * Recusa que não passou pelo verify() (o teto do Content-Length, que o `ajax/cloud_exec.php` confere
     * antes de ler o corpo), para contar no resumo de saúde como as outras.
     */
-   public static function noteRefusal(string $reason, int $now = 0): void {
-      self::registrar($now > 0 ? $now : time(), $reason, null, null);
+   public static function noteRefusal(string $reason, int $now = 0): array {
+      // Mesmo formato da recusa do verify() (`log`, `suprimidas`): quem chama decide a linha do log.
+      return self::recusa($now > 0 ? $now : time(), 'payload_too_large', $reason, [], null, null);
    }
 
    /**
@@ -255,6 +259,7 @@ class PluginNextoolCloudRequestGuard {
       if ($cred === null) {
          return null;
       }
+      self::flushSuppressed();
       $e = self::healthState();
 
       return [
@@ -312,9 +317,50 @@ class PluginNextoolCloudRequestGuard {
     * @param bool|null $temVinculo esta instalação tem credencial do cloud link? null = descobrir
     */
    private static function recusa(int $now, string $code, string $reason, array $extra = [], ?int $desvio = null, ?bool $temVinculo = true): array {
-      self::registrar($now, $reason, $desvio, $temVinculo);
+      // Uma recusa por motivo por janela é tratada por inteiro (linha no log, gravação no resumo); as
+      // demais só são contadas, fora do banco (PluginNextoolCloudThrottle, nextool-dev#312). `log` diz a
+      // quem chamou se esta recusa tem linha própria; `suprimidas`, quantas iguais ficaram sem linha.
+      require_once NEXTOOL_PHP_DIR . '/inc/cloudthrottle.class.php';
+      $suprimidas = PluginNextoolCloudThrottle::open(self::THROTTLE_PREFIX . self::motivoBase($reason), $now);
+      if ($suprimidas !== null) {
+         self::registrar($now, $reason, $desvio, $temVinculo, 1 + $suprimidas);
+      }
 
-      return ['ok' => false, 'code' => $code, 'reason' => $reason] + $extra;
+      return ['ok' => false, 'code' => $code, 'reason' => $reason,
+              'log' => $suprimidas !== null, 'suprimidas' => (int) $suprimidas] + $extra;
+   }
+
+   /**
+    * Motivo sem o detalhe depois do ':' (missing_headers:<lista>, kid_unknown:...): a contagem e a
+    * janela do limitador são por motivo.
+    */
+   private static function motivoBase(string $motivo): string {
+      $base = substr((string) preg_replace('/[^a-z_]/', '', strtolower(strtok($motivo, ':') ?: '')), 0, 40);
+
+      return $base !== '' ? $base : 'outro';
+   }
+
+   /**
+    * Leva ao resumo as recusas contadas pelo limitador que nenhuma recusa seguinte recolheu (a rajada
+    * acabou dentro da janela). Chamado ao montar o resumo do /validate: a contagem enviada é a real.
+    */
+   private static function flushSuppressed(): void {
+      try {
+         require_once NEXTOOL_PHP_DIR . '/inc/cloudthrottle.class.php';
+         $pendentes = PluginNextoolCloudThrottle::drain(self::THROTTLE_PREFIX);
+         if ($pendentes === []) {
+            return;
+         }
+         $e = self::healthState();
+         foreach ($pendentes as $motivo => $n) {
+            if (preg_match('/^[a-z_]{1,40}$/', (string) $motivo) && $n > 0) {
+               $e['recusas'][$motivo] = min(PHP_INT_MAX - $n, (int) ($e['recusas'][$motivo] ?? 0)) + $n;
+            }
+         }
+         self::saveHealth($e);
+      } catch (\Throwable $ex) {
+         // diagnóstico: na falha, a contagem fica para o próximo resumo
+      }
    }
 
    /**
@@ -325,8 +371,9 @@ class PluginNextoolCloudRequestGuard {
     * GLPI com a base. Contar ali seria uma escrita no banco por pedido de qualquer robô, para nada.
     *
     * @param bool|null $temVinculo null = descobrir (recusas antes da leitura da credencial)
+    * @param int       $vezes      quantas recusas esta gravação representa (ver recusa())
     */
-   private static function registrar(int $now, ?string $motivo, ?int $desvio, ?bool $temVinculo = true): void {
+   private static function registrar(int $now, ?string $motivo, ?int $desvio, ?bool $temVinculo = true, int $vezes = 1): void {
       try {
          if ($temVinculo === null) {
             require_once NEXTOOL_PHP_DIR . '/inc/cloudcreds.class.php';
@@ -343,11 +390,10 @@ class PluginNextoolCloudRequestGuard {
                $mudou = true;
             }
          } else {
-            // O motivo do log pode ter detalhe depois do ':' (missing_headers:<lista>, kid_unknown:...):
-            // a contagem é por motivo, sem o detalhe.
-            $base = substr((string) preg_replace('/[^a-z_]/', '', strtolower(strtok($motivo, ':') ?: '')), 0, 40);
-            $base = $base !== '' ? $base : 'outro';
-            $e['recusas'][$base] = min(PHP_INT_MAX - 1, (int) ($e['recusas'][$base] ?? 0)) + 1;
+            // `$vezes` = esta recusa mais as iguais que o limitador contou sem gravar desde a anterior.
+            $base  = self::motivoBase($motivo);
+            $vezes = max(1, $vezes);
+            $e['recusas'][$base] = min(PHP_INT_MAX - $vezes, (int) ($e['recusas'][$base] ?? 0)) + $vezes;
             $mudou = true;
          }
          if ($desvio !== null

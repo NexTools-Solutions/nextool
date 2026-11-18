@@ -2853,44 +2853,10 @@ class PluginNextoolModuleManager {
     * @return int quantidade de arquivos invalidados
     */
    private function invalidateModuleOpcache(string $moduleKey): int {
-      if (!function_exists('opcache_invalidate') || !function_exists('opcache_get_status')) {
-         return 0;
-      }
-      try {
-         $status = @opcache_get_status(false);
-         if (!is_array($status) || empty($status['opcache_enabled'])) {
-            return 0;
-         }
-      } catch (\Throwable $e) {
-         return 0;
-      }
-
-      $dir = $this->modulesPath . '/' . $moduleKey;
-      if (!is_dir($dir)) {
-         return 0;
-      }
-
-      $count = 0;
-      try {
-         $it = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
-         );
-         foreach ($it as $file) {
-            if (!$file->isFile() || strtolower($file->getExtension()) !== 'php') {
-               continue;
-            }
-            // force=true: com validate_timestamps=Off o timestamp nao serve de criterio.
-            if (@opcache_invalidate($file->getPathname(), true)) {
-               $count++;
-            }
-         }
-      } catch (\Throwable $e) {
-         Toolbox::logInFile('plugin_nextool', sprintf(
-            '[OPcache] Falha ao invalidar arquivos do modulo %s: %s', $moduleKey, $e->getMessage()
-         ));
-         return $count;
-      }
-
+      // A invalidação por diretório é do FileHelper (fonte única, nextool-dev#311): parte da lista de
+      // scripts em cache, então cobre também o arquivo que a versão nova removeu.
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      $count = PluginNextoolFileHelper::invalidateDirectoryOpcache($this->modulesPath . '/' . $moduleKey);
       if ($count > 0) {
          Toolbox::logInFile('plugin_nextool', sprintf(
             '[OPcache] %d arquivo(s) do modulo %s invalidados apos troca no disco.', $count, $moduleKey

@@ -799,7 +799,9 @@ function _plugin_nextool_build_menus($menu) {
    $canViewModulesGlobal = PluginNextoolPermissionManager::canViewModules();
    $canAccessAdmin       = PluginNextoolPermissionManager::canAccessAdminTabs();
    $canViewAnyMod        = PluginNextoolPermissionManager::canViewAnyModule();
-   $hasGlobalAdmin       = Session::haveRight('config', UPDATE);
+   // Super-direito do NexTool (nextool_admin_global). O `config UPDATE` do GLPI não é direito do
+   // plugin (PERMISSIONS.md): com ele, perfil sem direito NexTool via entradas que davam "acesso negado" (#314).
+   $hasGlobalAdmin       = PluginNextoolPermissionManager::hasGlobalAdminAccess();
 
    // Se o perfil não tem nenhuma permissão no NexTool, não exibir menu
    if (!$canViewModulesGlobal && !$canAccessAdmin && !$canViewAnyMod && !$hasGlobalAdmin) {
@@ -817,16 +819,17 @@ function _plugin_nextool_build_menus($menu) {
 
    $configBase = plugin_nextool_menu_page(PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1');
 
-   // Subitem "Módulos": requer permissão global de módulos OU acesso a algum módulo
-   if ($canViewModulesGlobal || $canViewAnyMod || $hasGlobalAdmin) {
-      $nextoolsItem['content']['modulos'] = [
-         'title' => __('Módulos', 'nextool'),
-         'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$1',
-         'icon'  => 'ti ti-puzzle',
-      ];
-      // Link do "NexTool" no breadcrumb (sem default o core usava /front/central.php).
-      $nextoolsItem['default'] = $nextoolsItem['content']['modulos']['page'];
-   }
+   // Subitem "Módulos": a porta da página de configuração. Vale a mesma régua de
+   // PluginNextoolMainConfig::canView() (acesso a algum módulo OU qualquer bit do bloco base), que o
+   // retorno antecipado acima já garantiu. Até a 6.61.1 a entrada pedia acesso a algum módulo: um perfil
+   // só com "Ver licença" ou "Ver logs" podia abrir a página pelo endereço, mas ficava sem o menu.
+   $nextoolsItem['content']['modulos'] = [
+      'title' => __('Módulos', 'nextool'),
+      'page'  => $configBase . '&forcetab=PluginNextoolMainConfig$1',
+      'icon'  => 'ti ti-puzzle',
+   ];
+   // Link do "NexTool" no breadcrumb (sem default o core usava /front/central.php).
+   $nextoolsItem['default'] = $nextoolsItem['content']['modulos']['page'];
 
    // Subitens admin removidos do menu principal - acessíveis apenas via abas internas
 

@@ -182,8 +182,12 @@ declare(strict_types=1);
                         . (($accountEmail ?? '') !== '' ? $nxLicEsc($accountEmail) : $nxLicEsc(__('Minha conta no portal', 'nextool')))
                         . '<i class="ti ti-external-link ms-1"></i></a>';
                   } else {
-                     $nxConta = '<span class="badge bg-secondary text-white me-2"><i class="ti ti-user-off me-1"></i>' . $nxLicEsc(__('Não vinculada', 'nextool')) . '</span>'
-                        . '<button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal" onclick="nextoolRefreshLinkStatus();">'
+                     $nxConta = '<span class="badge bg-secondary text-white me-2"><i class="ti ti-user-off me-1"></i>' . $nxLicEsc(__('Não vinculada', 'nextool')) . '</span>';
+                     // O vínculo exige o super-direito (ajax/account_action.php). Quem abre a guia só com
+                     // "Ver licença" recebe o estado, sem botão que terminaria em 403 (#314).
+                     $nxConta .= !PluginNextoolPermissionManager::canManageModules()
+                        ? '<span class="text-muted small"><i class="ti ti-lock me-1"></i>' . $nxLicEsc(__('Somente um administrador do NexTool pode vincular a conta.', 'nextool')) . '</span>'
+                        : '<button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal" onclick="nextoolRefreshLinkStatus();">'
                         . '<i class="ti ti-user-check me-1"></i>' . $nxLicEsc(__('Vincular conta', 'nextool')) . '</button>';
                   }
                   echo $nxLicRow(

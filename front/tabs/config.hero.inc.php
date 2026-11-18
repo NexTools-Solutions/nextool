@@ -28,6 +28,9 @@ $nextoolHeroDisableSync = !empty($nextoolHeroDisableSync);
 $nextoolHeroHideSync = !empty($nextoolHeroHideSync);
 $nextoolHeroForcetab = isset($nextoolHeroForcetab) ? trim((string) $nextoolHeroForcetab) : '';
 $nextoolHeroShowCoreUpdate = !empty($nextoolHeroShowCoreUpdate);
+// Vincular/desvincular exige o super-direito no servidor (ajax/account_action.php): sem ele o botão
+// abriria um modal que só responde 403 (#314).
+$nextoolHeroHideAccountLink = !empty($nextoolHeroHideAccountLink) || !PluginNextoolPermissionManager::canManageModules();
 ?>
 <?php // Espaço igual em todas as abas (hero -> primeiro bloco e entre blocos = 1rem): todo .nextool-tab-card tem
       // margin-top 1rem (config.form.styles), e Módulos, Licenciamento, Novidades e Sobre ainda põem os blocos num

@@ -2286,29 +2286,13 @@ class PluginNextoolCoreUpdater {
     *    interface. O sintoma parece defeito de i18n e nao e: e cache velho.
     */
    private function invalidateFileCaches(): void {
-      if (function_exists('opcache_reset')) {
-         @opcache_reset();
-      }
+      // Reset GLOBAL: a base inteira mudou. (Módulo usa a invalidação por diretório.) A política e o
+      // cache de traduções moram no FileHelper (fonte única, nextool-dev#311).
       // Nota: NÃO enviar SIGUSR2 ao php-fpm aqui - mata o worker que está executando o apply.
       // opcache_reset() é suficiente para invalidar o cache da SAPI web.
-
-      // Best-effort: cache e efeito colateral do update, nunca pode derrubar o update.
-      // `Glpi\Cache\CacheManager` existe no GLPI 10 e no 11, mesmo namespace.
-      if (!class_exists('\\Glpi\\Cache\\CacheManager')) {
-         return;
-      }
-      try {
-         $manager = new \Glpi\Cache\CacheManager();
-         if (!method_exists($manager, 'getTranslationsCacheInstance')) {
-            return;
-         }
-         $cache = $manager->getTranslationsCacheInstance();
-         if ($cache !== null && method_exists($cache, 'clear')) {
-            $cache->clear();
-         }
-      } catch (Throwable $e) {
-         Toolbox::logInFile('plugin_nextool', '[coreupdater] falha ao invalidar cache de traducoes: ' . $e->getMessage());
-      }
+      require_once NEXTOOL_PHP_DIR . '/inc/filehelper.class.php';
+      PluginNextoolFileHelper::resetOpcache();
+      PluginNextoolFileHelper::clearTranslationsCache('coreupdater');
    }
 
    private function getMaintenanceFlagPath(): string {

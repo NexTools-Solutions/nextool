@@ -2434,42 +2434,16 @@ class PluginNextoolLicenseValidator {
       ], 'core_update hint');
    }
 
+   /**
+    * Entrega ao console os alertas vindos do servidor e recolhe os revogados. Esquema e escrita da
+    * tabela são do `PluginNextoolAlertManager` (nextool-dev#309): aqui ficam só a leitura da
+    * resposta e o canal de notificações.
+    */
    private static function persistAlerts(array $alerts, array $revokedIds = []): void {
-      global $DB;
-      $table = 'glpi_plugin_nextool_main_alerts';
-      if ($alerts === [] && $revokedIds !== [] && !$DB->tableExists($table)) {
+      if ($alerts === [] && $revokedIds !== [] && !PluginNextoolAlertManager::tableExists()) {
          return; // nada entregue ainda: não há o que revogar (e nada a criar)
       }
-      // Shim de DDL: doQuery() só existe a partir do GLPI 10.0.7 (mesmo padrão de
-      // BaseModule::execDdl -- o artefato único suporta 10.0.0+).
-      $ddlMethod = method_exists($DB, 'doQuery') ? 'doQuery' : 'query';
-      if (!$DB->tableExists($table)) {
-         $DB->$ddlMethod("CREATE TABLE IF NOT EXISTS `{$table}` (
-            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            `remote_alert_id` INT UNSIGNED NOT NULL,
-            `title` VARCHAR(255) NOT NULL,
-            `body` TEXT NOT NULL,
-            `alert_type` VARCHAR(20) NOT NULL DEFAULT 'info',
-            `is_read` TINYINT NOT NULL DEFAULT 0,
-            `date_received` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            `date_read` TIMESTAMP NULL DEFAULT NULL,
-            `date_start` TIMESTAMP NULL DEFAULT NULL,
-            `date_end` TIMESTAMP NULL DEFAULT NULL,
-            UNIQUE KEY `uq_remote_alert` (`remote_alert_id`)
-         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-      } else {
-         // Janela de validade (#107): instalação antiga não tem as colunas -- sem
-         // elas o alerta local nunca expira e o popup reabre após o fim da janela.
-         foreach (['date_start', 'date_end'] as $col) {
-            if (!$DB->fieldExists($table, $col, false)) {
-               try {
-                  $DB->$ddlMethod("ALTER TABLE `{$table}` ADD COLUMN `{$col}` TIMESTAMP NULL DEFAULT NULL");
-               } catch (Throwable $e) {
-                  Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao adicionar coluna ' . $col . ' em main_alerts - ' . $e->getMessage());
-               }
-            }
-         }
-      }
+      PluginNextoolAlertManager::ensureSchema();
       foreach ($alerts as $alert) {
          $remoteId = (int)($alert['id'] ?? 0);
          if ($remoteId <= 0) { continue; }
@@ -2481,19 +2455,13 @@ class PluginNextoolLicenseValidator {
             'date_end'   => !empty($alert['date_end']) ? (string)$alert['date_end'] : null,
          ];
          try {
-            $existing = $DB->request(['FROM' => $table, 'WHERE' => ['remote_alert_id' => $remoteId], 'LIMIT' => 1]);
-            // GLPI 10: título e corpo do comunicado vêm da ContainerAPI (HTML com `'`) e o insert não escapa.
-            if (count($existing) > 0) {
-               // UPSERT (#107): alerta editado no admin (texto/validade) reflete na
-               // próxima sincronização. is_read/date_read são preservados de propósito
-               // -- edição não reabre o popup para quem já leu.
-               $DB->update($table, PluginNextoolDbCompat::row($data), ['remote_alert_id' => $remoteId]);
-            } elseif ($DB->insert($table, PluginNextoolDbCompat::row(array_merge(['remote_alert_id' => $remoteId], $data)))) {
+            $inserted = PluginNextoolAlertManager::upsertRemote($remoteId, $data);
+            if ($inserted === true) {
                // Alerta NOVO também vai pro canal de notificações (sino por usuário,
                // audiência = admins da base). Só no INSERT: edição não re-notifica. Sem a
                // linha gravada, o sino não avisa de um comunicado que o console não mostra.
                self::publishAlertNotification($remoteId, $data);
-            } else {
+            } elseif ($inserted === null) {
                Toolbox::logInFile('plugin_nextool', 'LicenseValidator: alerta #' . $remoteId . " não gravado\n");
             }
          } catch (Throwable $e) {
@@ -2501,44 +2469,27 @@ class PluginNextoolLicenseValidator {
          }
       }
 
-      // Revogação (#239): alerta desativado na origem some do console de quem já o recebeu.
-      // Só linhas REMOTAS (local_key IS NULL) -- os alertas locais usam remote_alert_id
-      // sintético e nunca são revogados pelo servidor. Roda DEPOIS do upsert para o revogado
-      // vencer caso o mesmo id venha nas duas listas. A notificação do sino é recolhida pelo
-      // dispatcher (`resolves` do canal), sem release do consumidor.
-      $revoked = [];
-      foreach ($revokedIds as $rid) {
-         $rid = (int) $rid;
-         if ($rid > 0) {
-            $revoked[$rid] = $rid;
-         }
+      // Revogação (#239): roda DEPOIS do upsert para o revogado vencer caso o mesmo id venha nas
+      // duas listas. A notificação do sino é recolhida pelo dispatcher (`resolves` do canal), sem
+      // release do consumidor.
+      if ($revokedIds === []) {
+         return;
       }
-      if ($revoked !== []) {
-         try {
-            $rows = $DB->request([
-               'SELECT' => ['remote_alert_id'],
-               'FROM'   => $table,
-               'WHERE'  => ['remote_alert_id' => array_values($revoked), 'local_key' => null],
-            ]);
-            $present = [];
-            foreach ($rows as $row) {
-               $present[] = (int) $row['remote_alert_id'];
+      try {
+         $present = PluginNextoolAlertManager::revokeRemote($revokedIds);
+         if ($present !== []) {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               "LicenseValidator: %d alerta(s) revogado(s) na origem removido(s) do console: %s\n",
+               count($present), implode(',', $present)
+            ));
+            if (class_exists('PluginNextoolHookDispatcher')
+                && method_exists('PluginNextoolHookDispatcher', 'retractNotification')) {
+               $keys = array_map(static fn(int $id): string => 'nextool.server_alert:' . $id, $present);
+               PluginNextoolHookDispatcher::retractNotification($keys);
             }
-            if ($present !== []) {
-               $DB->delete($table, ['remote_alert_id' => $present, 'local_key' => null]);
-               Toolbox::logInFile('plugin_nextool', sprintf(
-                  "LicenseValidator: %d alerta(s) revogado(s) na origem removido(s) do console: %s\n",
-                  count($present), implode(',', $present)
-               ));
-               if (class_exists('PluginNextoolHookDispatcher')
-                   && method_exists('PluginNextoolHookDispatcher', 'retractNotification')) {
-                  $keys = array_map(static fn(int $id): string => 'nextool.server_alert:' . $id, $present);
-                  PluginNextoolHookDispatcher::retractNotification($keys);
-               }
-            }
-         } catch (Throwable $e) {
-            Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao revogar alertas - ' . $e->getMessage());
          }
+      } catch (Throwable $e) {
+         Toolbox::logInFile('plugin_nextool', 'LicenseValidator: falha ao revogar alertas - ' . $e->getMessage());
       }
    }
 

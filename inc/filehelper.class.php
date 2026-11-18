@@ -20,6 +20,128 @@ if (!defined('GLPI_ROOT')) {
 
 class PluginNextoolFileHelper {
 
+   // =====================================================================
+   // Caches que guardam o que estava no disco ANTES de uma troca de arquivos
+   // (fonte única desde a nextool-dev#311). Política:
+   //  - troca de um MÓDULO: invalidação só dos scripts do diretório dele;
+   //  - atualização da BASE: reset global (a base inteira mudou);
+   //  - nos dois casos, o cache de traduções do GLPI.
+   // Tudo best-effort: cache é efeito colateral, nunca derruba a troca já feita no disco.
+   // =====================================================================
+
+   /**
+    * Invalida o OPcache dos scripts de um diretório cujos arquivos acabaram de ser trocados.
+    *
+    * POR QUE por diretório e não `opcache_reset()`: o reset derruba o bytecode do GLPI inteiro. Num
+    * ambiente grande, as requisições seguintes recompilam tudo de uma vez (pico de CPU e de latência),
+    * e com "Atualizar todos" isso se repetia a cada módulo. Até a 6.61.1 o download de módulo fazia o
+    * reset global, contra o que o próprio ModuleManager documentava.
+    *
+    * POR QUE a lista vem do OPcache e não do disco: com `opcache.validate_timestamps=Off`, um arquivo
+    * que a versão nova REMOVEU continua em cache e seria servido a um `require` antigo. Percorrer o
+    * disco novo não o encontra; a lista de scripts em cache, sim. O disco só entra como reserva,
+    * quando a API de status está restrita (`opcache.restrict_api`).
+    *
+    * @return int scripts invalidados
+    */
+   public static function invalidateDirectoryOpcache(string $dir): int {
+      if (!function_exists('opcache_invalidate')) {
+         return 0;
+      }
+      $dir = rtrim($dir, '/\\');
+      if ($dir === '') {
+         return 0;
+      }
+      // O OPcache indexa pelo caminho resolvido; o diretório pode ser alcançado por link simbólico.
+      $prefixos = [$dir . DIRECTORY_SEPARATOR];
+      $real = @realpath($dir);
+      if (is_string($real) && $real !== '' && $real !== $dir) {
+         $prefixos[] = rtrim($real, '/\\') . DIRECTORY_SEPARATOR;
+      }
+
+      $count = 0;
+      try {
+         $status = function_exists('opcache_get_status') ? @opcache_get_status(true) : false;
+         if (is_array($status) && empty($status['opcache_enabled'])) {
+            return 0;
+         }
+         if (is_array($status) && isset($status['scripts']) && is_array($status['scripts'])) {
+            foreach (array_keys($status['scripts']) as $script) {
+               $script = (string) $script;
+               foreach ($prefixos as $prefixo) {
+                  if (strncmp($script, $prefixo, strlen($prefixo)) === 0) {
+                     // force=true: com validate_timestamps=Off o timestamp não serve de critério.
+                     if (@opcache_invalidate($script, true)) {
+                        $count++;
+                     }
+                     break;
+                  }
+               }
+            }
+            return $count;
+         }
+         // Reserva (API de status restrita): os .php que estão no disco agora.
+         if (!is_dir($dir)) {
+            return 0;
+         }
+         $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+         );
+         foreach ($it as $file) {
+            if ($file->isFile() && strtolower($file->getExtension()) === 'php'
+                && @opcache_invalidate($file->getPathname(), true)) {
+               $count++;
+            }
+         }
+      } catch (\Throwable $e) {
+         self::logCache('[OPcache] falha ao invalidar ' . $dir . ': ' . $e->getMessage());
+      }
+      return $count;
+   }
+
+   /**
+    * Reset GLOBAL do OPcache. Só para a atualização da base, que troca o plugin inteiro. Troca de
+    * módulo usa `invalidateDirectoryOpcache()`.
+    */
+   public static function resetOpcache(): void {
+      if (function_exists('opcache_reset')) {
+         @opcache_reset();
+      }
+   }
+
+   /**
+    * Limpa o cache de traduções do GLPI depois de gravar `.mo` novos.
+    *
+    * O GLPI NÃO lê o `.mo` do disco a cada requisição: serve as traduções de um cache próprio
+    * (files/_cache/<versao>/translations). Sem isto, as strings NOVAS da versão saem no idioma FONTE
+    * (português) enquanto as antigas traduzem normalmente, até alguém rodar `php bin/console
+    * cache:clear` no servidor. Parece defeito de i18n e não é: é cache velho (cliente em es_ES após o
+    * aiassist 2.1.0, 2026-09-08). `Glpi\Cache\CacheManager` existe no GLPI 10, 11 e 12, mesmo namespace.
+    */
+   public static function clearTranslationsCache(string $origem = 'filehelper'): void {
+      if (!class_exists('\\Glpi\\Cache\\CacheManager')) {
+         return;
+      }
+      try {
+         $manager = new \Glpi\Cache\CacheManager();
+         if (!method_exists($manager, 'getTranslationsCacheInstance')) {
+            return;
+         }
+         $cache = $manager->getTranslationsCacheInstance();
+         if ($cache !== null && method_exists($cache, 'clear')) {
+            $cache->clear();
+         }
+      } catch (\Throwable $e) {
+         self::logCache('[' . $origem . '] falha ao invalidar cache de traducoes: ' . $e->getMessage());
+      }
+   }
+
+   private static function logCache(string $linha): void {
+      if (class_exists('Toolbox')) {
+         Toolbox::logInFile('plugin_nextool', $linha);
+      }
+   }
+
    /**
     * Remove um diretório e todo seu conteúdo recursivamente.
     *

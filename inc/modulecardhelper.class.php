@@ -495,6 +495,10 @@ class PluginNextoolModuleCardHelper {
     * idêntico ao botão "Vincular conta" do topo.
     */
    private static function renderAccountLinkButton(): string {
+      // Sem o super-direito o modal só responderia 403 (ajax/account_action.php): não oferecer (#314).
+      if (!PluginNextoolPermissionManager::canManageModules()) {
+         return '';
+      }
       return '<button type="button" class="btn btn-sm btn-warning module-action"'
          . ' data-bs-toggle="modal" data-bs-target="#nextool-account-link-modal">'
          . '<i class="ti ti-user-check me-1"></i>' . __('Vincular conta', 'nextool')

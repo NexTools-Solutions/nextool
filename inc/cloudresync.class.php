@@ -129,7 +129,17 @@ class PluginNextoolCloudResync {
          ]);
       };
       if (!self::claim($now)) {
-         self::log(sprintf("[CLOUD_KID] /validate nao disparado: teto de um a cada %d s (%s)\n", self::INTERVAL, $rotulo));
+         // Uma linha por janela: o kid vem do cabeçalho de um pedido ainda não autenticado, e uma linha
+         // por pedido barrado deixava o log crescer sem limite (nextool-dev#312).
+         require_once NEXTOOL_PHP_DIR . '/inc/cloudthrottle.class.php';
+         $suprimidos = PluginNextoolCloudThrottle::open('resync_teto', $now);
+         if ($suprimidos !== null) {
+            self::log(sprintf(
+               "[CLOUD_KID] /validate nao disparado: teto de um a cada %d s (%s)%s\n",
+               self::INTERVAL, $rotulo,
+               $suprimidos > 0 ? sprintf(' [+%d pedidos barrados desde a linha anterior]', $suprimidos) : ''
+            ));
+         }
          return 'throttled';
       }
       $anterior = self::$markAnterior;

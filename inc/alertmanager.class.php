@@ -228,7 +228,7 @@ class PluginNextoolAlertManager {
          $type = 'info';
       }
       try {
-         self::ensureLocalKeyColumn();
+         self::ensureSchema();
          if (!$DB->tableExists(self::TABLE) || !$DB->fieldExists(self::TABLE, 'local_key', false)) {
             return false; // DDL falhou (permissão?) -- já logado; não quebrar o chamador
          }
@@ -356,10 +356,11 @@ class PluginNextoolAlertManager {
    }
 
    /**
-    * Garante a tabela de alertas (DDL espelho de LicenseValidator::persistAlerts,
-    * que a cria lazy no 1º alerta remoto) e a coluna/índice `local_key`.
+    * Esquema da tabela de alertas: FONTE ÚNICA (nextool-dev#309). Cria a tabela completa ou leva a
+    * instalação antiga ao esquema atual (`local_key` + índice, janela `date_start`/`date_end`).
+    * Quem grava alerta (local ou vindo do servidor) chama antes; ninguém mais tem DDL desta tabela.
     */
-   private static function ensureLocalKeyColumn(): void {
+   public static function ensureSchema(): void {
       global $DB;
       // Shim de DDL: doQuery() só existe a partir do GLPI 10.0.7.
       $ddlMethod = method_exists($DB, 'doQuery') ? 'doQuery' : 'query';
@@ -382,12 +383,83 @@ class PluginNextoolAlertManager {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             return;
          }
-         if (!$DB->fieldExists(self::TABLE, 'local_key', false)) {
-            $DB->$ddlMethod("ALTER TABLE `" . self::TABLE . "` ADD COLUMN `local_key` VARCHAR(191) NULL DEFAULT NULL, ADD UNIQUE KEY `uq_local_key` (`local_key`)");
-         }
       } catch (Throwable $e) {
-         Toolbox::logInFile('plugin_nextool', 'AlertManager: falha no DDL de local_key - ' . $e->getMessage());
+         Toolbox::logInFile('plugin_nextool', 'AlertManager: falha ao criar a tabela de alertas - ' . $e->getMessage());
+         return;
       }
+      // Um ALTER por tentativa: a falha de uma coluna não impede as outras.
+      $alters = [
+         'local_key'  => "ADD COLUMN `local_key` VARCHAR(191) NULL DEFAULT NULL, ADD UNIQUE KEY `uq_local_key` (`local_key`)",
+         // Janela de validade (#107): sem ela o alerta nunca expira e o popup reabre depois do fim.
+         'date_start' => "ADD COLUMN `date_start` TIMESTAMP NULL DEFAULT NULL",
+         'date_end'   => "ADD COLUMN `date_end` TIMESTAMP NULL DEFAULT NULL",
+      ];
+      foreach ($alters as $col => $ddl) {
+         try {
+            if (!$DB->fieldExists(self::TABLE, $col, false)) {
+               $DB->$ddlMethod("ALTER TABLE `" . self::TABLE . "` " . $ddl);
+            }
+         } catch (Throwable $e) {
+            Toolbox::logInFile('plugin_nextool', 'AlertManager: falha no DDL de ' . $col . ' - ' . $e->getMessage());
+         }
+      }
+   }
+
+   /** A tabela de alertas já existe? (para quem só revoga: sem tabela não há o que revogar nem criar) */
+   public static function tableExists(): bool {
+      global $DB;
+      return $DB->tableExists(self::TABLE);
+   }
+
+   /**
+    * Grava um alerta vindo do servidor (ContainerAPI), por `remote_alert_id`. O esquema é de quem
+    * chama garantir antes (`ensureSchema()`), uma vez por lote.
+    *
+    * UPSERT (#107): alerta editado no admin (texto/validade) reflete na próxima sincronização;
+    * `is_read`/`date_read` são preservados de propósito, edição não reabre o popup de quem já leu.
+    *
+    * @param array{title:string,body:string,alert_type:string,date_start:?string,date_end:?string} $data
+    * @return bool|null true = linha NOVA; false = linha existente atualizada; null = não gravou
+    */
+   public static function upsertRemote(int $remoteId, array $data): ?bool {
+      global $DB;
+      if ($remoteId <= 0) {
+         return null;
+      }
+      $existing = $DB->request(['FROM' => self::TABLE, 'WHERE' => ['remote_alert_id' => $remoteId], 'LIMIT' => 1]);
+      // GLPI 10: título e corpo do comunicado vêm da ContainerAPI (HTML com `'`) e o insert não escapa.
+      if (count($existing) > 0) {
+         $DB->update(self::TABLE, PluginNextoolDbCompat::row($data), ['remote_alert_id' => $remoteId]);
+         return false;
+      }
+      return $DB->insert(self::TABLE, PluginNextoolDbCompat::row(array_merge(['remote_alert_id' => $remoteId], $data)))
+         ? true
+         : null;
+   }
+
+   /**
+    * Revogação (#239): remove do console os alertas desativados na origem. Só linhas REMOTAS
+    * (`local_key IS NULL`): os alertas locais usam `remote_alert_id` sintético e nunca são
+    * revogados pelo servidor.
+    *
+    * @param int[] $remoteIds
+    * @return int[] ids que existiam e foram removidos
+    */
+   public static function revokeRemote(array $remoteIds): array {
+      global $DB;
+      $ids = array_values(array_unique(array_filter(array_map('intval', $remoteIds), static fn(int $id): bool => $id > 0)));
+      if ($ids === []) {
+         return [];
+      }
+      $where = ['remote_alert_id' => $ids, 'local_key' => null];
+      $present = [];
+      foreach ($DB->request(['SELECT' => ['remote_alert_id'], 'FROM' => self::TABLE, 'WHERE' => $where]) as $row) {
+         $present[] = (int) $row['remote_alert_id'];
+      }
+      if ($present !== []) {
+         $DB->delete(self::TABLE, ['remote_alert_id' => $present, 'local_key' => null]);
+      }
+      return $present;
    }
 
    /** Id determinístico em faixa alta ([2^31, 2^32-1]) para o schema legado. */

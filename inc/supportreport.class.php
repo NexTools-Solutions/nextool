@@ -11,7 +11,7 @@ declare(strict_types=1);
  *
  * Minimização (LGPD): só dados técnicos do ambiente e erros ligados ao NexTool (plugin e módulos), dos
  * últimos 7 dias, lidos do FIM dos arquivos, agrupados por assinatura e com teto de tamanho. Todo texto livre
- * passa por sanitize(): e-mail, IP, tokens, querystrings e pares senha/segredo/token são mascarados; nas mensagens de
+ * passa por sanitize(): e-mail, IP, CPF, CNPJ, telefone, tokens, querystrings e pares senha/segredo/token são mascarados; nas mensagens de
  * erro, nomes e logins dos usuários do GLPI também (maskPeople). Nunca
  * entram segredos da config (HMAC, chaves) nem conteúdo de chamado.
  *
@@ -92,22 +92,35 @@ final class PluginNextoolSupportReport {
 
    /**
     * Mascara dados pessoais e segredos em texto livre (mensagens de erro e pilhas).
+    *
+    * O motor é o da observabilidade (`PluginNextoolBaseObservability::stripSecretsFromText()` +
+    * `maskPersonalData()`), FONTE ÚNICA das expressões de credencial e de dado pessoal da base
+    * (nextool-dev#308). Até a 6.61.1 o relatório tinha uma lista própria, que não conhecia CPF, CNPJ,
+    * telefone, token de bot do Telegram nem credencial embutida em URL, e este texto SAI do ambiente do
+    * cliente para o portal. Regra nova de LGPD ou de credencial entra lá e vale aqui.
+    *
+    * Aqui ficam só as regras EXTRAS do relatório, mais agressivas porque o destino é externo: pares
+    * chave=valor com nomes que a observabilidade não lista (segredo, hmac, session, cookie, auth),
+    * querystring inteira da URL, IPv6 abreviado e hex/base64 longos. Os marcadores são os da
+    * observabilidade (`<oculto>`, `<email>`, `<ip>`, `<cpf>`, `<cnpj>`, `<telefone>`), com `<hash>`,
+    * `<token>` e `?<parametros>` para os extras.
     */
    public static function sanitize(string $text): string {
+      require_once NEXTOOL_PHP_DIR . '/inc/baseobservability.class.php';
+      $text = PluginNextoolBaseObservability::stripSecretsFromText($text);
+      $text = PluginNextoolBaseObservability::maskPersonalData($text);
+
       $rules = [
-         // Bearer antes dos pares: em "Authorization: Bearer <token>" a regra de pares pegaria só a palavra Bearer
-         '/\bBearer\s+[A-Za-z0-9._~+\/=-]+/i'                                    => 'Bearer [mascarado]',
-         // pares chave=valor sensíveis (antes das regras genéricas, para não deixar o valor pela metade)
-         '/\b(pass(word|wd)?|senha|secret|segredo|token|api[_-]?key|apikey|authorization|auth|cookie|session(id)?|hmac|signature)\b(\s*["\']?\s*[:=]\s*["\']?)[^\s"\',;&)]+/i' => '$1$4[mascarado]',
-         '/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i'                             => '[e-mail]',
-         '/\b(?:\d{1,3}\.){3}\d{1,3}\b/'                                          => '[ip]',
-         '/\b(?:[0-9a-f]{1,4}:){3,7}[0-9a-f]{1,4}\b/i'                           => '[ip]',
+         // pares chave=valor sensíveis que a lista da observabilidade não nomeia
+         '/\b(pass(word|wd)?|senha|secret|segredo|token|api[_-]?key|apikey|authorization|auth|cookie|session(id)?|hmac|signature)\b(\s*["\']?\s*[:=]\s*["\']?)[^\s"\',;&)]+/i' => '$1$4<oculto>',
+         // IPv6 abreviado (a observabilidade exige 5 grupos; aqui bastam 4)
+         '/\b(?:[0-9a-f]{1,4}:){3,7}[0-9a-f]{1,4}\b/i'                           => '<ip>',
          // querystring de URL: o caminho fica, os parâmetros não
-         '/(https?:\/\/[^\s?#"\']+)\?[^\s"\'<>]*/i'                               => '$1?[parametros]',
+         '/(https?:\/\/[^\s?#"\']+)\?[^\s"\'<>]*/i'                               => '$1?<parametros>',
          // hex/base64 longos (tokens, hashes, segredos)
-         '/\b[0-9a-f]{32,}\b/i'                                                   => '[hash]',
-         // sem "/" na classe: um caminho longo sem ponto não pode virar [token]; exige letra E dígito
-         '/\b(?=[A-Za-z0-9+_-]*\d)(?=[A-Za-z0-9+_-]*[A-Za-z])[A-Za-z0-9+_-]{40,}={0,2}/' => '[token]',
+         '/\b[0-9a-f]{32,}\b/i'                                                   => '<hash>',
+         // sem "/" na classe: um caminho longo sem ponto não pode virar <token>; exige letra E dígito
+         '/\b(?=[A-Za-z0-9+_-]*\d)(?=[A-Za-z0-9+_-]*[A-Za-z])[A-Za-z0-9+_-]{40,}={0,2}/' => '<token>',
       ];
       foreach ($rules as $pattern => $replacement) {
          $out = preg_replace($pattern, $replacement, $text);
@@ -138,14 +151,14 @@ final class PluginNextoolSupportReport {
       if ($names !== []) {
          $out = preg_replace_callback('/(?<![\p{L}\p{N}\/\\\\:>._-])([\p{L}][\p{L}\'-]+)\s+([\p{L}][\p{L}\'-]+(?:\s+[\p{L}][\p{L}\'-]+)?)(?![\p{L}\p{N}\/\\\\(:._-])/u',
             static function (array $m) use ($names, $lower): string {
-               return isset($names[$lower($m[1] . ' ' . $m[2])]) ? '[usuario]' : $m[0];
+               return isset($names[$lower($m[1] . ' ' . $m[2])]) ? '<usuario>' : $m[0];
             }, $text);
          $text = is_string($out) ? $out : $text;
       }
       if ($logins !== []) {
          $out = preg_replace_callback('/(?<![\p{L}\p{N}\/\\\\:>._-])[\p{L}\p{N}][\p{L}\p{N}._@-]*(?<![._-])(?![\p{L}\p{N}\/\\\\(:])/u',
             static function (array $m) use ($logins, $lower): string {
-               return isset($logins[$lower($m[0])]) ? '[usuario]' : $m[0];
+               return isset($logins[$lower($m[0])]) ? '<usuario>' : $m[0];
             }, $text);
          $text = is_string($out) ? $out : $text;
       }

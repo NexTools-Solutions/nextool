@@ -44,9 +44,8 @@ require_once NEXTOOL_PHP_DIR . '/inc/cloudexecutor.class.php';
 $maxCorpo = PluginNextoolCloudRequestGuard::MAX_BODY_BYTES;
 if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > $maxCorpo) {
    $body = '';
-   $auth = ['ok' => false, 'code' => 'payload_too_large', 'reason' => 'body_too_large'];
    // Conta no resumo de saúde do /validate como as recusas que passam pelo guard (contrato 1.1, O1).
-   PluginNextoolCloudRequestGuard::noteRefusal('body_too_large');
+   $auth = PluginNextoolCloudRequestGuard::noteRefusal('body_too_large');
 } else {
    $entrada = fopen('php://input', 'rb');
    $body    = $entrada !== false ? (string) stream_get_contents($entrada, $maxCorpo + 1) : '';
@@ -59,11 +58,18 @@ if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > $maxCorpo) {
 if (!$auth['ok']) {
    // Motivo REAL da recusa, só no log interno (nunca no envelope). Sem valores de header nem
    // corpo: só o nome do motivo e o ambiente declarado, que não é segredo.
-   Toolbox::logInFile('plugin_nextool_cloud', sprintf(
-      "[CLOUD_EXEC] recusado: %s (ambiente declarado: %s)\n",
-      (string) ($auth['reason'] ?? $auth['code']),
-      substr(preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($_SERVER['HTTP_X_NX_AMBIENTE'] ?? '')), 0, 64) ?: '-'
-   ));
+   // Uma linha por motivo por janela (nextool-dev#312): este endereço é público, e uma linha por pedido
+   // deixava qualquer robô encher o log. As recusas iguais sem linha própria aparecem contadas na linha
+   // que abre a janela seguinte (e seguem contadas no resumo de saúde).
+   if (!array_key_exists('log', $auth) || !empty($auth['log'])) {
+      $suprimidas = (int) ($auth['suprimidas'] ?? 0);
+      Toolbox::logInFile('plugin_nextool_cloud', sprintf(
+         "[CLOUD_EXEC] recusado: %s (ambiente declarado: %s)%s\n",
+         (string) ($auth['reason'] ?? $auth['code']),
+         substr(preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($_SERVER['HTTP_X_NX_AMBIENTE'] ?? '')), 0, 64) ?: '-',
+         $suprimidas > 0 ? sprintf(' [+%d com o mesmo motivo desde a linha anterior, sem linha propria]', $suprimidas) : ''
+      ));
+   }
    // O envelope só fala os códigos do contrato. `replay` e `payload_too_large` são erros do
    // chamador (validation); o resto é 401 genérico, que não revela se o cloud link existe aqui.
    // Contrato 1.1 (§2.13.5, O1): `clock_skew` e `ambiente_mismatch` só existem DEPOIS de uma
