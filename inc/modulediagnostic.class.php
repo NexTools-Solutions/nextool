@@ -20,8 +20,7 @@ if (!defined('GLPI_ROOT')) {
 class PluginNextoolModuleDiagnostic {
 
    public static function cleanKey(string $key): string {
-      $key = strtolower(trim($key));
-      return preg_match('/^[a-z0-9_-]{1,64}$/', $key) === 1 ? $key : '';
+      return plugin_nextool_module_key($key);
    }
 
    /** Instância do módulo carregado (null = chave desconhecida). */

@@ -284,10 +284,9 @@ foreach ($allModuleKeys as $moduleKey) {
    } elseif ($hasWildcardAll) {
       // Curinga: desde 2026-11 só o tipo Desenvolvimento recebe (o legado ENTERPRISE virou alias de ANUAL)
       $isAllowedByPlan = true;
-   } elseif (!empty($allowedModules)) {
-      $isAllowedByPlan = in_array($moduleKey, $allowedModules, true);
    } else {
-      $isAllowedByPlan = true;
+      // Lista vazia não concede nada (#313): a mesma regra do gate de ativar e atualizar.
+      $isAllowedByPlan = PluginNextoolModuleManager::licenseListAllows($allowedModules, (string) $moduleKey);
    }
 
    $isSuspended = ($licenseStatusCode === 'SUSPENDED');

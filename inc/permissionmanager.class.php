@@ -1173,7 +1173,8 @@ class PluginNextoolPermissionManager {
       return $metadata;
    }
 
+   /** Regra única da chave (inc/modulekey.inc.php, #310): fora da regra devolve ''. */
    private static function normalizeModuleKey(string $moduleKey): string {
-      return strtolower(trim($moduleKey));
+      return plugin_nextool_module_key($moduleKey);
    }
 }

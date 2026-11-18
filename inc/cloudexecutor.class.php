@@ -236,7 +236,10 @@ class PluginNextoolCloudExecutor {
       $chaveLicenca = method_exists($module, 'getCloudLicenseKey')
          ? ($module->getCloudLicenseKey() ?? $service)
          : $service;
-      if (!self::entitlementActive($chaveLicenca, $module->getCloudEntitlement())) {
+      // Serviço de nuvem GRATUITO (cloudRequiresEntitlement() = false, ex.: mcpconnect): não há produto a
+      // conferir. As demais portas continuam valendo: assinatura do vínculo, módulo ativo, ator vinculado e bit.
+      $exigeLicenca = !method_exists($module, 'cloudRequiresEntitlement') || $module->cloudRequiresEntitlement();
+      if ($exigeLicenca && !self::entitlementActive($chaveLicenca, $module->getCloudEntitlement())) {
          return self::error(self::E_UNAVAILABLE, __('Serviço não está ativo para este ambiente.', 'nextool'), false);
       }
 

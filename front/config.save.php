@@ -349,9 +349,9 @@ if ($action === 'job_task_recreate') {
 if ($action === 'job_run_now' || $action === 'job_resume') {
    // Rotinas do NexTool (nextool-dev#281), aba Manutenção: executar agora / retomar uma rotina pausada.
    require_once NEXTOOL_PHP_DIR . '/inc/jobdispatcher.class.php';
-   $jobModule = (string) ($_POST['module_key'] ?? '');
+   $jobModule = plugin_nextool_module_key($_POST['module_key'] ?? '');
    $jobKey    = (string) ($_POST['job_key'] ?? '');
-   if (!preg_match('/^[a-z0-9_]{1,64}$/', $jobModule) || !preg_match('/^[a-z0-9_]{1,64}$/', $jobKey)) {
+   if ($jobModule === '' || !preg_match('/^[a-z0-9_]{1,64}$/', $jobKey)) {
       Session::addMessageAfterRedirect(__('Rotina inválida.', 'nextool'), false, ERROR);
       plugin_nextool_redirect_after_action();
       exit;

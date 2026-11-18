@@ -21,7 +21,14 @@ if (!defined('GLPI_ROOT')) {
    die("Sorry. You can't access directly to this file");
 }
 
+require_once __DIR__ . '/modulekey.inc.php';
+
 class PluginNextoolModuleCatalog {
+
+   /** Chave de módulo normalizada, ou '' quando fora da regra (fonte única: inc/modulekey.inc.php, #310). */
+   public static function normalizeKey($raw): string {
+      return plugin_nextool_module_key($raw);
+   }
 
    /** Metadados padrão quando a tabela não possui colunas icon/author/has_config/downloadable */
    private const DEFAULT_ICON = 'ti ti-puzzle';

@@ -82,7 +82,7 @@ foreach ($items as $item) {
    if (count($parts) !== 2) {
       continue;
    }
-   $mod  = preg_replace('/[^a-z0-9_-]/', '', $parts[0]);
+   $mod  = plugin_nextool_module_key($parts[0]); // fora da regra: item ignorado (#310)
    $file = basename($parts[1]);
    if ($mod === '' || $file === '' || substr($file, -strlen($suffix)) !== $suffix) {
       continue; // extensão incoerente com o type: ignora o item

@@ -23,7 +23,7 @@ PluginNextoolAjaxBootstrap::start([
 
 $event = isset($_POST['event']) ? (string) $_POST['event'] : '';
 $adId = isset($_POST['ad_id']) ? (int) $_POST['ad_id'] : 0;
-$module = isset($_POST['module']) ? strtolower(trim((string) $_POST['module'])) : '';
+$module = plugin_nextool_module_key($_POST['module'] ?? '');
 
 $ok = $adId > 0 && PluginNextoolDownloadAds::recordEvent($adId, $module, $event);
 http_response_code($ok ? 200 : 422);

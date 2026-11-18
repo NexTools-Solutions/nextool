@@ -18,7 +18,7 @@ declare(strict_types=1);
 include ('../../../inc/includes.php');
 
 require_once NEXTOOL_PHP_DIR . '/inc/permissionmanager.class.php';
-$moduleKey = isset($_GET['module']) ? preg_replace('/[^a-z0-9_-]/', '', (string)$_GET['module']) : '';
+$moduleKey = plugin_nextool_module_key($_GET['module'] ?? '');
 if ($moduleKey === '') {
    PluginNextoolCompat::errorAndDie(__('Módulo não informado.', 'nextool'));
 }

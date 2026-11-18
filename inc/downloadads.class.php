@@ -146,7 +146,7 @@ class PluginNextoolDownloadAds {
 
    /** Soma um evento do popup. Anúncio que não está guardado, módulo ou evento inválido: ignora (false). */
    public static function recordEvent(int $adId, string $moduleKey, string $event): bool {
-      if (!isset(self::EVENTS[$event]) || !preg_match('/^[a-z0-9_-]{1,100}$/', $moduleKey)) {
+      if (!isset(self::EVENTS[$event]) || plugin_nextool_module_key($moduleKey) !== $moduleKey || $moduleKey === '') {
          return false;
       }
       $known = false;
@@ -227,8 +227,8 @@ class PluginNextoolDownloadAds {
       }
       $modules = [];
       foreach ((array) ($raw['modules'] ?? []) as $m) {
-         $m = strtolower(trim((string) $m));
-         if (preg_match('/^[a-z0-9_-]{1,100}$/', $m) && !in_array($m, $modules, true)) {
+         $m = plugin_nextool_module_key($m);
+         if ($m !== '' && !in_array($m, $modules, true)) {
             $modules[] = $m;
          }
       }

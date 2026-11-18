@@ -31,8 +31,8 @@ $respond = static function (array $payload, int $status = 200): void {
 };
 
 $action = trim((string) ($_POST['action'] ?? ''));
-$key = strtolower(trim((string) ($_POST['module'] ?? '')));
-if ($action === '' || !preg_match('/^[a-z0-9_-]{1,64}$/', $key)) {
+$key = plugin_nextool_module_key($_POST['module'] ?? '');
+if ($action === '' || $key === '') {
    $respond(['success' => false, 'message' => __('Parâmetros inválidos.', 'nextool')], 400);
 }
 

@@ -2029,7 +2029,8 @@ class PluginNextoolModuleManager {
    }
 
    public function getModulePath(string $moduleKey): ?string {
-      if (!preg_match('/^[a-z0-9_]+$/i', $moduleKey)) {
+      $moduleKey = plugin_nextool_module_key($moduleKey);
+      if ($moduleKey === '') {
          return null;
       }
       $path = $this->modulesPath . '/' . $moduleKey;
@@ -2973,15 +2974,27 @@ class PluginNextoolModuleManager {
          return false; // Sem licenças → não tem licença para este módulo
       }
       foreach ($snapshot as $license) {
-         $modules = $license['allowed_modules'] ?? [];
-         if (empty($modules) || in_array('*', $modules, true)) {
-            return true;
-         }
-         if (in_array($moduleKey, $modules, true)) {
+         if (is_array($license) && self::licenseListAllows($license['allowed_modules'] ?? null, $moduleKey)) {
             return true;
          }
       }
       return false;
+   }
+
+   /**
+    * A lista `allowed_modules` de uma licença concede o módulo? Regra única da base, a mesma do
+    * ContainerAPI (LicenseValidator::isModuleAllowed): lista vazia, ausente ou malformada NÃO concede
+    * nada; curinga só com `*` explícito. Até a 6.61.3 a lista vazia valia como curinga (#313): o
+    * servidor remove o `*` das licenças que não são do tipo Desenvolvimento e entrega `[]`, que aqui
+    * liberava ativar e atualizar qualquer módulo pago já baixado.
+    *
+    * @param mixed $allowedModules lista de chaves como veio do servidor
+    */
+   public static function licenseListAllows($allowedModules, string $moduleKey): bool {
+      if (!is_array($allowedModules) || $allowedModules === []) {
+         return false;
+      }
+      return in_array('*', $allowedModules, true) || in_array($moduleKey, $allowedModules, true);
    }
 
    /**
@@ -3074,13 +3087,8 @@ class PluginNextoolModuleManager {
          $allowedModules = $validation['allowed_modules'];
       }
 
-      $hasWildcardAll = !empty($allowedModules) && in_array('*', $allowedModules, true);
-
-      if (
-         !$hasWildcardAll
-         && !empty($allowedModules)
-         && !in_array($moduleKey, $allowedModules, true)
-      ) {
+      // Lista vazia não concede nada (#313); curinga só com `*`.
+      if (!self::licenseListAllows($allowedModules, (string) $moduleKey)) {
          return [
             'success' => false,
             'message' => __('Módulo não permitido nesta licença', 'nextool'),

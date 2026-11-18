@@ -1401,8 +1401,17 @@ class PluginNextoolLicenseValidator {
       $moduleKeysInCatalog = [];
 
       foreach ($catalog as $entry) {
-         $moduleKey = isset($entry['module_key']) ? trim((string)$entry['module_key']) : '';
+         $rawModuleKey = isset($entry['module_key']) ? trim((string)$entry['module_key']) : '';
+         if ($rawModuleKey === '') {
+            continue;
+         }
+         // A chave vira pasta, classe, tabela e direito: fora da regra não entra no catálogo local (#310).
+         $moduleKey = plugin_nextool_module_key($rawModuleKey);
          if ($moduleKey === '') {
+            Toolbox::logInFile('plugin_nextool', sprintf(
+               "[catalogo] chave de módulo fora da regra ignorada: %s\n",
+               substr((string) preg_replace('/[^\x20-\x7E]/', '?', $rawModuleKey), 0, 80)
+            ));
             continue;
          }
          $moduleKeysInCatalog[] = $moduleKey;

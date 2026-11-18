@@ -37,7 +37,8 @@ if (!defined('GLPI_ROOT')) {
 // PATH_INFO não é lido: há nginx que o preenche com a URL inteira (ver ajaxroute.inc.php).
 require_once dirname(__DIR__) . '/inc/ajaxroute.inc.php';
 $nxAssetRoute = plugin_nextool_ajax_route($_SERVER, $_GET, 'front/module_assets.php');
-$moduleKey = $nxAssetRoute['module'];
+require_once dirname(__DIR__) . '/inc/modulekey.inc.php';
+$moduleKey = plugin_nextool_module_key($nxAssetRoute['module']); // fora da regra = ausente (#310)
 $filename = $nxAssetRoute['file'];
 
 // Valida parâmetros
@@ -47,8 +48,6 @@ if (empty($moduleKey) || empty($filename)) {
    die('Parâmetros inválidos. Use: module_assets.php/[module]/[file] ou module_assets.php?module=[module]&file=[file]');
 }
 
-// Sanitiza parâmetros (segurança)
-$moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename($filename); // Remove caminhos (segurança)
 // Remove querystring residual do filename (ex: "file.js.php?v=hash" → "file.js.php")
 // Necessário porque Html::script() do GLPI (path legado) concatena ?v= sem verificar

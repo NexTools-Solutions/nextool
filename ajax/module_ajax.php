@@ -43,7 +43,8 @@ require_once dirname(__DIR__) . '/inc/modulespath.inc.php';
 // Query primeiro; depois a URL original (rewrite que perde $_GET). PATH_INFO não é lido.
 require_once NEXTOOL_PHP_DIR . '/inc/ajaxroute.inc.php';
 $nxAjaxRoute = plugin_nextool_ajax_route($_SERVER, $_GET);
-$moduleKey = $nxAjaxRoute['module'];
+require_once NEXTOOL_PHP_DIR . '/inc/modulekey.inc.php';
+$moduleKey = plugin_nextool_module_key($nxAjaxRoute['module']); // fora da regra = ausente (#310)
 $filename = $nxAjaxRoute['file'];
 
 // Falha técnica do roteador: grava (com limite, ver PluginNextoolModuleError) e marca a
@@ -70,8 +71,6 @@ if (empty($moduleKey) || empty($filename)) {
    exit;
 }
 
-// Sanitiza parâmetros (segurança)
-$moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 $filename = basename($filename); // Remove caminhos
 
 // Bloqueia parciais de include (*.inc.php): são fragmentos require_once'd por handlers

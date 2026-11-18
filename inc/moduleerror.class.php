@@ -448,8 +448,9 @@ class PluginNextoolModuleError {
    }
 
    private static function cleanKey(string $key): string {
-      $key = strtolower($key);
-      return preg_match('/^[a-z0-9_-]{1,64}$/', $key) === 1 ? $key : '';
+      // Carregado pelo roteador antes do resto da base: inclui a regra por caminho próprio.
+      require_once __DIR__ . '/modulekey.inc.php';
+      return plugin_nextool_module_key($key);
    }
 
    /** Só grava chave de módulo instalado: qualquer outra vira "desconhecido" (rota inventada). */

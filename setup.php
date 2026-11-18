@@ -24,6 +24,7 @@ if (!defined('GLPI_ROOT')) {
 // dos modulos ficam por definir; o arquivo e idempotente (guardas por defined/function_exists),
 // entao reincluir aqui, com GLPI_ROOT garantido, completa o que faltou.
 require __DIR__ . '/inc/modulespath.inc.php';
+require_once __DIR__ . '/inc/modulekey.inc.php';
 require_once __DIR__ . '/inc/localeresolver.class.php';
 
 // Compat de versao: shim da interface de Search do GLPI 11 (no-op no GLPI 11,
@@ -39,7 +40,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.61.3');
+define('PLUGIN_NEXTOOL_VERSION', '6.62.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -166,8 +167,8 @@ function plugin_nextool_wizard_header_tag(): void {
    if (!preg_match('#/front/(?:modules|config\.form)\.php$#', $path)) {
       return;
    }
-   $key = strtolower(trim((string) ($_GET['module'] ?? ($_GET['nextool_wizard_module'] ?? ''))));
-   if (!preg_match('/^[a-z0-9_-]{1,64}$/', $key)) {
+   $key = plugin_nextool_module_key($_GET['module'] ?? ($_GET['nextool_wizard_module'] ?? ''));
+   if ($key === '') {
       return;
    }
    $pending = false;

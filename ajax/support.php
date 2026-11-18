@@ -61,8 +61,7 @@ $canReport = PluginNextoolPermissionManager::canManageAdminTabs();
 // Item do atendimento (plugin ou chave de módulo instalado): decide se o relatório leva o diagnóstico do módulo.
 $reportItem = static function (): string {
    $raw = $_REQUEST['item'] ?? '';
-   $raw = is_string($raw) ? strtolower(trim($raw)) : '';
-   return preg_match('/^[a-z0-9_-]{1,64}$/', $raw) === 1 ? $raw : '';
+   return plugin_nextool_module_key($raw);
 };
 
 switch ($action) {

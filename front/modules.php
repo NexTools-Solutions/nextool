@@ -29,8 +29,9 @@ if (!defined('GLPI_ROOT')) {
    define('GLPI_ROOT', dirname(__FILE__, 4));
 }
 
-// Valida parâmetros PRIMEIRO (antes de qualquer include)
-$moduleKey = $_GET['module'] ?? '';
+// Valida parâmetros PRIMEIRO (antes de qualquer include). Chave fora da regra = chave ausente (#310).
+require_once __DIR__ . '/../inc/modulekey.inc.php';
+$moduleKey = plugin_nextool_module_key($_GET['module'] ?? '');
 $filename = $_GET['file'] ?? '';
 $action = $_GET['action'] ?? '';
 
@@ -47,8 +48,6 @@ if (empty($moduleKey) || empty($filename)) {
    die('Parâmetros inválidos. Módulo e arquivo (ou action) são obrigatórios.');
 }
 
-// Sanitiza parâmetros (segurança)
-$moduleKey = preg_replace('/[^a-z0-9_-]/', '', $moduleKey);
 // Remove query string se vier colada no file (ex.: file=config.form.php?id=1)
 $filename = basename(explode('?', $filename)[0]);
 

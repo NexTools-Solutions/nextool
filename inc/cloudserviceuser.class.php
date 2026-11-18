@@ -53,7 +53,9 @@ class PluginNextoolCloudServiceUser {
     */
    public static function ensure(string $moduleKey, string $label, int $entityId, int $moduleBits): ?array {
       global $DB;
-      if (!preg_match('/^[a-z0-9_]{2,32}$/', $moduleKey) || $entityId < 0 || $moduleBits < 0) {
+      // Regra da chave (#310) mais o limite próprio de 2 a 32: a chave entra no login do usuário de serviço.
+      if (plugin_nextool_module_key($moduleKey) !== $moduleKey || strlen($moduleKey) < 2 || strlen($moduleKey) > 32
+         || $entityId < 0 || $moduleBits < 0) {
          return null;
       }
       $entity = new Entity();

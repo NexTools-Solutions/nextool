@@ -135,6 +135,20 @@ abstract class PluginNextoolBaseModule {
    }
 
    /**
+    * As funções de nuvem deste módulo dependem de licença?
+    *
+    * `true` (padrão): o executor do cloud link confere o direito pela chave de `getCloudLicenseKey()`.
+    * `false`: serviço de nuvem GRATUITO, sem produto a conferir (decisão do owner de 2026-11-18 para o
+    * `mcpconnect`). O executor pula só a conferência de licença; assinatura do vínculo, módulo ativo, ator
+    * vinculado, bit do módulo e limites continuam valendo.
+    *
+    * @since 6.62.0
+    */
+   public function cloudRequiresEntitlement(): bool {
+      return true;
+   }
+
+   /**
     * Capabilities EXTRAS que este módulo anuncia ao ContainerAPI no `X-Nextool-Caps` do /validate, somadas às da
     * base (`PluginNextoolLicenseValidator::capabilities()`). Só identificadores `[a-z0-9.-]`. Quem lê é o servidor,
     * que entrega blocos ou faz concessões apenas a quem anuncia. (A capability `ai-credits-free-grant-v1` existiu na

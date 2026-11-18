@@ -51,7 +51,10 @@ class PluginNextoolAiGateway {
    private const BREAKER_IGNORES = ['E_VALIDATION', 'E_CREDITS_EXHAUSTED', 'E_TRIAL_TIER', 'E_PRODUCT_INACTIVE', 'E_NOT_FOUND',
       'idempotency_mismatch', 'E_CONFIRM_REQUIRED', 'E_PRICE_CHANGED', 'E_UNITS_EXCEEDED', 'E_FEATURE_NOT_PRICED'];
 
-   /** Disjuntor por função: 3 falhas seguidas abrem por 5 min. Estado na config do PRÓPRIO módulo (`ai_breaker`). */
+   /**
+    * Disjuntor por função: 3 falhas seguidas abrem por 5 min; vencida a janela, uma falha reabre e um
+    * sucesso fecha (meia-abertura). Estado na config do PRÓPRIO módulo (`ai_breaker`).
+    */
    private const BREAKER_FAILS = 3;
    private const BREAKER_OPEN_S = 300;
 
@@ -323,7 +326,11 @@ class PluginNextoolAiGateway {
          $cur = ['fails' => 0, 'open_until' => 0];
       } else {
          $cur['fails'] = (int) $cur['fails'] + 1;
-         if ($cur['fails'] >= self::BREAKER_FAILS) {
+         // Meia-abertura: a janela venceu e nenhum sucesso zerou o estado (open_until segue gravado).
+         // O primeiro pedido depois dela é a sonda; se falhar, reabre na hora em vez de gastar mais
+         // BREAKER_FAILS tentativas, cada uma esperando o tempo limite da nuvem (nextool-dev#303, ME-26).
+         $meiaAberta = (int) $cur['open_until'] > 0 && (int) $cur['open_until'] <= time();
+         if ($meiaAberta || $cur['fails'] >= self::BREAKER_FAILS) {
             $cur['open_until'] = time() + self::BREAKER_OPEN_S;
             $cur['fails'] = 0;
          }

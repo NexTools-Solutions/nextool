@@ -43,7 +43,8 @@ if ($action === '' || $moduleKeyRaw === '') {
    exit;
 }
 
-if (!preg_match('/^[a-z0-9_-]+$/i', $moduleKeyRaw)) {
+$moduleKey = plugin_nextool_module_key($moduleKeyRaw);
+if ($moduleKey === '') {
    http_response_code(400);
    echo json_encode([
       'success' => false,
@@ -51,7 +52,6 @@ if (!preg_match('/^[a-z0-9_-]+$/i', $moduleKeyRaw)) {
    ]);
    exit;
 }
-$moduleKey = strtolower($moduleKeyRaw);
 
 // UUID v4 para correlacionar todos os eventos desta ação no ContainerAPI
 require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';

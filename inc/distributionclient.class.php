@@ -729,6 +729,47 @@ class PluginNextoolDistributionClient {
    }
 
    /**
+    * MCP Connect -- pede à plataforma a conexão do assistente de IA de UM usuário do GLPI. O servidor grava o
+    * pedido (uso único, validade curta) e devolve o link do portal em que a pessoa confirma com a conta dela.
+    * Plano: /data/relatorios/mcp-conexao-pelo-glpi-2026-11-18/levantamento.md
+    *
+    * @param array<string, mixed> $payload link_id, glpi_user{id,login,name}, glpi_url, glpi_version, locale
+    * @return array{success:bool,url:string,expires_in:int}
+    */
+   public function requestMcpLink(array $payload): array {
+      return $this->postSignedJson('/api/mcp/link-request', $payload, __('Falha ao pedir a conexão do assistente de IA.', 'nextool'), 30);
+   }
+
+   /**
+    * MCP Connect -- avisa a plataforma de que o vínculo de um usuário acabou (desconectou ou foi revogado),
+    * para o portal marcar a conexão. Melhor esforço: quem chama não depende da resposta.
+    *
+    * @param array<string, mixed> $payload link_hash (sha256 do identificador do vínculo), reason
+    * @return array{success:bool}
+    */
+   public function notifyMcpUnlink(array $payload): array {
+      return $this->postSignedJson('/api/mcp/unlink', $payload, __('Falha ao avisar o fim da conexão do assistente de IA.', 'nextool'), 15);
+   }
+
+   /** POST assinado (HMAC v2 do ambiente) com corpo JSON, para os endpoints de serviço da plataforma. */
+   private function postSignedJson(string $path, array $payload, string $errorPrefix, int $timeout): array {
+      if (!$this->supportsSignedRequests()) {
+         throw new RuntimeException(__('Ambiente ainda não provisionado. Sincronize a licença antes de usar este recurso.', 'nextool'));
+      }
+      $body = (string) json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+      $response = $this->performRequest($this->baseUrl . $path, [
+         'method' => 'POST',
+         'body' => $body,
+         'headers' => array_merge(
+            ['Content-Type: application/json'],
+            self::buildHmacHeadersV2($this->clientIdentifier, $path, $body, $this->clientSecret)
+         ),
+         'timeout' => $timeout,
+      ]);
+      return $this->decodeJsonResponse($response, $errorPrefix);
+   }
+
+   /**
     * Abre um atendimento de suporte no portal, em nome da conta vinculada ao ambiente (2026-10-09).
     * O servidor decide o nível de SLA pelas licenças reais, grava na fila que o portal importa e devolve o link
     * (`/painel/solicitacoes/plugin/<uuid>`), que leva à solicitação já criada.

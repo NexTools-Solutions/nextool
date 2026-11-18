@@ -205,7 +205,7 @@ $nxWizCfg = [
       try { u = new URL(window.location.href); } catch (e) { return; }
       if (!/\/front\/modules\.php$/.test(u.pathname) && !/\/front\/config\.form\.php$/.test(u.pathname)) { return; }
       var key = (u.searchParams.get('module') || u.searchParams.get('nextool_wizard_module') || '').toLowerCase();
-      if (!/^[a-z0-9_-]+$/.test(key)) { return; }
+      if (!/^[a-z0-9_]{1,64}$/.test(key)) { return; }
       if (u.searchParams.get('nextool_wizard') === '1') { open(key, true); return; }
       // O servidor já disse na própria página (meta nextool-wizard, "<chave>:<0|1>"): sem POST só para ouvir "não".
       var tag = document.querySelector('meta[name="nextool-wizard"]');
