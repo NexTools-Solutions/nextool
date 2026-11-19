@@ -52,6 +52,21 @@ interface PluginNextoolConfigConstants {
 
 trait PluginNextoolConfigBody {
 
+   /**
+    * Acesso GENÉRICO do GLPI a esta tabela (API nativa, pesquisa, dropdown, exportação): leitura para quem
+    * vê a licença do NexTool, gravação para ninguém. O `$rightname` `config` existe só pela declaração
+    * condicional do GLPI 12 e não pode servir de portão (PERMISSIONS.md). A base lê e grava a linha por
+    * conta própria; ver a mesma regra em PluginNextoolLicenseConfig.
+    */
+   public static function canView(): bool {
+      require_once __DIR__ . '/permissionmanager.class.php';
+      return PluginNextoolPermissionManager::canViewLicense();
+   }
+   public static function canCreate(): bool { return false; }
+   public static function canUpdate(): bool { return false; }
+   public static function canDelete(): bool { return false; }
+   public static function canPurge(): bool  { return false; }
+
    public static function getPluginVersion(): string {
       if (function_exists('plugin_version_nextool')) {
          $info = plugin_version_nextool();

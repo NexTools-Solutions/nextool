@@ -1369,14 +1369,15 @@ class PluginNextoolCoreUpdater {
     * @return array<string,string> key_id => public_key_binary
     */
    private function getTrustedSignaturePublicKeys(): array {
-      $values = Config::getConfigurationValues('plugin:nextool_distribution');
       $keys = [];
 
       // Chave pública oficial da NexTool, embutida no plugin: é a ÂNCORA de confiança da atualização
-      // da base e nunca pode ser substituída. Config e ambiente só ACRESCENTAM kids novos (rotação,
-      // teste), a mesma regra do PluginNextoolEntitlementToken. Até a 6.59.0 a embutida só entrava
-      // quando nenhuma outra estava configurada: quem gravasse uma chave em glpi_configs (ou numa
-      // variável de ambiente) passava a ser o único assinante aceito.
+      // da base e nunca pode ser substituída. Kid novo (rotação, teste) só pode ser ACRESCENTADO por
+      // variável de ambiente do servidor, a mesma regra do PluginNextoolEntitlementToken. O banco
+      // (glpi_configs) NÃO é mais fonte de chave: quem só consegue escrever no banco do GLPI (injeção
+      // de SQL em outro plugin, acesso ao banco sem acesso a arquivos) gravava uma chave própria e a
+      // URL de um servidor seu, e o próximo "Atualizar" instalava o código dele. Variável de ambiente
+      // exige controle do servidor, que já é controle do código.
       $builtinKeyIds = [];
       $bundledKeys = [
          'nextool-core-ed25519-1' => 'PNK7FSuZccd9GQBvSTAkPJOpg98ENIiBoNH3M/0V/70=',
@@ -1401,9 +1402,6 @@ class PluginNextoolCoreUpdater {
       };
 
       $jsonCandidates = [];
-      if (isset($values['core_signing_public_keys_json'])) {
-         $jsonCandidates[] = (string)$values['core_signing_public_keys_json'];
-      }
       $envJson = getenv('NEXTOOL_CORE_SIGNING_PUBLIC_KEYS');
       if ($envJson !== false) {
          $jsonCandidates[] = (string)$envJson;
@@ -1423,12 +1421,6 @@ class PluginNextoolCoreUpdater {
          foreach ($decoded as $keyId => $rawKey) {
             $addKey((string) $keyId, (string) $rawKey);
          }
-      }
-
-      $singleKeyId = trim((string)($values['core_signing_key_id'] ?? ''));
-      $singleKeyRaw = trim((string)($values['core_signing_public_key'] ?? ''));
-      if ($singleKeyId !== '' && $singleKeyRaw !== '') {
-         $addKey($singleKeyId, $singleKeyRaw);
       }
 
       $envSingleId = getenv('NEXTOOL_CORE_SIGNING_KEY_ID');

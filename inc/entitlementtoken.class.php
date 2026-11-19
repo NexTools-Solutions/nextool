@@ -45,9 +45,10 @@ class PluginNextoolEntitlementToken {
          return null;
       }
 
-      // exp (token expirado não vale)
+      // exp é OBRIGATÓRIO: token sem validade (ou com exp 0) valeria para sempre na graça offline.
+      // O servidor sempre emite com exp (cerca de 7 dias).
       $exp = (int) ($claims['exp'] ?? 0);
-      if ($exp > 0 && $exp <= $now) {
+      if ($exp <= 0 || $exp <= $now) {
          return null;
       }
 
@@ -171,18 +172,15 @@ class PluginNextoolEntitlementToken {
     * @return array<string,string> kid => public_key_binary
     */
    public static function getTrustedPublicKeys(): array {
-      $values = [];
-      if (class_exists('Config')) {
-         $values = Config::getConfigurationValues(self::ENTITLEMENT_CONTEXT);
-      }
       $keys = [];
 
       // F2 -- chave pública de PRODUÇÃO embutida (espelha o coreupdater, que embute as chaves de
       // manifesto da assinatura). Distribuída COM o plugin -> todo cliente verifica out-of-the-box,
       // sem depender de provisionamento por instância. A privada correspondente vive só no ContainerAPI.
-      // IMUTÁVEL (hardening 2026-07): config/env podem ADICIONAR kids novos (rotação/teste), mas
-      // NUNCA sobrescrever o kid embutido -- senão um operador com escrita no banco do GLPI-cliente
-      // trocaria a chave pública de confiança e aceitaria um entitlement forjado na graça offline.
+      // IMUTÁVEL (hardening 2026-07): o kid embutido nunca é sobrescrito. Kid novo (rotação/teste) só
+      // entra por VARIÁVEL DE AMBIENTE do servidor; o banco (glpi_configs) não é mais fonte de chave
+      // (2026-11): com ele, quem tinha escrita no banco do GLPI-cliente acrescentava uma chave própria
+      // e aceitava um entitlement forjado na graça offline.
       $builtin = self::decodePublicKey('iaT9s0NXKlR1CflBgeipzBhZMdUqNJVwWeexQomIu/Y=');
       $builtinKeyIds = [];
       if ($builtin !== null) {
@@ -191,9 +189,6 @@ class PluginNextoolEntitlementToken {
       }
 
       $jsonCandidates = [];
-      if (isset($values['entitlement_signing_public_keys_json'])) {
-         $jsonCandidates[] = (string) $values['entitlement_signing_public_keys_json'];
-      }
       $envJson = getenv('NEXTOOL_ENTITLEMENT_SIGNING_PUBLIC_KEYS');
       if ($envJson !== false) {
          $jsonCandidates[] = (string) $envJson;
@@ -218,15 +213,6 @@ class PluginNextoolEntitlementToken {
             if ($decodedKey !== null) {
                $keys[$normalizedId] = $decodedKey;
             }
-         }
-      }
-
-      $singleKeyId  = trim((string) ($values['entitlement_signing_key_id'] ?? ''));
-      $singleKeyRaw = trim((string) ($values['entitlement_signing_public_key'] ?? ''));
-      if ($singleKeyId !== '' && $singleKeyRaw !== '' && !isset($builtinKeyIds[$singleKeyId])) {
-         $decoded = self::decodePublicKey($singleKeyRaw);
-         if ($decoded !== null) {
-            $keys[$singleKeyId] = $decoded;
          }
       }
 

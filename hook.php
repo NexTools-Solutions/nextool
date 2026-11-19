@@ -532,6 +532,40 @@ function plugin_nextool_giveItem($itemtype, $ID, $data, $num) {
 }
 
 /**
+ * Hook undiscloseConfigValue: tira da API do GLPI o valor das chaves de configuração do plugin que
+ * guardam segredo (segredo HMAC do ambiente, chave de cifra dos módulos, tokens, credenciais das
+ * instâncias gerenciadas). O core só oculta o contexto `core` (Config::unsetUndisclosedFields) e
+ * chama este hook para os demais: sem ele, um perfil ou token de API com leitura de `config` lia o
+ * `client_secret` em `GET /apirest.php/Config` e assinava como o ambiente no ContainerAPI.
+ *
+ * Não afeta a leitura interna (`Config::getConfigurationValues` não passa pelo hook).
+ *
+ * @param array $fields linha de glpi_configs: ['context' => ..., 'name' => ..., 'value' => ...]
+ * @return array a mesma linha, sem `value` quando é segredo
+ */
+function plugin_nextool_undisclose_config_value($fields) {
+   if (!is_array($fields) || !isset($fields['context'], $fields['name'])) {
+      return $fields;
+   }
+   $context = (string) $fields['context'];
+   // Contextos da base e dos módulos: `plugin:nextool`, `plugin:nextool_<x>` e `plugin:nextool-<x>`.
+   if (strncmp($context, 'plugin:nextool', 14) !== 0) {
+      return $fields;
+   }
+   $name = (string) $fields['name'];
+   // Credenciais das instâncias gerenciadas: o contexto inteiro é segredo.
+   $secret = $context === 'plugin:nextool_managed_services'
+      // Nomes conhecidos da base e, para os módulos, o que tem nome de segredo. Chave PÚBLICA de
+      // assinatura não é segredo e continua visível.
+      || (stripos($name, 'public') === false
+         && preg_match('/secret|passw|token|api_?key|private_?key|encryption_key|hash_key|credential/i', $name) === 1);
+   if ($secret) {
+      unset($fields['value']);
+   }
+   return $fields;
+}
+
+/**
  * Hook pre_show_tab - devolve a ordenacao padrao as grades das abas NexTool (#275).
  *
  * O ajax/common.tabs.php (GLPI 10 e 11) faz `$_GET['sort'] = ''` e `$_GET['order'] = ''`

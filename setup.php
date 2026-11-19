@@ -40,7 +40,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.62.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.62.1');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -129,8 +129,13 @@ function plugin_nextool_prof_stop(string $name): void {
  * onInit(), do bundler, do hook.php, dos providers, do sync de rights, do
  * scan de classes nem dos menus -- que e o grosso do nextool:init. Cada pagina
  * dispara 2 a 3 desses requests, e no GLPI 11 eles seguram o lock da sessao
- * durante o boot inteiro. Decisao por PATH (nunca por query string): casar so
- * reduz trabalho, nunca concede nada (o guard 401 dos endpoints continua).
+ * durante o boot inteiro. Decisao por PATH (nunca por query string).
+ *
+ * O atalho pula os modulos e os hooks deles, entao so pode valer quando o script
+ * EXECUTADO e um desses endpoints. O texto da URL nao prova isso: o core aceita
+ * caminho extra depois de qualquer script (`/front/login.php/nextool/front/a.js.php`
+ * roda o login.php). Por isso a URL so serve de filtro barato, e quem decide e
+ * plugin_nextool_asset_request_confirmed(), a partir do script que o servidor resolveu.
  *
  * Kill switch (sem schema): define('NEXTOOL_BOOT_FAST_PATH', false) em
  * config/local_define.php, ou arquivo GLPI_CACHE_DIR/nextool_boot_fast_path.off.
@@ -148,9 +153,68 @@ function plugin_nextool_is_asset_request(): bool {
    if ($path === '' || substr($path, -10) === '/index.php') {
       $path = (string) ($_SERVER['SCRIPT_NAME'] ?? '');
    }
-   $is = (bool) preg_match('#/nextool/front/module_(?:bundle|assets)\.php(?:/|$)#', $path)
+   // Filtro barato: sem isto na URL nao ha o que confirmar (nenhum custo nas demais requisicoes).
+   $candidate = (bool) preg_match('#/nextool/front/module_(?:bundle|assets)\.php(?:/|$)#', $path)
       || (bool) preg_match('#/nextool/front/[\w.-]+\.(?:js|css)\.php$#', $path);
+   if (!$candidate) {
+      return false;
+   }
+   $is = plugin_nextool_asset_request_confirmed(
+      (string) ($_SERVER['SCRIPT_FILENAME'] ?? ''),
+      plugin_nextool_kernel_request_path(),
+      __DIR__ . '/front'
+   );
    return $is;
+}
+
+/**
+ * Caminho da requisicao relativo ao GLPI, como o roteador do core o enxerga (GLPI 11+), ou null
+ * quando a entrada nao foi pelo front controller do kernel (GLPI 10, onde SCRIPT_FILENAME ja e o
+ * script executado, direto ou pelo roteador de public/).
+ */
+function plugin_nextool_kernel_request_path(): ?string {
+   if (!class_exists('Glpi\\Kernel\\Kernel') || !defined('GLPI_ROOT')) {
+      return null;
+   }
+   $script = realpath((string) ($_SERVER['SCRIPT_FILENAME'] ?? ''));
+   $entry  = realpath(GLPI_ROOT . '/public/index.php');
+   if ($script === false || $entry === false || $script !== $entry) {
+      return null;
+   }
+   try {
+      // A mesma leitura que o core faz (Request::getPathInfo no RequestRouterTrait::normalizePath).
+      return \Symfony\Component\HttpFoundation\Request::createFromGlobals()->getPathInfo();
+   } catch (\Throwable $e) {
+      return ''; // entrada pelo kernel com caminho ilegivel: nunca confirma
+   }
+}
+
+/**
+ * Confirma que o script que o servidor vai executar e um endpoint de asset da base.
+ *
+ * - $kernelPath !== null (GLPI 11+): o caminho tem de COMECAR no endpoint. O roteador do core
+ *   executa o primeiro arquivo existente do caminho, entao ancorar no inicio garante que nenhum
+ *   outro script vem antes. Caminho extra so e aceito nos dois roteadores de asset, que o leem.
+ * - $kernelPath === null (GLPI 10): $scriptFile e o arquivo executado e tem de estar DENTRO de
+ *   $frontDir (o front/ deste plugin), com nome de endpoint de asset.
+ *
+ * Funcao pura (sem $_SERVER): tests/asset-fast-path.test.php.
+ */
+function plugin_nextool_asset_request_confirmed(string $scriptFile, ?string $kernelPath, string $frontDir): bool {
+   $bundlers = 'module_(?:bundle|assets)\.php';
+   $wrappers = '[\w.-]+\.(?:js|css)\.php';
+   if ($kernelPath !== null) {
+      return (bool) preg_match(
+         '#^/(?:plugins|marketplace)/nextool/front/(?:' . $bundlers . '(?:/.*)?|' . $wrappers . ')$#',
+         $kernelPath
+      );
+   }
+   $script = $scriptFile !== '' ? realpath($scriptFile) : false;
+   $front  = realpath($frontDir);
+   if ($script === false || $front === false || dirname($script) !== $front) {
+      return false;
+   }
+   return (bool) preg_match('#^(?:' . $bundlers . '|' . $wrappers . ')$#', basename($script));
 }
 /**
  * Página de módulo: emite no cabeçalho se há assistente de primeira configuração pendente
@@ -314,6 +378,11 @@ function plugin_init_nextool() {
    // não é permitida" (module_action, Sincronizar, etc.), travando o GLPI do
    // cliente em loop. Incidente do portfolio em 2026-06-10 (update 4.3.0).
    $PLUGIN_HOOKS['csrf_compliant']['nextool'] = true;
+
+   // Segredos do plugin em glpi_configs (segredo HMAC do ambiente, chaves, tokens) não saem pela API
+   // do GLPI: o core só oculta o contexto `core` e pergunta aos plugins pelo resto. Também antes de
+   // qualquer retorno antecipado. String literal: a constante do hook muda de namespace entre majors.
+   $PLUGIN_HOOKS['undiscloseConfigValue']['nextool'] = 'plugin_nextool_undisclose_config_value';
 
    // Maintenance mode: apply em andamento - skip init para evitar carregar código inconsistente
    if (defined('NEXTOOL_DOC_DIR')) {

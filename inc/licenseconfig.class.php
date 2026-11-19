@@ -30,6 +30,35 @@ require_once __DIR__ . '/compat.class.php';
 trait PluginNextoolLicenseConfigBody {
 
    /**
+    * Acesso GENÉRICO do GLPI a esta tabela (API nativa, pesquisa, dropdown, exportação).
+    *
+    * O `$rightname` da classe é `config` só pela declaração condicional exigida pelo GLPI 12. Sem estes
+    * métodos, o core lia isso como "quem tem o direito `config` do GLPI lê e grava a linha": um perfil sem
+    * nenhum direito NexTool obtinha o segredo do ambiente pela API (`apirest.php/PluginNextoolLicenseConfig/1`)
+    * e podia regravar o retrato da licença. A linha é cache do LicenseValidator: a base a lê e grava por
+    * conta própria (`add()`/`update()` não consultam estes métodos), ninguém a edita por tela genérica.
+    */
+   public static function canView(): bool {
+      require_once __DIR__ . '/permissionmanager.class.php';
+      return PluginNextoolPermissionManager::canViewLicense();
+   }
+   public static function canCreate(): bool { return false; }
+   public static function canUpdate(): bool { return false; }
+   public static function canDelete(): bool { return false; }
+   public static function canPurge(): bool  { return false; }
+
+   /**
+    * Segredo do ambiente e chaves de licença nunca saem por leitura genérica, nem para quem pode ver a
+    * licença. Sobrescreve o MÉTODO (mesma assinatura no GLPI 10, 11 e 12): a propriedade
+    * `$undisclosedFields` é tipada no 12 e não pode ser redeclarada igual nos três.
+    */
+   public static function unsetUndisclosedFields(&$fields) {
+      foreach (['api_secret', 'license_key', 'licenses_snapshot'] as $key) {
+         unset($fields[$key]);
+      }
+   }
+
+   /**
     * Nome da tabela
     */
    public static function getTable($classname = null) {
