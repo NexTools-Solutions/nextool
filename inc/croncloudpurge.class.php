@@ -210,6 +210,11 @@ class PluginNextoolCronCloudPurge {
       require_once NEXTOOL_PHP_DIR . '/inc/cloudexecutor.class.php';
       require_once NEXTOOL_PHP_DIR . '/inc/cloudrequestguard.class.php';
 
+      $nonceNow = $now;
+      if ($nonceNow <= 0) {
+         require_once NEXTOOL_PHP_DIR . '/inc/clock.class.php';
+         $nonceNow = PluginNextoolClock::now();
+      }
       $now  = $now > 0 ? $now : time();
       $alvos = [
          // Mesmo relógio (PHP) com que o executor grava `created_at`.
@@ -219,7 +224,9 @@ class PluginNextoolCronCloudPurge {
             'created_at',
             $now - (PluginNextoolCloudExecutor::RETENTION_HOURS * 3600),
          ],
-         'nonces'   => [PluginNextoolCloudRequestGuard::NONCE_TABLE, 'nonce', 'expires_at', $now],
+         // `expires_at` é gravado com o relógio compensado (PluginNextoolClock): a limpeza usa o mesmo.
+         // Com o relógio cru, um GLPI adiantado apagava o nonce antes do fim da janela do timestamp.
+         'nonces'   => [PluginNextoolCloudRequestGuard::NONCE_TABLE, 'nonce', 'expires_at', $nonceNow],
       ];
 
       $apagados = ['requests' => 0, 'nonces' => 0];

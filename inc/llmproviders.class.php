@@ -93,7 +93,12 @@ class PluginNextoolLlmProviders {
       require_once __DIR__ . '/llmconnector.class.php';
       require_once __DIR__ . '/' . strtolower(substr($def['class'], strlen('PluginNextool'))) . '.class.php';
       $conn['provider'] = $provider;
-      $conn += ['auth' => $def['auth'], 'url_guard' => $def['custom_url']];
+      // Endereço informado por quem chama (e diferente do oficial) passa pela guarda de URL mesmo que
+      // o módulo esqueça de pedir: sem isso, o administrador do módulo apontava o conector para a rede
+      // interna. Quem pede `url_guard` explicitamente continua mandando.
+      $ownEndpoint = isset($conn['endpoint']) && trim((string) $conn['endpoint']) !== ''
+         && rtrim(trim((string) $conn['endpoint']), '/') !== rtrim((string) $def['chat_url'], '/');
+      $conn += ['auth' => $def['auth'], 'url_guard' => $def['custom_url'] || $ownEndpoint];
       if (!isset($conn['endpoint']) || trim((string) $conn['endpoint']) === '') {
          $conn['endpoint'] = $def['chat_url'];
       }

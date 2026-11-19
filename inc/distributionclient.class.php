@@ -608,9 +608,16 @@ class PluginNextoolDistributionClient {
       }
 
       if ($response['http_code'] >= 300) {
-         $message = $data['message'] ?? $data['error'] ?? __('Erro desconhecido', 'nextool');
+         $message = PluginNextoolConfig::plainServerText($data['message'] ?? $data['error'] ?? '');
+         if ($message === '') {
+            $message = __('Erro desconhecido', 'nextool');
+         }
          if (($data['error'] ?? '') === 'nextool_upgrade_required') {
             $minVer = $data['min_version_nextools'] ?? null;
+            // A versão entra na mensagem e num alerta: só o formato de versão é aceito.
+            if (!is_string($minVer) || preg_match('/^[0-9][0-9A-Za-z.\-]{0,30}$/', trim($minVer)) !== 1) {
+               $minVer = null;
+            }
             $message = $minVer !== null && $minVer !== ''
                ? sprintf(
                   __('Para atualizar é necessário estar utilizando o Nextool versão %s ou superior.', 'nextool'),

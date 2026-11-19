@@ -26,7 +26,9 @@ if (!defined('GLPI_ROOT')) {
 abstract class PluginNextoolLlmConnector {
 
    /** Tamanho máximo do corpo remoto gravado no log. */
-   protected const LOG_BODY_MAX = 2000;
+   // Corpo de erro do provedor no log: curto. Um provedor compatível pode devolver o prompt (texto de
+   // chamado) dentro do erro, e 2000 caracteres levavam esse texto para o log.
+   protected const LOG_BODY_MAX = 300;
 
    /** @var string */
    protected $provider;

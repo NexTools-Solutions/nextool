@@ -546,11 +546,31 @@ final class PluginNextoolSupportReport {
       return $entries;
    }
 
+   /**
+    * Linha de log com consulta SQL: fica o erro, sai a consulta. O php-errors.log do GLPI grava a
+    * consulta inteira, com os valores (`... in SQL query "INSERT INTO ... VALUES ('texto do chamado')"`),
+    * e o texto livre escapava das máscaras de e-mail, CPF e nome. O valor do "Duplicate entry" também
+    * é dado do cliente. O diagnóstico de módulo já omitia (PluginNextoolBaseObservability).
+    */
+   public static function redactDatabaseText(string $line): string {
+      $pos = stripos($line, ' in SQL query');
+      if ($pos === false) {
+         $pos = stripos($line, 'SQL query:');
+      }
+      if ($pos !== false) {
+         $line = rtrim(substr($line, 0, $pos)) . ' [consulta omitida]';
+      } elseif (preg_match('/\b(SELECT\b.+\bFROM|INSERT\s+INTO|UPDATE\b.+\bSET|DELETE\s+FROM|REPLACE\s+INTO)\b/is', $line, $m, PREG_OFFSET_CAPTURE) === 1) {
+         $line = rtrim(substr($line, 0, (int) $m[0][1])) . ' [consulta omitida]';
+      }
+      return (string) preg_replace("/Duplicate entry '.*' for key/s", "Duplicate entry '[omitido]' for key", $line);
+   }
+
    /** Agrupa por assinatura (mensagem sem números, ids e caminhos variáveis). */
    private static function addToGroups(array &$groups, string $source, array $entry): void {
       $lines = explode("\n", trim($entry['text']));
       $people = self::peopleTokens();
-      $message = self::maskPeople(self::sanitize(trim((string) ($lines[0] ?? ''))), $people);
+      $firstLine = trim((string) ($lines[0] ?? ''));
+      $message = self::maskPeople(self::sanitize(self::redactDatabaseText($firstLine)), $people);
       if (function_exists('mb_substr')) {
          $message = mb_substr($message, 0, self::MAX_MESSAGE_CHARS);
       } else {
@@ -560,6 +580,13 @@ final class PluginNextoolSupportReport {
       $at = gmdate('Y-m-d\TH:i:s\Z', $entry['ts']);
       if (!isset($groups[$signature])) {
          $trace = $entry['trace'] !== [] ? $entry['trace'] : array_slice($lines, 1);
+         // Consulta de várias linhas continua nas linhas seguintes: cada uma passa pelo mesmo corte, e a
+         // que é só pedaço de consulta (sem cara de pilha) sai.
+         $hadQuery = self::redactDatabaseText($firstLine) !== $firstLine;
+         $trace = array_values(array_filter(
+            array_map([self::class, 'redactDatabaseText'], $trace),
+            static fn(string $l): bool => !$hadQuery || preg_match('/^(#\d+|at |in |\.{3}|\S+\.php)/', ltrim($l)) === 1
+         ));
          $groups[$signature] = [
             'source'   => $source,
             'level'    => $entry['level'],

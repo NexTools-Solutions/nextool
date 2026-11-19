@@ -44,6 +44,11 @@ class PluginNextoolEntitlementToken {
       if ($claims === null) {
          return null;
       }
+      // A prova do mapa de direito (verifyProof) é assinada com a mesma chave e tem `typ`: nunca vale
+      // como token de licença.
+      if (isset($claims['typ'])) {
+         return null;
+      }
 
       // exp é OBRIGATÓRIO: token sem validade (ou com exp 0) valeria para sempre na graça offline.
       // O servidor sempre emite com exp (cerca de 7 dias).
@@ -60,6 +65,107 @@ class PluginNextoolEntitlementToken {
       }
 
       return $claims;
+   }
+
+   /** `typ` da prova assinada do mapa de direito por módulo (ContainerAPI: EntitlementTokenIssuer::issueProof). */
+   public const PROOF_TYPE = 'entitlement-proof';
+
+   /** Chave da prova guardada, no ENTITLEMENT_CONTEXT. */
+   public const PROOF_KEY = 'modules_entitlement_token';
+
+   /** Memo por requisição da prova guardada (false = ainda não lida). */
+   private static $proofMemo = false;
+
+   /**
+    * Verifica a prova assinada do mapa de direito por módulo (`modules_entitlement_token` do /validate).
+    *
+    * É por ela que a base decide a ativação de módulo pago (PluginNextoolModuleManager), e não mais pelo
+    * retrato de licenças gravado no banco, que qualquer um com escrita no banco alterava. Confere a
+    * assinatura, o `typ` (o token de licença não vale como prova) e o ambiente, que aqui é obrigatório.
+    * O `exp` NÃO é conferido: quem já teve licença continua podendo usar o módulo (decisão do owner,
+    * 2026-11-18), e a prova de `ever_licensed` não perde a validade com o tempo.
+    *
+    * @return array{modules: array<string, array{status: string, ever_licensed: bool}>, offline_disable_days: int, iat: int}|null
+    */
+   public static function verifyProof(string $token, string $expectedEnvironmentId): ?array {
+      $claims = self::decodeAndVerifySignature($token);
+      if ($claims === null || ($claims['typ'] ?? null) !== self::PROOF_TYPE) {
+         return null;
+      }
+      $tokenEnv = trim((string) ($claims['environment_id'] ?? ''));
+      $expected = trim($expectedEnvironmentId);
+      if ($expected === '' || $tokenEnv === '' || !hash_equals($expected, $tokenEnv)) {
+         return null;
+      }
+      if (!isset($claims['modules']) || !is_array($claims['modules'])) {
+         return null;
+      }
+      $modules = [];
+      foreach ($claims['modules'] as $key => $info) {
+         if (!is_array($info)) {
+            continue;
+         }
+         $modules[(string) $key] = [
+            'status'        => (string) ($info['status'] ?? ''),
+            'ever_licensed' => !empty($info['ever_licensed']),
+         ];
+      }
+      $policy = isset($claims['policy']) && is_array($claims['policy']) ? $claims['policy'] : [];
+
+      return [
+         'modules'              => $modules,
+         'offline_disable_days' => max(0, (int) ($policy['offline_disable_days'] ?? 0)),
+         'iat'                  => (int) ($claims['iat'] ?? 0),
+      ];
+   }
+
+   /**
+    * A prova GUARDADA, conferida de novo contra o ambiente atual a cada requisição (o que está no banco
+    * não é confiado: só vale o que a assinatura confirma). Null = sem prova, ou ela não confere.
+    *
+    * @return array{modules: array<string, array{status: string, ever_licensed: bool}>, offline_disable_days: int, iat: int}|null
+    */
+   public static function storedProof(): ?array {
+      if (self::$proofMemo !== false) {
+         return self::$proofMemo;
+      }
+      $proof = null;
+      try {
+         if (class_exists('Config') && class_exists('PluginNextoolConfig')) {
+            $values = Config::getConfigurationValues(self::ENTITLEMENT_CONTEXT, [self::PROOF_KEY]);
+            $token  = isset($values[self::PROOF_KEY]) ? trim((string) $values[self::PROOF_KEY]) : '';
+            if ($token !== '') {
+               $settings = PluginNextoolConfig::getDistributionSettings();
+               $proof = self::verifyProof($token, (string) ($settings['client_identifier'] ?? ''));
+            }
+         }
+      } catch (\Throwable $e) {
+         $proof = null;
+      }
+      return self::$proofMemo = $proof;
+   }
+
+   /** Claims do token de licença GUARDADO, se ainda vale (assinatura, validade e ambiente). */
+   public static function storedLicenseClaims(): ?array {
+      try {
+         if (!class_exists('Config') || !class_exists('PluginNextoolConfig')) {
+            return null;
+         }
+         $values = Config::getConfigurationValues(self::ENTITLEMENT_CONTEXT, ['entitlement_token']);
+         $token  = isset($values['entitlement_token']) ? trim((string) $values['entitlement_token']) : '';
+         $env    = trim((string) (PluginNextoolConfig::getDistributionSettings()['client_identifier'] ?? ''));
+         if ($token === '' || $env === '') {
+            return null;
+         }
+         return self::verify($token, $env);
+      } catch (\Throwable $e) {
+         return null;
+      }
+   }
+
+   /** A prova guardada mudou (novo /validate, uninstall, teste): a próxima leitura confere de novo. */
+   public static function forgetStoredProof(): void {
+      self::$proofMemo = false;
    }
 
    /**

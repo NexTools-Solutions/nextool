@@ -853,7 +853,7 @@ class PluginNextoolModuleManager {
       $billingTier = $this->getBillingTier($moduleKey);
       if ($enabled && $billingTier !== 'FREE' && !$this->hasLicenseForModule($moduleKey)) {
          return $this->buildModuleActionResult($moduleKey, $action, false,
-            __('Este módulo requer uma licença. Nenhuma licença encontrada que inclua este módulo.', 'nextool'),
+            __('Este módulo requer uma licença. Nenhuma licença confirmada pelo servidor NexTool inclui este módulo. Clique em "Sincronizar" na configuração do NexTool e tente de novo.', 'nextool'),
             $baseContext);
       }
 
@@ -2953,7 +2953,16 @@ class PluginNextoolModuleManager {
    // A instalação/desinstalação usa loop manual em hook.php com try/catch individual.
 
    /**
-    * Verifica se existe alguma licença no snapshot local que inclua o módulo informado.
+    * O ambiente tem direito de ATIVAR este módulo pago? Decidido só por prova ASSINADA pelo servidor:
+    *  - o token de licença guardado, ainda válido, que liste o módulo ou `*`; ou
+    *  - a prova do mapa de direito (`modules_entitlement_token`) com o módulo `active` ou
+    *    `ever_licensed` (quem já teve licença segue podendo usar o que já baixou).
+    *
+    * Até a 6.62.1 a decisão vinha de `licenses_snapshot`, um retrato sem assinatura gravado no banco
+    * do próprio GLPI: quem escrevia nesse banco ativava qualquer módulo pago que tivesse em disco.
+    * O retrato continua existindo para a tela de licença, mas não concede mais nada.
+    *
+    * Só vale no clique de Ativar. Módulo já ativo nunca é desligado por falta de prova.
     *
     * @param string $moduleKey
     * @return bool
@@ -2962,6 +2971,31 @@ class PluginNextoolModuleManager {
       if (!class_exists('PluginNextoolLicenseConfig')) {
          return true; // Sem sistema de licenças → permitir
       }
+      require_once NEXTOOL_PHP_DIR . '/inc/entitlementtoken.class.php';
+
+      // Servidor sem verificação Ed25519 (nem a extensão nem o polyfill que o GLPI embarca): não há
+      // como conferir prova nenhuma. Vale a regra antiga, para não travar a ativação de quem pagou.
+      if (!function_exists('sodium_crypto_sign_verify_detached')) {
+         Toolbox::logInFile('plugin_nextool', "[ENTITLEMENT] verificacao Ed25519 indisponivel neste PHP: ativacao decidida pelo retrato de licencas (regra antiga).\n");
+         return $this->licenseSnapshotAllows($moduleKey);
+      }
+
+      $claims = PluginNextoolEntitlementToken::storedLicenseClaims();
+      if ($claims !== null && self::licenseListAllows($claims['allowed_modules'] ?? null, $moduleKey)) {
+         return true;
+      }
+
+      $proof = PluginNextoolEntitlementToken::storedProof();
+      if ($proof !== null) {
+         $info = $proof['modules'][$moduleKey] ?? null;
+         return is_array($info) && (($info['status'] ?? '') === 'active' || !empty($info['ever_licensed']));
+      }
+
+      return false;
+   }
+
+   /** Regra antiga (retrato sem assinatura): só para PHP sem verificação Ed25519. */
+   private function licenseSnapshotAllows(string $moduleKey): bool {
       $config = PluginNextoolLicenseConfig::getDefaultConfig();
       $snapshot = [];
       if (!empty($config['licenses_snapshot'])) {
@@ -2969,9 +3003,6 @@ class PluginNextoolModuleManager {
          if (is_array($decoded)) {
             $snapshot = $decoded;
          }
-      }
-      if (empty($snapshot)) {
-         return false; // Sem licenças → não tem licença para este módulo
       }
       foreach ($snapshot as $license) {
          if (is_array($license) && self::licenseListAllows($license['allowed_modules'] ?? null, $moduleKey)) {

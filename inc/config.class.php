@@ -489,6 +489,20 @@ trait PluginNextoolConfigBody {
       Config::setConfigurationValues('plugin:nextool_distribution', $dist);
    }
 
+   /**
+    * Texto vindo do servidor (mensagem de licença, motivo de recusa de download) antes de ir para a
+    * tela: sem marcação e com tamanho limitado. As mensagens do GLPI são exibidas como HTML; sem isto,
+    * uma resposta adulterada do servidor injetava marcação na sessão do administrador.
+    */
+   public static function plainServerText($text, int $max = 500): string {
+      if (!is_scalar($text)) {
+         return '';
+      }
+      $plain = str_replace(['<', '>'], '', strip_tags((string) $text));
+      $plain = trim((string) preg_replace('/\s+/u', ' ', $plain));
+      return function_exists('mb_substr') ? mb_substr($plain, 0, $max) : substr($plain, 0, $max);
+   }
+
    public static function getDistributionSettings() {
       $values = Config::getConfigurationValues('plugin:nextool_distribution');
       $updated = [];

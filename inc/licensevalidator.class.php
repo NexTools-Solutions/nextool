@@ -67,10 +67,12 @@ class PluginNextoolLicenseValidator {
     * quem anuncia recebe o `nextool_cloud`. Base sem ela perde o bloco, e omitir o bloco APAGA a
     * credencial local: ligar a flag só depois de os ambientes com vínculo estarem nesta base.
     * `ai-credits-v1` = guarda o bloco `ai_credits` do /validate (saldo de créditos de IA do AI Assist gerenciado,
-    * sem dado pessoal; `persistAiCredits()`/`getAiCredits()`). Capabilities de MÓDULO entram por
+    * sem dado pessoal; `persistAiCredits()`/`getAiCredits()`).
+    * `entitlement-proof-v1` = verifica e guarda a prova assinada do mapa de direito por módulo
+    * (`modules_entitlement_token`), usada para decidir a ativação de módulo pago. Capabilities de MÓDULO entram por
     * `PluginNextoolBaseModule::extraCapabilities()` e são somadas em `capabilities()`.
     */
-   public const NEXTOOL_CAPABILITIES = 'entitlement-v1,managed-services-v1,managed-services-v2,managed-services-v3,cloud-link-v1.1,ai-credits-v1';
+   public const NEXTOOL_CAPABILITIES = 'entitlement-v1,managed-services-v1,managed-services-v2,managed-services-v3,cloud-link-v1.1,ai-credits-v1,entitlement-proof-v1';
 
    /** Contexto GLPI do bloco `ai_credits` do /validate (saldo de créditos de IA, AI Assist gerenciado). */
    public const AI_CREDITS_CONTEXT = 'plugin:nextool_ai_credits';
@@ -1009,8 +1011,8 @@ class PluginNextoolLicenseValidator {
             }
 
             // Mensagem base (pode vir do administrativo)
-            if (!empty($responseData['message'])) {
-               $baseMessage = $responseData['message'];
+            if (!empty($responseData['message']) && PluginNextoolConfig::plainServerText($responseData['message']) !== '') {
+               $baseMessage = PluginNextoolConfig::plainServerText($responseData['message']);
             } else {
                $baseMessage = __('Licença válida', 'nextool');
             }
@@ -1037,10 +1039,10 @@ class PluginNextoolLicenseValidator {
                self::invalidateModulesEntitlementRight('valid=false');
             }
             // Pode vir "error" + "message" ou apenas "message"
-            if (!empty($responseData['message'])) {
-               $message = $responseData['message'];
-            } elseif (!empty($responseData['error'])) {
-               $message = (string)$responseData['error'];
+            if (!empty($responseData['message']) && PluginNextoolConfig::plainServerText($responseData['message']) !== '') {
+               $message = PluginNextoolConfig::plainServerText($responseData['message']);
+            } elseif (!empty($responseData['error']) && PluginNextoolConfig::plainServerText($responseData['error']) !== '') {
+               $message = PluginNextoolConfig::plainServerText($responseData['error']);
             } else {
                $message = __('Licença inválida ou não autorizada.', 'nextool');
             }
@@ -1177,11 +1179,23 @@ class PluginNextoolLicenseValidator {
          // Persistir o modules_entitlement, que também é o direito local às funções de nuvem (com
          // validade desde o N8: ver syncModulesEntitlement), e aplicar a anti-pirataria.
          self::syncModulesEntitlement($responseData, $valid);
+         // Prova assinada do mapa: guardada mesmo com `valid=false` (é ela que prova o `ever_licensed`
+         // de quem já teve licença). null = o servidor não mandou; false = mandou e não conferiu.
+         $proofState = self::persistEntitlementProof($clientId, $responseData);
          if (!empty($responseData['modules_entitlement']) && is_array($responseData['modules_entitlement'])) {
             // Aplicar entitlement APENAS se comunicação 100% OK e origin != config_status
             $syncOrigin = isset($context['origin']) ? (string)$context['origin'] : '';
             if ($valid && $syncOrigin !== 'config_status') {
-               self::applyModulesEntitlement($responseData['modules_entitlement'], $syncOrigin);
+               if ($proofState === false) {
+                  // Resposta com prova que não confere não desinstala nem apaga módulo de ninguém.
+                  Toolbox::logInFile('plugin_nextool', "[ENTITLEMENT] prova do mapa de direito nao conferiu: remocao de modulo sem licenca NAO aplicada nesta resposta.\n");
+               } else {
+                  // Com a prova, o mapa aplicado é o ASSINADO (igual ao da resposta, mas conferido).
+                  self::applyModulesEntitlement(
+                     is_array($proofState) ? $proofState['modules'] : $responseData['modules_entitlement'],
+                     $syncOrigin
+                  );
+               }
             }
          }
       }
@@ -1254,6 +1268,24 @@ class PluginNextoolLicenseValidator {
             ? (string) $responseData['code']
             : null,
       ];
+   }
+
+   /**
+    * Tier de um módulo ao sincronizar o catálogo. Entrada SEM `billing_tier` nunca rebaixa o módulo
+    * para FREE (que dispensa licença): vale o tier já gravado e, em módulo novo, PAID. O servidor
+    * sempre envia o campo; a omissão é resposta degradada ou adulterada. Até a 6.62.1 a omissão
+    * gravava FREE e o módulo pago passava a ativar sem licença.
+    *
+    * @param string      $incoming tier da entrada do catálogo, já em maiúsculas ('' = não veio)
+    * @param string|null $stored   tier da linha local (null = módulo novo)
+    */
+   public static function resolveCatalogTier(string $incoming, ?string $stored): string {
+      $incoming = strtoupper(trim($incoming));
+      if ($incoming !== '') {
+         return $incoming;
+      }
+      $stored = strtoupper(trim((string) $stored));
+      return $stored !== '' ? $stored : 'PAID';
    }
 
    /**
@@ -1485,9 +1517,9 @@ class PluginNextoolLicenseValidator {
             $compatMajors = $list ? implode(',', $list) : null;
          }
 
-         if ($billingTier === '') {
-            $billingTier = 'FREE';
-         }
+         // Sem `billing_tier` na entrada, o tier é resolvido contra a linha local (resolveCatalogTier).
+         $incomingTier = $billingTier;
+         $billingTier  = self::resolveCatalogTier($incomingTier, null);
 
          $isAvailable = $isEnabled ? 1 : 0;
          // Módulos DEV: exibir para o plano DESENVOLVIMENTO ou, fora dele, quando uma licença
@@ -1509,7 +1541,7 @@ class PluginNextoolLicenseValidator {
             $updateData = [
                'name'                  => $name !== '' ? $name : $moduleKey,
                'description'           => $description !== null ? ($description !== '' ? $description : null) : ($row['description'] ?? null),
-               'billing_tier'          => $billingTier,
+               'billing_tier'          => self::resolveCatalogTier($incomingTier, $row['billing_tier'] ?? null),
                'is_available'          => $isAvailable,
                'available_version'     => $version !== '' ? $version : null,
                'min_version_nextools'  => $minVersionNextools,
@@ -1853,7 +1885,9 @@ class PluginNextoolLicenseValidator {
          'license_key'            => $licenseKey,
          'plan'                   => $plan,
          'api_endpoint'           => $apiEndpoint,
-         'api_secret'             => $apiSecret,
+         // O segredo HMAC do ambiente não é mais copiado para esta coluna (ninguém a lê): era uma
+         // terceira cópia em claro do mesmo valor. Gravar null também limpa o que já estava lá.
+         'api_secret'             => null,
          'last_validation_date'   => date('Y-m-d H:i:s'),
          'last_validation_result' => $valid ? 1 : 0,
          'last_validation_message'=> $message,
@@ -1948,6 +1982,124 @@ class PluginNextoolLicenseValidator {
          'entitlement_token_exp'       => (int) ($claims['exp'] ?? 0),
          'entitlement_token_synced_at' => date('Y-m-d H:i:s'),
       ], 'entitlement_token');
+   }
+
+   /**
+    * Confere e guarda a prova assinada do mapa de direito (`modules_entitlement_token`). Prova que não
+    * confere é registrada e ignorada: a guardada (se houver) continua valendo.
+    *
+    * @return array|false|null a prova conferida; false = veio e não conferiu; null = não veio
+    */
+   protected static function persistEntitlementProof(?string $clientId, array $responseData) {
+      $key   = PluginNextoolEntitlementToken::PROOF_KEY;
+      $token = isset($responseData[$key]) && is_string($responseData[$key]) ? trim($responseData[$key]) : '';
+      if ($token === '') {
+         return null;
+      }
+      $proof = PluginNextoolEntitlementToken::verifyProof($token, (string) ($clientId ?? ''));
+      if ($proof === null) {
+         Toolbox::logInFile('plugin_nextool', "LicenseValidator: modules_entitlement_token recebido nao verificou (assinatura/tipo/environment) -- ignorado.\n");
+         return false;
+      }
+      self::persistConfig(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [$key => $token], 'modules_entitlement_token');
+      PluginNextoolEntitlementToken::forgetStoredProof();
+
+      return $proof;
+   }
+
+   /** Dias sem contato com o servidor a partir dos quais o administrador é avisado. */
+   public const OFFLINE_WARN_DAYS = 7;
+
+   /**
+    * Dias inteiros desde a última resposta aceita do servidor de licenças (qualquer resposta que não
+    * seja falha de rede ou de autenticação). Null = este GLPI nunca registrou um contato.
+    */
+   public static function offlineDays(int $now = 0): ?int {
+      $state = PluginNextoolCommBackoff::getState();
+      $last  = (int) ($state['last_comm_ok_at'] ?? 0);
+      if ($last <= 0) {
+         return null;
+      }
+      $now = $now > 0 ? $now : time();
+
+      return max(0, intdiv($now - $last, 86400));
+   }
+
+   /**
+    * Ambiente sem contato com o servidor de licenças (saída bloqueada, proxy, DNS): a licença não pode
+    * ser conferida e os módulos pagos seguem ligados. A partir de OFFLINE_WARN_DAYS, com módulo pago
+    * ativo, o administrador é avisado na aba Novidades e no sino (um aviso por semana).
+    *
+    * Desligar os módulos pagos depende de `offline_disable_days` da PROVA ASSINADA: 0 (padrão do
+    * servidor) não desliga nada. Só o servidor liga essa regra, e ela só vale vinda assinada, para
+    * que ninguém a ligue ou desligue pelo banco. Decisão do owner em 2026-11-18: por ora, só avisar.
+    *
+    * @return string ok | warned | disabled
+    */
+   public static function enforceOfflinePolicy(int $now = 0): string {
+      $days = self::offlineDays($now);
+      $alertFile = NEXTOOL_PHP_DIR . '/inc/alertmanager.class.php';
+      if (is_file($alertFile)) {
+         require_once $alertFile;
+      }
+      $hasAlerts = class_exists('PluginNextoolAlertManager');
+
+      $manager = PluginNextoolModuleManager::getInstance();
+      $paidEnabled = [];
+      foreach ($manager->getModulesStateMap() as $moduleKey => $state) {
+         if (!empty($state['enabled']) && !in_array($manager->getBillingTier((string) $moduleKey), ['FREE', 'DEV'], true)) {
+            $paidEnabled[] = (string) $moduleKey;
+         }
+      }
+
+      if ($days === null || $days < self::OFFLINE_WARN_DAYS || $paidEnabled === []) {
+         if ($hasAlerts) {
+            PluginNextoolAlertManager::expireLocalFamily('offline_license:');
+         }
+         return 'ok';
+      }
+
+      $proof = PluginNextoolEntitlementToken::storedProof();
+      $limit = $proof !== null ? (int) $proof['offline_disable_days'] : 0;
+
+      if ($limit > 0 && $days >= $limit) {
+         $disabled = [];
+         foreach ($paidEnabled as $moduleKey) {
+            $result = $manager->disableModule($moduleKey);
+            if (!empty($result['success'])) {
+               $disabled[] = $moduleKey;
+            }
+         }
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[ENTITLEMENT] %d dia(s) sem contato com o servidor de licencas (limite %d): modulos pagos desativados: %s\n",
+            $days, $limit, implode(', ', $disabled)
+         ));
+         if ($hasAlerts && $disabled !== []) {
+            PluginNextoolAlertManager::raiseLocal(
+               'offline_license:disabled:' . date('Ymd'),
+               __('Módulos pagos desativados: sem contato com o servidor NexTool', 'nextool'),
+               '<p>' . sprintf(
+                  __('Este GLPI está há %d dias sem conseguir falar com o servidor de licenças do NexTool, e os módulos pagos foram desativados. Nenhum dado foi removido. Libere a saída do servidor para o endereço do NexTool e clique em "Sincronizar" na configuração do NexTool: com a licença confirmada, os módulos podem ser ativados de novo.', 'nextool'),
+                  $days
+               ) . '</p>',
+               'critical'
+            );
+         }
+         return 'disabled';
+      }
+
+      if ($hasAlerts) {
+         PluginNextoolAlertManager::raiseLocal(
+            'offline_license:warn:' . date('oW'),
+            __('Sem contato com o servidor de licenças do NexTool', 'nextool'),
+            '<p>' . sprintf(
+               __('Este GLPI está há %d dias sem conseguir falar com o servidor de licenças do NexTool. A licença dos módulos pagos não pode ser conferida, e atualizações e novos downloads ficam indisponíveis. Verifique se o servidor do GLPI tem saída para o endereço do NexTool (firewall, proxy, DNS) e clique em "Sincronizar" na configuração do NexTool.', 'nextool'),
+               $days
+            ) . '</p>',
+            'warning'
+         );
+      }
+      return 'warned';
    }
 
    /**
@@ -2192,8 +2344,9 @@ class PluginNextoolLicenseValidator {
       if (!class_exists('Config')) {
          return;
       }
-      Config::deleteConfigurationValues(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [self::ENTITLEMENT_KEY, self::ENTITLEMENT_SYNCED_AT_KEY]);
+      Config::deleteConfigurationValues(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT, [self::ENTITLEMENT_KEY, self::ENTITLEMENT_SYNCED_AT_KEY, PluginNextoolEntitlementToken::PROOF_KEY]);
       PluginNextoolConfig::forgetConfigContext(PluginNextoolEntitlementToken::ENTITLEMENT_CONTEXT);
+      PluginNextoolEntitlementToken::forgetStoredProof();
    }
 
    /**
@@ -2264,7 +2417,12 @@ class PluginNextoolLicenseValidator {
     * @param array|null $entitlement Mapa da resposta corrente; null = o persistido
     */
    public static function isDevModuleGrantedByLicense(string $moduleKey, ?array $entitlement = null): bool {
-      $entitlement ??= self::getModulesEntitlement();
+      if ($entitlement === null) {
+         // Sem o mapa da resposta corrente, vale o ASSINADO; o mapa solto guardado no banco só quando o
+         // servidor ainda não mandou prova.
+         $proof = PluginNextoolEntitlementToken::storedProof();
+         $entitlement = $proof !== null ? $proof['modules'] : self::getModulesEntitlement();
+      }
       return !empty($entitlement[$moduleKey]['ever_licensed']);
    }
 

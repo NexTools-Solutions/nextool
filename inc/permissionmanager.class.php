@@ -275,11 +275,11 @@ class PluginNextoolPermissionManager {
    }
    /** @deprecated uso legado CREATE; migrar para bit de uso proprio */
    public static function canCreateInModule(string $moduleKey): bool {
-      return self::hasGlobalAdminAccess() || self::haveModuleRight($moduleKey, 4 /*CREATE*/);
+      return self::canUse($moduleKey, 4 /*CREATE*/); // no portal, só bit declarado em getHelpdeskRights()
    }
    /** @deprecated uso legado DELETE; migrar para bit de uso proprio */
    public static function canDeleteInModule(string $moduleKey): bool {
-      return self::hasGlobalAdminAccess() || self::haveModuleRight($moduleKey, 8 /*DELETE*/);
+      return self::canUse($moduleKey, 8 /*DELETE*/); // no portal, só bit declarado em getHelpdeskRights()
    }
    public static function canPurgeModuleDataForModule(string $moduleKey): bool {
       return self::canAdmin($moduleKey, self::PURGE_DATA);

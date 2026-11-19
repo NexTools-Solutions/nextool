@@ -89,6 +89,18 @@ class PluginNextoolCronCatalogSync {
          $task->log('catalog_sync: falha de comunicação com o servidor');
       }
 
+      // Ambiente sem contato com o servidor de licenças: avisa o administrador (e, só se o servidor
+      // tiver ligado a regra na prova assinada, desativa os módulos pagos). Roda também na falha, que é
+      // justamente quando os dias sem contato crescem.
+      try {
+         $offline = PluginNextoolLicenseValidator::enforceOfflinePolicy();
+         if ($offline !== 'ok') {
+            $task->log('catalog_sync: sem contato com o servidor de licenças: ' . $offline);
+         }
+      } catch (Throwable $e) {
+         $task->log('catalog_sync: erro ao avaliar o tempo sem contato: ' . $e->getMessage());
+      }
+
       // Notificação de updates (#162): só com dado FRESCO do servidor (source=remote);
       // cache/backoff/falha não devem emitir nem expirar alerta com informação velha.
       if ($source === 'remote' && !$falhou) {
