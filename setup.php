@@ -40,7 +40,7 @@ if (is_file(__DIR__ . '/inc/compat.class.php')) {
 }
 
 /** Versão do plugin (usada em plugin_version_nextool e migrations) */
-define('PLUGIN_NEXTOOL_VERSION', '6.63.0');
+define('PLUGIN_NEXTOOL_VERSION', '6.64.0');
 
 /** GLPI mínimo e máximo suportados (requisitos oficiais Teclib/marketplace) */
 define('PLUGIN_NEXTOOL_MIN_GLPI_VERSION', '10.0.0');
@@ -944,8 +944,19 @@ function plugin_init_nextool() {
             // de TODOS os plugins: aqui, no init do nextool, os plugins seguintes ainda não carregaram e a
             // gravação da checagem caía em gancho de outro plugin sem a classe dele (PluginFieldsContainer
             // no DEV, 12/11/2026). Um stat por request; checagem a cada 10 min.
+            // O GLPI aceita UM callable por plugin no post_init, e os módulos já penduraram os deles no onInit
+            // (portão de login do secguard, "Ir direto" do ssologin, pendingsurvey): ENCADEAR, nunca sobrescrever.
+            // Primeiro os módulos (podem encerrar a request com um redirecionamento), depois o vigia.
             if (!$nxAssetFastPath && class_exists('PluginNextoolJobWatchdog')) {
-               $PLUGIN_HOOKS['post_init']['nextool'] = 'plugin_nextool_post_init';
+               $nxPrevPostInit = $PLUGIN_HOOKS['post_init']['nextool'] ?? null;
+               if ($nxPrevPostInit !== null && $nxPrevPostInit !== 'plugin_nextool_post_init' && is_callable($nxPrevPostInit)) {
+                  $PLUGIN_HOOKS['post_init']['nextool'] = static function () use ($nxPrevPostInit) {
+                     call_user_func($nxPrevPostInit);
+                     plugin_nextool_post_init();
+                  };
+               } else {
+                  $PLUGIN_HOOKS['post_init']['nextool'] = 'plugin_nextool_post_init';
+               }
             }
          } catch (Exception $e) {
             Toolbox::logInFile('plugin_nextool', "Erro ao carregar módulos: " . $e->getMessage());

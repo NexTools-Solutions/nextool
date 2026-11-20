@@ -758,6 +758,17 @@ class PluginNextoolDistributionClient {
       return $this->postSignedJson('/api/mcp/unlink', $payload, __('Falha ao avisar o fim da conexão do assistente de IA.', 'nextool'), 15);
    }
 
+   /**
+    * MCP Connect -- o caminho inverso do aviso acima: pergunta à plataforma quais vínculos a pessoa excluiu no
+    * portal, para o módulo revogá-los do lado do GLPI (2026-11-19). Só os excluídos no portal voltam.
+    *
+    * @param array<string, mixed> $payload link_hashes (lista de sha256 dos identificadores, até 500)
+    * @return array{success:bool,revoked:list<string>}
+    */
+   public function mcpLinkStatus(array $payload): array {
+      return $this->postSignedJson('/api/mcp/link-status', $payload, __('Falha ao consultar as conexões do assistente de IA.', 'nextool'), 20);
+   }
+
    /** POST assinado (HMAC v2 do ambiente) com corpo JSON, para os endpoints de serviço da plataforma. */
    private function postSignedJson(string $path, array $payload, string $errorPrefix, int $timeout): array {
       if (!$this->supportsSignedRequests()) {
