@@ -32,7 +32,8 @@ declare(strict_types=1);
    </div>
 </div>
 
-<!-- Anúncio antes do download de módulo gratuito (#283): Continuar só no fim do contador; fechar cancela o download -->
+<!-- Anúncio antes do download de módulo gratuito (#283): o botão libera só no fim do contador e a instalação começa
+     só com o clique; fechar antes cancela; depois de instalar, o popup fica aberto até o usuário fechar -->
 <div class="modal fade" id="nextool-download-ad-modal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
    <div class="modal-dialog modal-dialog-centered modal-lg">
       <div class="modal-content">
@@ -75,7 +76,7 @@ declare(strict_types=1);
             <!-- Card com a cara do player do YouTube (2026-11-10): capa LOCAL (thumb do vídeo, servida pela base), título
                  sobreposto no topo, play vermelho no centro e o selo "Assista no YouTube". É só aparência: o player de
                  verdade (youtube-nocookie) entra no clique do play, e antes disso nada vai ao Google. -->
-            <div class="d-none card mb-3 overflow-hidden" id="nextool-download-ad-media">
+            <div class="d-none card mb-3 overflow-hidden nextool-yt-card" id="nextool-download-ad-media">
                <div class="position-relative bg-dark" id="nextool-download-ad-stage" style="aspect-ratio: 16 / 9;">
                   <img class="w-100 h-100 d-block" id="nextool-download-ad-image" alt="" style="object-fit: cover;">
                   <div class="nextool-download-ad-vtitle position-absolute top-0 start-0 end-0 text-white text-truncate d-none" id="nextool-download-ad-vtitle"></div>
@@ -92,6 +93,8 @@ declare(strict_types=1);
             <p class="mb-0" id="nextool-download-ad-body" style="white-space: pre-line;"></p>
             <!-- Jornada de um clique (#301): baixar, instalar e ativar, uma requisição por etapa -->
             <ul class="list-group list-group-flush d-none mt-3" id="nextool-download-ad-steps"></ul>
+            <!-- Fim da jornada com anúncio ou agradecimento: o popup fica aberto (o vídeo segue) até o usuário fechar -->
+            <div class="alert alert-success d-none mt-3 mb-0" id="nextool-download-ad-done" role="status"></div>
          </div>
          <div class="modal-footer justify-content-end">
             <div class="d-flex flex-wrap justify-content-end gap-2">
@@ -114,14 +117,84 @@ declare(strict_types=1);
    </div>
 </div>
 <style>
-   #nextool-download-ad-media .nextool-download-ad-play { transition: transform .15s; cursor: pointer; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .45)); }
-   #nextool-download-ad-media .nextool-download-ad-play:hover { transform: translate(-50%, -50%) scale(1.08); }
-   #nextool-download-ad-media .nextool-download-ad-vtitle { padding: 14px 18px 34px; font-size: 1.05rem; font-weight: 600; background: linear-gradient(rgba(0, 0, 0, .78), rgba(0, 0, 0, 0)); pointer-events: none; }
-   #nextool-download-ad-media .nextool-download-ad-watch { margin: 0 14px 14px 0; padding: 8px 14px; border-radius: 24px; background: rgba(15, 15, 15, .86); font-size: .85rem; font-weight: 600; }
-   #nextool-download-ad-media .nextool-download-ad-watch:hover { background: rgba(15, 15, 15, 1); }
-   #nextool-download-ad-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+   .nextool-yt-card .nextool-download-ad-play { transition: transform .15s; cursor: pointer; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .45)); }
+   .nextool-yt-card .nextool-download-ad-play:hover { transform: translate(-50%, -50%) scale(1.08); }
+   .nextool-yt-card .nextool-download-ad-vtitle { padding: 14px 18px 34px; font-size: 1.05rem; font-weight: 600; background: linear-gradient(rgba(0, 0, 0, .78), rgba(0, 0, 0, 0)); pointer-events: none; }
+   .nextool-yt-card .nextool-download-ad-watch { margin: 0 14px 14px 0; padding: 8px 14px; border-radius: 24px; background: rgba(15, 15, 15, .86); font-size: .85rem; font-weight: 600; }
+   .nextool-yt-card .nextool-download-ad-watch:hover { background: rgba(15, 15, 15, 1); }
+   .nextool-yt-card iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
    #nextool-download-ad-thanks .nextool-download-ad-thanks-hero { padding: 20px 22px; border-radius: 10px; background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%); }
    #nextool-download-ad-thanks .nextool-download-ad-thanks-icon { width: 56px; height: 56px; border-radius: 50%; background: rgba(255, 255, 255, .18); font-size: 30px; }
+</style>
+
+<!-- Popup de atualização de UM módulo (2026-11-22): versão atual e nova, notas da versão, vídeo do próprio módulo
+     (opcional, sem contador: o botão de atualizar nasce liberado), página do módulo e changelog. Nada é atualizado
+     antes da confirmação, e depois de atualizar o popup fica aberto até o usuário fechar. -->
+<div class="modal fade" id="nextool-update-modal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+      <div class="modal-content">
+         <div class="modal-header">
+            <h5 class="modal-title">
+               <i class="ti ti-arrow-up me-2 text-info"></i><span id="nextool-update-title"></span>
+            </h5>
+            <button type="button" class="btn-close" id="nextool-update-close" data-bs-dismiss="modal" aria-label="<?php echo PluginNextoolCompat::escape(__('Fechar', 'nextool')); ?>"></button>
+         </div>
+         <div class="modal-body">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="nextool-update-versions">
+               <span class="text-muted"><?php echo __('Versão instalada', 'nextool'); ?></span>
+               <span class="badge bg-secondary text-white" id="nextool-update-from"></span>
+               <i class="ti ti-arrow-right text-muted"></i>
+               <span class="text-muted"><?php echo __('Nova versão', 'nextool'); ?></span>
+               <span class="badge bg-info text-white" id="nextool-update-to"></span>
+            </div>
+            <!-- Vídeo do próprio módulo, no mesmo card do popup de download: capa LOCAL (servida pela base), título
+                 no topo, play vermelho e o selo "Assista no YouTube". O player do youtube-nocookie só entra no clique;
+                 antes disso nada vai ao Google. Sem capa em cache, fica o fundo escuro com o nome do módulo. -->
+            <div class="d-none card mb-3 overflow-hidden nextool-yt-card" id="nextool-update-media">
+               <div class="position-relative" id="nextool-update-stage" style="aspect-ratio: 16 / 9; cursor: pointer;">
+                  <img class="w-100 h-100 d-none" id="nextool-update-image" alt="" style="object-fit: cover;">
+                  <div class="nextool-download-ad-vtitle position-absolute top-0 start-0 end-0 text-white text-truncate" id="nextool-update-vtitle"></div>
+                  <button type="button" class="nextool-download-ad-play position-absolute top-50 start-50 translate-middle border-0 p-0 bg-transparent d-flex align-items-center justify-content-center"
+                          id="nextool-update-play" aria-label="<?php echo PluginNextoolCompat::escape(__('Assistir ao vídeo', 'nextool')); ?>">
+                     <svg width="68" height="48" viewBox="0 0 68 48" aria-hidden="true"><path d="M66.52 7.74c-.78-2.93-2.49-5.41-5.42-6.19C55.79.13 34 0 34 0S12.21.13 6.9 1.55C3.97 2.33 2.27 4.81 1.48 7.74.06 13.05 0 24 0 24s.06 10.95 1.48 16.26c.78 2.93 2.49 5.41 5.42 6.19C12.21 47.87 34 48 34 48s21.79-.13 27.1-1.55c2.93-.78 4.64-3.26 5.42-6.19C67.94 34.95 68 24 68 24s-.06-10.95-1.48-16.26z" fill="#f03"/><path d="M45 24 27 14v20z" fill="#fff"/></svg>
+                  </button>
+                  <a class="nextool-download-ad-watch position-absolute bottom-0 end-0 text-white text-decoration-none d-flex align-items-center" id="nextool-update-youtube" target="_blank" rel="noopener noreferrer">
+                     <span><?php echo __('Assista no', 'nextool'); ?></span>
+                     <svg width="72" height="16" viewBox="0 0 90 20" aria-hidden="true" class="ms-1"><path d="M27.97 3.12a3.58 3.58 0 0 0-2.52-2.53C23.22 0 14.28 0 14.28 0S5.35 0 3.12.6A3.58 3.58 0 0 0 .6 3.12C0 5.35 0 10 0 10s0 4.65.6 6.88a3.58 3.58 0 0 0 2.52 2.53C5.35 20 14.28 20 14.28 20s8.94 0 11.17-.6a3.58 3.58 0 0 0 2.52-2.52C28.57 14.65 28.57 10 28.57 10s0-4.65-.6-6.88z" fill="#f03"/><path d="m11.43 14.29 7.42-4.29-7.42-4.29z" fill="#fff"/><text x="33" y="15.5" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" letter-spacing="-.6">YouTube</text></svg>
+                  </a>
+               </div>
+            </div>
+            <div id="nextool-update-notes-wrap">
+               <div class="fw-semibold mb-2"><i class="ti ti-list-details me-1 text-info"></i><?php echo __('O que há de novo nesta versão', 'nextool'); ?></div>
+               <div class="border rounded p-3 small" id="nextool-update-notes" style="max-height: 280px; overflow-y: auto;"></div>
+            </div>
+            <p class="text-muted mb-0 d-none" id="nextool-update-no-notes"><?php echo __('As novidades desta versão estão no changelog do módulo.', 'nextool'); ?></p>
+            <ul class="list-group list-group-flush d-none mt-3" id="nextool-update-steps"></ul>
+            <div class="alert alert-success d-none mt-3 mb-0" id="nextool-update-done" role="status"></div>
+         </div>
+         <div class="modal-footer justify-content-end">
+            <div class="d-flex flex-wrap justify-content-end gap-2">
+               <a class="btn btn-outline-secondary d-none" id="nextool-update-page" target="_blank" rel="noopener noreferrer">
+                  <i class="ti ti-external-link me-1"></i><?php echo __('Página do módulo', 'nextool'); ?>
+               </a>
+               <a class="btn btn-outline-secondary d-none" id="nextool-update-changelog" target="_blank" rel="noopener noreferrer">
+                  <i class="ti ti-history me-1"></i><?php echo __('Changelog', 'nextool'); ?>
+               </a>
+               <button type="button" class="btn btn-info text-white" id="nextool-update-confirm">
+                  <i class="ti ti-arrow-up me-1" id="nextool-update-confirm-icon"></i><span id="nextool-update-confirm-label"></span>
+               </button>
+            </div>
+         </div>
+      </div>
+   </div>
+</div>
+<style>
+   #nextool-update-stage { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); }
+   #nextool-update-notes h6 { font-size: .85rem; font-weight: 600; margin: .75rem 0 .35rem; }
+   #nextool-update-notes h6:first-child { margin-top: 0; }
+   #nextool-update-notes ul { padding-left: 1.1rem; margin-bottom: .5rem; }
+   #nextool-update-notes p { margin-bottom: .5rem; }
+   #nextool-update-notes > :last-child { margin-bottom: 0; }
 </style>
 
 <!-- "Atualizar todos" (#284, #301): 1o passo = lista com seleção (nada é atualizado); 2o passo = fila com
@@ -531,6 +604,11 @@ function nextoolInitModuleActions() {
       if (action === 'download' && nextoolShowDownloadAd(btn, moduleKey, endpoint)) {
          return;
       }
+      // Atualizar: o popup mostra a versão nova e só atualiza com a confirmação. Sem o popup na página, segue
+      // a atualização direta de sempre.
+      if (action === 'update' && nextoolShowUpdatePopup(btn, moduleKey, endpoint)) {
+         return;
+      }
 
       var confirmMsg = (btn.dataset && btn.dataset.confirm) ? String(btn.dataset.confirm) : '';
       var confirmType = (btn.dataset && btn.dataset.confirmType) ? String(btn.dataset.confirmType) : '';
@@ -565,8 +643,9 @@ var NEXTOOL_DOWNLOAD_AD_I18N = <?php echo json_encode([
    'goFull'      => __('Baixar e ativar', 'nextool'),
    'goInstall'   => __('Baixar e instalar', 'nextool'),
    'buttonIn'    => __('%1$s (%2$s s)', 'nextool'),
-   'startsIn'    => __('%1$s em %2$s s', 'nextool'),
    'watch'       => __('Assistir e baixar', 'nextool'),
+   'doneFull'    => __('Módulo instalado e ativado. Pode fechar quando quiser: a página é atualizada ao fechar.', 'nextool'),
+   'doneInstall' => __('Módulo instalado. Pode fechar quando quiser: a página é atualizada ao fechar.', 'nextool'),
    'titleNoAd'   => __('Instalar o módulo %s', 'nextool'),
    'bodyFull'    => __('O módulo será baixado, instalado e ativado em sequência.', 'nextool'),
    'bodyInstall' => __('O módulo será baixado e instalado. A ativação depende de quem tem essa permissão.', 'nextool'),
@@ -702,7 +781,8 @@ function nextoolRunModuleJourney(endpoint, moduleKey, steps, listEl) {
 }
 
 // Popup do Download. Abre sempre (#301): com o anúncio do módulo (ou o geral do público), ou só com a jornada.
-//  - módulo gratuito com anúncio: o contador (#283) segura o botão; fechar antes cancela tudo;
+//  - módulo gratuito com anúncio: o contador (#283) segura o botão; no fim dele o usuário confirma (nada começa
+//    sozinho); fechar antes cancela tudo; depois de instalar, o popup fica aberto (o vídeo segue) até ele fechar;
 //  - módulo pago: agradecimento sem contador, com Suporte e Deixar depoimento;
 //  - sem anúncio: só a jornada.
 // Devolve false quando o popup não existe na página (quem chamou segue com o download simples).
@@ -861,8 +941,10 @@ function nextoolShowDownloadAd(btn, moduleKey, endpoint) {
    var timer = null;
    var running = false;
    var finished = false;
-   // Clicou no botão de baixar: a jornada começa sozinha no fim do contador, aconteça o que acontecer com o vídeo.
-   var armed = false;
+   // Destino do fim da jornada (aba do módulo, quando o servidor manda): usado só quando o popup fechar.
+   var doneRedirect = '';
+   var doneEl = el('nextool-download-ad-done');
+   doneEl.classList.add('d-none');
    var setButton = function (label, icon, enabled) {
       continueLabel.textContent = label;
       continueIcon.className = icon + ' me-1';
@@ -873,12 +955,11 @@ function nextoolShowDownloadAd(btn, moduleKey, endpoint) {
          clearInterval(timer);
          timer = null;
          event('complete');
-         if (armed) { runJourney(); return; }
+         // Nada começa sozinho: o fim da contagem só libera o botão, e quem confirma é o usuário.
          setButton(goLabel, 'ti ti-cloud-download', true);
          return;
       }
-      // Antes do clique o botão fica disponível durante a contagem: clicar agenda o início para o fim dela.
-      setButton((armed ? I18N.startsIn : I18N.buttonIn).replace('%1$s', goLabel).replace('%2$s', String(remaining)), 'ti ti-clock', !armed);
+      setButton(I18N.buttonIn.replace('%1$s', goLabel).replace('%2$s', String(remaining)), 'ti ti-clock', false);
       remaining--;
    };
    var startCountdown = function () {
@@ -909,7 +990,18 @@ function nextoolShowDownloadAd(btn, moduleKey, endpoint) {
          finished = true;
          window.removeEventListener('beforeunload', beforeUnload);
          if (res.ok) {
-            if (res.redirect) { window.location.assign(res.redirect); } else { window.location.reload(); }
+            doneRedirect = res.redirect || '';
+            // Popup só com a jornada (sem anúncio nem agradecimento): nada para ver, segue como antes.
+            if (!ad && !isPaid) {
+               if (doneRedirect) { window.location.assign(doneRedirect); } else { window.location.reload(); }
+               return;
+            }
+            // Com anúncio ou agradecimento o popup NÃO fecha sozinho: o vídeo continua tocando e a página só
+            // é atualizada quando o usuário fechar.
+            doneEl.textContent = canEnable ? I18N.doneFull : I18N.doneInstall;
+            doneEl.classList.remove('d-none');
+            setButton(I18N.close, 'ti ti-x', true);
+            closeBtn.classList.remove('d-none');
             return;
          }
          // Parou numa etapa: o card passa a refletir o estado em que ficou (baixado ou instalado). No lugar do
@@ -932,32 +1024,34 @@ function nextoolShowDownloadAd(btn, moduleKey, endpoint) {
    };
    continueBtn.onclick = function () {
       if (continueBtn.disabled || running) return;
-      if (finished) { window.location.reload(); return; }
+      // Jornada encerrada (com sucesso ou falha): o botão virou "Fechar"; a página atualiza no fechamento.
+      if (finished) { modal.hide(); return; }
       if (remaining > 0) {
-         // Contagem em curso (ou ainda por começar, no anúncio com vídeo): o clique agenda a jornada para o fim
-         // dela e, se houver vídeo, toca o vídeo. Nenhuma falha do vídeo desfaz o agendamento.
-         armed = true;
-         if (hasCountdown && videoId && !stage.querySelector('iframe')) { startPlayer(); }
+         // Anúncio com vídeo, contagem ainda por começar: o clique só toca o vídeo e inicia a contagem. A
+         // jornada depende de um segundo clique, com o botão liberado no fim dela. O contador não depende do
+         // player (startPlayer o inicia antes de montar o vídeo); o startCountdown aqui cobre a falha do player.
+         if (videoId && !stage.querySelector('iframe')) { startPlayer(); }
          startCountdown();
-         setButton(I18N.startsIn.replace('%1$s', goLabel).replace('%2$s', String(Math.min(total, remaining + 1))), 'ti ti-clock', false);
          return;
       }
       runJourney();
    };
-   // Fechar antes de começar = nada acontece; depois de uma falha, recarrega para o card mostrar o estado real.
+   // Fechar antes de começar = nada acontece; depois da jornada (sucesso ou falha), atualiza a página para o
+   // card mostrar o estado real.
    modalEl.addEventListener('hidden.bs.modal', function stopTimer() {
       if (timer) { clearInterval(timer); timer = null; }
       // Tirar o iframe para o vídeo parar junto com o popup.
       var player = stage.querySelector('iframe');
       if (player) player.remove();
       modalEl.removeEventListener('hidden.bs.modal', stopTimer);
-      if (finished) window.location.reload();
+      if (!finished) return;
+      if (doneRedirect) { window.location.assign(doneRedirect); } else { window.location.reload(); }
    });
 
    if (hasCountdown && videoId) {
       setButton(I18N.watch, 'ti ti-player-play-filled', true);
    } else if (hasCountdown) {
-      setButton(I18N.buttonIn.replace('%1$s', goLabel).replace('%2$s', String(total)), 'ti ti-clock', true);
+      setButton(I18N.buttonIn.replace('%1$s', goLabel).replace('%2$s', String(total)), 'ti ti-clock', false);
    } else {
       setButton(goLabel, 'ti ti-cloud-download', true);
    }
@@ -1105,6 +1199,214 @@ function nextoolUpdateOneModule(endpoint, key, row) {
          nextoolUpdateAllSetRow(row, 'failed', NEXTOOL_UPDATE_ALL_I18N.network);
          return false;
       });
+}
+
+// --- Popup de atualização de UM módulo (2026-11-22) ---
+var NEXTOOL_UPDATE_POPUP_I18N = <?php echo json_encode([
+   'title'   => __('Atualizar o módulo %s', 'nextool'),
+   'confirm' => __('Atualizar agora', 'nextool'),
+   'working' => __('Atualizando...', 'nextool'),
+   'close'   => __('Fechar', 'nextool'),
+   'done'    => __('Módulo atualizado para a versão %s. Pode fechar quando quiser: a página é atualizada ao fechar.', 'nextool'),
+   'failed'  => __('A atualização não foi concluída. Veja o motivo acima.', 'nextool'),
+   'leave'   => __('A atualização do módulo ainda está em andamento.', 'nextool'),
+]); ?>;
+
+// Notas da versão: o texto é a seção do CHANGELOG do módulo (Markdown simples). Monta títulos, listas e
+// parágrafos por DOM, sempre com textContent; `**negrito**` e `código` viram <strong> e <code>.
+function nextoolRenderReleaseNotes(container, text) {
+   container.innerHTML = '';
+   var inline = function (parent, line) {
+      String(line).split(/(\*\*[^*]+\*\*|`[^`]+`)/).forEach(function (part) {
+         if (part === '') return;
+         var node;
+         if (/^\*\*[^*]+\*\*$/.test(part)) {
+            node = document.createElement('strong');
+            node.textContent = part.slice(2, -2);
+         } else if (/^`[^`]+`$/.test(part)) {
+            node = document.createElement('code');
+            node.textContent = part.slice(1, -1);
+         } else {
+            node = document.createTextNode(part);
+         }
+         parent.appendChild(node);
+      });
+   };
+   var list = null;
+   var item = null;
+   String(text).split('\n').forEach(function (raw) {
+      var line = raw.replace(/\s+$/, '');
+      if (line.trim() === '') { list = null; item = null; return; }
+      var heading = line.match(/^#{1,6}\s+(.*)$/);
+      if (heading) {
+         list = null; item = null;
+         var h = document.createElement('h6');
+         inline(h, heading[1]);
+         container.appendChild(h);
+         return;
+      }
+      var bullet = line.match(/^\s*[-*]\s+(.*)$/);
+      if (bullet) {
+         if (!list) { list = document.createElement('ul'); container.appendChild(list); }
+         item = document.createElement('li');
+         inline(item, bullet[1]);
+         list.appendChild(item);
+         return;
+      }
+      // Linha de continuação de um item (texto quebrado no CHANGELOG) segue no mesmo item.
+      if (item && /^\s+/.test(raw)) {
+         item.appendChild(document.createTextNode(' '));
+         inline(item, line.trim());
+         return;
+      }
+      list = null; item = null;
+      var p = document.createElement('p');
+      inline(p, line.trim());
+      container.appendChild(p);
+   });
+}
+
+// Devolve false quando o popup não existe na página (quem chamou segue com a atualização direta).
+function nextoolShowUpdatePopup(btn, moduleKey, endpoint) {
+   var modalEl = document.getElementById('nextool-update-modal');
+   if (!modalEl || typeof bootstrap === 'undefined') return false;
+
+   var I18N = NEXTOOL_UPDATE_POPUP_I18N;
+   var el = function (id) { return document.getElementById(id); };
+   var safeUrl = function (u) { return (typeof u === 'string' && /^https:\/\//i.test(u)) ? u : null; };
+   var card = typeof btn.closest === 'function' ? btn.closest('.nextool-module-card') : null;
+   var nameEl = card ? card.querySelector('.card-title') : null;
+   var moduleName = nameEl ? nameEl.textContent.trim() : moduleKey;
+   var from = card ? (card.dataset.moduleInstalledVersion || '') : '';
+   var to = card ? (card.dataset.moduleAvailableVersion || '') : '';
+   var info = {};
+   try {
+      var all = JSON.parse((el('nextool-module-update-data') || {}).textContent || '{}');
+      if (all && typeof all[moduleKey] === 'object' && all[moduleKey] !== null) info = all[moduleKey];
+   } catch (e) { info = {}; }
+
+   el('nextool-update-title').textContent = I18N.title.replace('%s', moduleName);
+   el('nextool-update-versions').classList.toggle('d-none', !from || !to);
+   el('nextool-update-from').textContent = from ? 'v' + from : '';
+   el('nextool-update-to').textContent = to ? 'v' + to : '';
+
+   // Vídeo: opcional e sem contador, no mesmo card do popup de download. Capa local (cache da base), título do
+   // vídeo no topo, play e o selo "Assista no YouTube"; o player só entra no clique.
+   var media = el('nextool-update-media');
+   var stage = el('nextool-update-stage');
+   var img = el('nextool-update-image');
+   var vtitle = el('nextool-update-vtitle');
+   var playBtn = el('nextool-update-play');
+   var ytLink = el('nextool-update-youtube');
+   var videoId = (typeof info.video_id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(info.video_id)) ? info.video_id : null;
+   var imageUrl = (videoId && typeof info.video_image_url === 'string' && info.video_image_url !== '') ? info.video_image_url : null;
+   var videoTitle = (typeof info.video_title === 'string' && info.video_title !== '') ? info.video_title : moduleName;
+   var oldPlayer = stage.querySelector('iframe');
+   if (oldPlayer) oldPlayer.remove();
+   media.classList.toggle('d-none', !videoId);
+   img.classList.toggle('d-none', !imageUrl);
+   img.classList.toggle('d-block', !!imageUrl);
+   if (imageUrl) { img.src = imageUrl; } else { img.removeAttribute('src'); }
+   vtitle.textContent = videoTitle;
+   vtitle.classList.remove('d-none');
+   playBtn.classList.remove('d-none');
+   playBtn.classList.add('d-flex');
+   ytLink.classList.remove('d-none');
+   ytLink.classList.add('d-flex');
+   if (videoId) { ytLink.href = 'https://www.youtube.com/watch?v=' + videoId; } else { ytLink.removeAttribute('href'); }
+   stage.onclick = function (e) {
+      if (!videoId || stage.querySelector('iframe') || ytLink.contains(e.target)) return;
+      try {
+         var frame = document.createElement('iframe');
+         frame.src = 'https://www.youtube-nocookie.com/embed/' + videoId + '?autoplay=1&rel=0&playsinline=1';
+         frame.title = videoTitle;
+         frame.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+         frame.setAttribute('allowfullscreen', '');
+         frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+         // O player de verdade traz o próprio título e o próprio "Assista no YouTube".
+         img.classList.add('d-none');
+         img.classList.remove('d-block');
+         vtitle.classList.add('d-none');
+         playBtn.classList.add('d-none');
+         playBtn.classList.remove('d-flex');
+         ytLink.classList.add('d-none');
+         ytLink.classList.remove('d-flex');
+         stage.appendChild(frame);
+      } catch (err) { /* o vídeo é um extra: sem ele, a atualização segue */ }
+   };
+
+   var notes = (typeof info.notes === 'string' && info.notes.trim() !== '') ? info.notes : null;
+   el('nextool-update-notes-wrap').classList.toggle('d-none', !notes);
+   el('nextool-update-no-notes').classList.toggle('d-none', !!notes);
+   if (notes) nextoolRenderReleaseNotes(el('nextool-update-notes'), notes);
+
+   var page = el('nextool-update-page');
+   var pageUrl = safeUrl(info.website_url);
+   page.classList.toggle('d-none', !pageUrl);
+   if (pageUrl) { page.href = pageUrl; } else { page.removeAttribute('href'); }
+   var changelog = el('nextool-update-changelog');
+   var changelogUrl = safeUrl(info.changelog_url);
+   changelog.classList.toggle('d-none', !changelogUrl);
+   if (changelogUrl) { changelog.href = changelogUrl; } else { changelog.removeAttribute('href'); }
+
+   var stepsEl = el('nextool-update-steps');
+   stepsEl.innerHTML = '';
+   stepsEl.classList.add('d-none');
+   var doneEl = el('nextool-update-done');
+   doneEl.classList.add('d-none');
+   doneEl.className = 'alert alert-success d-none mt-3 mb-0';
+   var closeBtn = el('nextool-update-close');
+   closeBtn.classList.remove('d-none');
+   var confirmBtn = el('nextool-update-confirm');
+   var confirmLabel = el('nextool-update-confirm-label');
+   var confirmIcon = el('nextool-update-confirm-icon');
+   var setButton = function (label, icon, enabled) {
+      confirmLabel.textContent = label;
+      confirmIcon.className = icon + ' me-1';
+      confirmBtn.disabled = !enabled;
+   };
+   setButton(I18N.confirm, 'ti ti-arrow-up', true);
+
+   var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+   var running = false;
+   var finished = false;
+   var beforeUnload = function (e) {
+      e.preventDefault();
+      e.returnValue = I18N.leave;
+      return I18N.leave;
+   };
+   confirmBtn.onclick = function () {
+      if (confirmBtn.disabled || running) return;
+      if (finished) { modal.hide(); return; }
+      running = true;
+      closeBtn.classList.add('d-none');
+      setButton(I18N.working, 'spinner-border spinner-border-sm', false);
+      window.addEventListener('beforeunload', beforeUnload);
+      stepsEl.classList.remove('d-none');
+      // Mesmas duas chamadas do "Atualizar todos": baixar e, se o pacote trouxer migração, concluir numa
+      // requisição nova. A linha mostra o estado e, na falha, o motivo.
+      var row = nextoolUpdateAllRow(stepsEl, moduleName);
+      nextoolUpdateOneModule(endpoint, moduleKey, row).then(function (ok) {
+         running = false;
+         finished = true;
+         window.removeEventListener('beforeunload', beforeUnload);
+         doneEl.className = 'alert mt-3 mb-0 ' + (ok ? 'alert-success' : 'alert-danger');
+         doneEl.textContent = ok ? I18N.done.replace('%s', to) : I18N.failed;
+         setButton(I18N.close, 'ti ti-x', true);
+         closeBtn.classList.remove('d-none');
+      });
+   };
+   // Fechar antes de confirmar = nada acontece. Depois da atualização (certa ou não), a página é atualizada
+   // no fechamento, para o card mostrar a versão em que o módulo ficou.
+   modalEl.addEventListener('hidden.bs.modal', function onHidden() {
+      modalEl.removeEventListener('hidden.bs.modal', onHidden);
+      var player = stage.querySelector('iframe');
+      if (player) player.remove();
+      if (finished) window.location.reload();
+   });
+
+   modal.show();
+   return true;
 }
 
 // 1o passo (#301): a lista com seleção. Nada é atualizado aqui; fechar ou Cancelar não faz nada.

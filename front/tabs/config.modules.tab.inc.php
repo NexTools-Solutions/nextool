@@ -210,6 +210,30 @@ declare(strict_types=1);
                <script type="application/json" id="nextool-download-ads-data"><?php
                   echo json_encode($nextoolDownloadAds, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
                ?></script>
+               <?php
+                  // Popup de atualização: dados dos módulos com versão nova (links dos botões de ação, vídeo do
+                  // próprio módulo e notas da versão), como JSON (sem JS inline).
+                  $nextoolUpdatePopupData = [];
+                  foreach ($modulesState as $nextoolUpdMod) {
+                     if (empty($nextoolUpdMod['update_available'])) {
+                        continue;
+                     }
+                     $nextoolUpdatePopupData[(string) $nextoolUpdMod['module_key']] = [
+                        'website_url'   => $nextoolUpdMod['website_url'] ?? null,
+                        'changelog_url' => $nextoolUpdMod['changelog_url'] ?? null,
+                        'video_id'      => $nextoolUpdMod['video_id'] ?? null,
+                        'video_title'   => $nextoolUpdMod['video_title'] ?? null,
+                        // Capa servida pelo próprio plugin (cache local); sem ela o popup desenha a capa padrão.
+                        'video_image_url' => !empty($nextoolUpdMod['video_id'])
+                           ? PluginNextoolDownloadAds::imageUrl($nextoolUpdMod['video_image_sha256'] ?? null) : null,
+                        'notes'         => $nextoolUpdMod['release_notes'] ?? null,
+                        'icon'          => (string) ($nextoolUpdMod['icon'] ?? ''),
+                     ];
+                  }
+               ?>
+               <script type="application/json" id="nextool-module-update-data"><?php
+                  echo json_encode((object) $nextoolUpdatePopupData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+               ?></script>
                <div class="row g-3">
                   <?php foreach ($modulesState as $module):
                      $tier = strtoupper($module['billing_tier'] ?? 'FREE');

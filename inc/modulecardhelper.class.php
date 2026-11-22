@@ -342,7 +342,7 @@ class PluginNextoolModuleCardHelper {
     * módulo ([GLPI_11], depois [GLPI_10/11], [GLPI_10/11/12]) e um filtro com o
     * major parava nas releases de antes da unificação do artefato.
     */
-   private static function buildChangelogUrl(string $moduleKey): string {
+   public static function buildChangelogUrl(string $moduleKey): string {
       return 'https://github.com/NexTools-Solutions/nextool/releases?q='
          . urlencode('modulo:' . $moduleKey);
    }

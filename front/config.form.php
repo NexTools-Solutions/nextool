@@ -433,6 +433,12 @@ foreach ($allModuleKeys as $moduleKey) {
       'features'             => $meta['features'] ?? [],
       'screenshot_url'       => $meta['screenshot_url'] ?? null,
       'download_count'       => $meta['download_count'] ?? 0,
+      // Popup de atualização: vídeo do módulo, notas da versão disponível e o mesmo link do item "Changelogs".
+      'video_id'             => $meta['video_id'] ?? null,
+      'video_title'          => $meta['video_title'] ?? null,
+      'video_image_sha256'   => $meta['video_image_sha256'] ?? null,
+      'release_notes'        => $meta['release_notes'] ?? null,
+      'changelog_url'        => PluginNextoolModuleCardHelper::buildChangelogUrl($moduleKey),
       'actions_html'      => PluginNextoolModuleCardHelper::renderActions([
          'module_key'              => $moduleKey,
          'is_installed'            => $isInstalled,

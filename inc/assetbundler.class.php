@@ -58,8 +58,11 @@ class PluginNextoolAssetBundler {
       // e a URL do bundle carrega query string, então o caminho testado inclui o
       // "?type=js&files=..." e o file_exists dá false. Resultado no G10: o asset NÃO é
       // emitido (CSS/JS dos módulos somem da página) e ainda sai um
-      // "file not found from plugin nextool!" no log. Sem o bundle, o G10 segue com as N
-      // URLs individuais -- mais requests, porém funcionando.
+      // "file not found from plugin nextool!" no log. ATENÇÃO: as URLs individuais
+      // (front/module_assets.php?module=...) TAMBÉM têm query string e caem no mesmo
+      // file_exists() -- no G10 elas NÃO funcionam. Módulo com asset que precisa valer no
+      // GLPI 10 registra lá um wrapper REAL da base (front/<modulo>-<asset>.php, que delega ao
+      // module_assets.php): columnresize, aiassist e smartassign fazem assim.
       // Portar o bundle para o G10 exige uma URL SEM query string (o hash de invalidação
       // teria de sair da URL), o que é um desenho à parte. Ver pendência do bundle no G10.
       if ((int) explode('.', GLPI_VERSION)[0] < 11) {

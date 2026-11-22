@@ -14,7 +14,7 @@
  *    h.setBadge(3); h.setDot('#206bc4'); h.pulse();
  *
  * A POSIÇÃO de cada ícone é da base (tabela ORDER abaixo), não do módulo. Chave fora da tabela entra
- * antes do último da lista (o status de disponibilidade fica sempre colado no bloco do usuário).
+ * antes do último da lista (o sino de avisos fica sempre colado no bloco do usuário).
  *
  * Servido sem query string (o GLPI 10 valida o path do hook com file_exists): vale nos 3 majors.
  * Registrado em setup.php ANTES do loadActiveModules, então existe quando o JS dos módulos roda.
@@ -46,9 +46,10 @@ $nxTopbarI18n = [
    var I18N = <?php echo json_encode($nxTopbarI18n, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;
 
    // Posição de cada ícone (esquerda -> direita, terminando no menu do usuário). Decisão do owner
-   // (2026-11-09): acessibilidade na ponta oposta, depois conversas, avisos e IA; a disponibilidade é o
-   // status do usuário e fica colada no nome dele (como no Teams/Slack). Só a base mexe nesta lista.
-   var ORDER = ['accessibility', 'livechat', 'smartnotify', 'aiassist', 'smartassign'];
+   // (2026-11-22, substitui a de 2026-11-09): o sino de avisos (smartnotify) é SEMPRE o último, o primeiro ao
+   // lado do perfil do usuário. Antes dele: acessibilidade na ponta oposta, conversas, IA e disponibilidade;
+   // ícone de módulo fora da lista entra logo antes do sino. Só a base mexe nesta lista.
+   var ORDER = ['accessibility', 'livechat', 'aiassist', 'smartassign', 'smartnotify'];
    var WIDTHS = {sm: 380, md: 460, lg: 560};
    // Transição: ícones de módulos que ainda não migraram para a barra. Eles entram sozinhos antes do bloco
    // do usuário; a barra fica DEPOIS deles para não inverter a ordem. Sai desta lista quem migrar.
@@ -66,7 +67,7 @@ $nxTopbarI18n = [
       return n;
    }
    function visible(n) { return !!n && n.offsetWidth > 0 && n.offsetHeight > 0; }
-   // Chave fora da tabela entra antes do último (o status), nunca entre ele e o bloco do usuário.
+   // Chave fora da tabela entra antes do último (o sino), nunca entre ele e o bloco do usuário.
    function rank(key) { var i = ORDER.indexOf(key); return i < 0 ? ORDER.length - 1.5 : i; }
 
    function injectStyle() {

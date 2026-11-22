@@ -213,6 +213,11 @@ class PluginNextoolModuleCatalog {
                $row['features_i18n'] ?? null,
                !empty($row['features_json']) ? (array) json_decode($row['features_json'], true) : []
             ),
+            // Popup de atualização: vídeo do próprio módulo (id do YouTube) e notas da versão disponível.
+            'video_id'      => isset($row['video_id']) && preg_match('/^[A-Za-z0-9_-]{11}$/', (string) $row['video_id']) ? (string) $row['video_id'] : null,
+            'video_title'   => isset($row['video_title']) && $row['video_title'] !== '' ? (string) $row['video_title'] : null,
+            'video_image_sha256' => isset($row['video_image_sha256']) && $row['video_image_sha256'] !== '' ? (string) $row['video_image_sha256'] : null,
+            'release_notes' => isset($row['release_notes']) && $row['release_notes'] !== '' ? (string) $row['release_notes'] : null,
             'screenshot_url' => isset($row['screenshot_url']) && $row['screenshot_url'] !== '' ? $row['screenshot_url'] : null,
             'download_count' => (int)($row['download_count'] ?? 0),
             'compat_glpi_majors' => isset($row['compat_glpi_majors']) && $row['compat_glpi_majors'] !== '' ? $row['compat_glpi_majors'] : null,

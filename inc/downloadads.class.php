@@ -120,10 +120,70 @@ class PluginNextoolDownloadAds {
       return $out;
    }
 
-   /** Caminho da imagem em cache (só sha de anúncio guardado e arquivo existente), ou null. */
+   /**
+    * Referência de imagem vinda do servidor ({sha256, mime}): só sha256 válido e mime da lista, ou null.
+    *
+    * @return array{sha256:string, mime:string}|null
+    */
+   public static function imageRef(mixed $raw): ?array {
+      if (!is_array($raw)) {
+         return null;
+      }
+      $sha = strtolower((string) ($raw['sha256'] ?? ''));
+      $mime = (string) ($raw['mime'] ?? '');
+      return preg_match('/^[0-9a-f]{64}$/', $sha) === 1 && isset(self::MIME_EXT[$mime]) ? ['sha256' => $sha, 'mime' => $mime] : null;
+   }
+
+   /**
+    * Capas dos vídeos dos módulos (catálogo local): sha256 => mime. O vídeo do próprio módulo aparece no popup de
+    * atualização; a capa segue o mesmo caminho das imagens dos anúncios.
+    *
+    * @return array<string, string>
+    */
+   public static function moduleVideoImages(bool $fresh = false): array {
+      global $DB;
+      // Uma leitura por requisição (a guia Módulos pergunta por cada imagem); `$fresh` relê depois do sync do catálogo.
+      static $memo = null;
+      if ($memo !== null && !$fresh) {
+         return $memo;
+      }
+      $table = 'glpi_plugin_nextool_main_modules';
+      $out = [];
+      try {
+         if (!$DB->tableExists($table) || !$DB->fieldExists($table, 'video_image_sha256') || !$DB->fieldExists($table, 'video_image_mime')) {
+            return [];
+         }
+         foreach ($DB->request(['SELECT' => ['video_image_sha256', 'video_image_mime'], 'FROM' => $table, 'WHERE' => ['NOT' => ['video_image_sha256' => null]]]) as $row) {
+            $ref = self::imageRef(['sha256' => $row['video_image_sha256'], 'mime' => $row['video_image_mime']]);
+            if ($ref !== null) {
+               $out[$ref['sha256']] = $ref['mime'];
+            }
+         }
+      } catch (Throwable $e) {
+         return [];
+      }
+      return $memo = $out;
+   }
+
+   /** URL local da imagem em cache (anúncio ou capa de vídeo de módulo), ou null se o arquivo não está no disco. */
+   public static function imageUrl(?string $sha): ?string {
+      $sha = (string) $sha;
+      return ($sha !== '' && self::imagePath($sha) !== null)
+         ? PluginNextoolCompat::webDir() . '/front/download_ad_image.php?sha=' . $sha
+         : null;
+   }
+
+   /** Caminho da imagem em cache (sha de anúncio guardado ou de capa de vídeo de módulo, e arquivo existente), ou null. */
    public static function imagePath(string $sha): ?string {
       if (!preg_match('/^[0-9a-f]{64}$/', $sha)) {
          return null;
+      }
+      $moduleMime = self::moduleVideoImages()[$sha] ?? null;
+      if ($moduleMime !== null) {
+         $path = self::imageDir() . '/' . $sha . '.' . self::MIME_EXT[$moduleMime];
+         if (is_file($path)) {
+            return $path;
+         }
       }
       foreach (self::getAds() as $ad) {
          if (($ad['image_sha256'] ?? '') === $sha && isset(self::MIME_EXT[$ad['image_mime'] ?? ''])) {
@@ -141,7 +201,7 @@ class PluginNextoolDownloadAds {
             return (string) $ad['image_mime'];
          }
       }
-      return null;
+      return self::moduleVideoImages()[$sha] ?? null;
    }
 
    /** Soma um evento do popup. Anúncio que não está guardado, módulo ou evento inválido: ignora (false). */
@@ -275,7 +335,8 @@ class PluginNextoolDownloadAds {
       return filter_var($value, FILTER_VALIDATE_URL) !== false ? $value : null;
    }
 
-   private static function youtubeId(mixed $value): ?string {
+   /** Id (11 caracteres) de um link do YouTube, ou null. Também usado pelo vídeo do módulo no catálogo. */
+   public static function youtubeId(mixed $value): ?string {
       $value = trim((string) ($value ?? ''));
       if (preg_match('#^https://(?:www\.|m\.)?youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/)([A-Za-z0-9_-]{11})(?:[&?\#].*)?$#', $value, $m)
           || preg_match('#^https://youtu\.be/([A-Za-z0-9_-]{11})(?:[?\#].*)?$#', $value, $m)) {
@@ -297,6 +358,10 @@ class PluginNextoolDownloadAds {
          if (!empty($ad['image_sha256'])) {
             $wanted[$ad['image_sha256'] . '.' . self::MIME_EXT[$ad['image_mime']]] = $ad;
          }
+      }
+      // Capas dos vídeos dos módulos: mesmo cache, mesmo download e mesma limpeza das imagens dos anúncios.
+      foreach (self::moduleVideoImages(true) as $sha => $mime) {
+         $wanted[$sha . '.' . self::MIME_EXT[$mime]] ??= ['id' => 0, 'image_sha256' => $sha, 'image_mime' => $mime];
       }
       if ($wanted !== [] && !is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
          Toolbox::logInFile('plugin_nextool', 'DownloadAds: não foi possível criar ' . $dir);

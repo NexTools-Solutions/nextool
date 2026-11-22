@@ -178,6 +178,19 @@ class PluginNextoolLicenseValidator {
    }
 
    /**
+    * Notas da versão (seção do CHANGELOG do módulo, vinda do catálogo): texto puro, com as quebras de linha, sem
+    * marcação HTML nem caracteres de controle, cortado em 8000 caracteres. Vazio ou inválido = null.
+    */
+   private static function releaseNotesText($value): ?string {
+      if (!is_string($value)) {
+         return null;
+      }
+      $value = str_replace(["\r\n", "\r"], "\n", strip_tags($value));
+      $value = trim((string) preg_replace('/[\x00-\x09\x0B-\x1F\x7F]+/u', ' ', $value));
+      return $value !== '' ? mb_substr($value, 0, 8000) : null;
+   }
+
+   /**
     * Igual ao i18nMapJson, para listas: {locale: [linha, ...]} (destaques do card). Até 10 linhas
     * por idioma, cada uma cortada em $max; idioma sem linha válida sai do mapa.
     */
@@ -1420,6 +1433,24 @@ class PluginNextoolLicenseValidator {
          ]);
          PluginNextoolMigrationHelper::runSilently($m);
       }
+      // Popup de atualização (2026-11-22): vídeo do próprio módulo (id do YouTube) e notas da versão disponível.
+      foreach ([
+         113 => ['video_id',      'varchar(20)', 'website_url', 'Id do video do modulo no YouTube'],
+         114 => ['release_notes', 'text',        'video_id',    'Notas da versao disponivel (texto do CHANGELOG)'],
+         115 => ['video_title',        'varchar(255)', 'video_id',           'Titulo do video do modulo no YouTube'],
+         116 => ['video_image_sha256', 'varchar(64)',  'video_title',        'sha256 da capa do video (baixada da ContainerAPI)'],
+         117 => ['video_image_mime',   'varchar(20)',  'video_image_sha256', 'Mime da capa do video'],
+      ] as $ver => [$field, $type, $after, $comment]) {
+         if (!$DB->fieldExists($table, $field)) {
+            $m = new Migration($ver);
+            $m->addField($table, $field, $type, ['value' => null, 'comment' => $comment, 'after' => $after]);
+            PluginNextoolMigrationHelper::runSilently($m);
+         }
+      }
+      $hasVideoColumn = $DB->fieldExists($table, 'video_id', false);
+      $hasNotesColumn = $DB->fieldExists($table, 'release_notes', false);
+      $hasVideoMetaColumns = $DB->fieldExists($table, 'video_title', false)
+         && $DB->fieldExists($table, 'video_image_sha256', false) && $DB->fieldExists($table, 'video_image_mime', false);
       // Sem cache: a coluna pode ter nascido agora, e o fieldExists em cache diria que não (o
       // primeiro sync depois da migração deixaria a flag para a validação seguinte).
       $hasDiscontinuedColumn = $DB->fieldExists($table, 'is_discontinued', false);
@@ -1495,6 +1526,26 @@ class PluginNextoolLicenseValidator {
          // Destaques por idioma (2026-10-18). Mesma regra: chave ausente = servidor antigo, não mexe.
          if (array_key_exists('features_i18n', $entry) && $hasFeaturesI18nColumn) {
             $i18nData['features_i18n'] = self::i18nListMapJson($entry['features_i18n'], 255);
+         }
+         // Popup de atualização (2026-11-22). Mesma regra: chave ausente = servidor antigo, não mexe. O vídeo é
+         // reduzido ao id do YouTube (qualquer outra coisa vira null); as notas, a texto puro e cortado.
+         if (array_key_exists('video_url', $entry) && $hasVideoColumn) {
+            $i18nData['video_id'] = PluginNextoolDownloadAds::youtubeId($entry['video_url']);
+         }
+         // Título e capa do vídeo: a capa é só sha256 + mime; o arquivo é baixado da ContainerAPI junto com as
+         // imagens dos anúncios (PluginNextoolDownloadAds::persist) e servido pelo próprio plugin.
+         if (array_key_exists('video_title', $entry) && $hasVideoMetaColumns) {
+            $videoTitle = is_string($entry['video_title'])
+               ? trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', strip_tags($entry['video_title']))) : '';
+            $i18nData['video_title'] = $videoTitle !== '' ? mb_substr($videoTitle, 0, 200) : null;
+         }
+         if (array_key_exists('video_image', $entry) && $hasVideoMetaColumns) {
+            $videoImage = PluginNextoolDownloadAds::imageRef($entry['video_image']);
+            $i18nData['video_image_sha256'] = $videoImage['sha256'] ?? null;
+            $i18nData['video_image_mime']   = $videoImage['mime'] ?? null;
+         }
+         if (array_key_exists('release_notes', $entry) && $hasNotesColumn) {
+            $i18nData['release_notes'] = self::releaseNotesText($entry['release_notes']);
          }
          // Descontinuado (catálogo, 2026-10-14). Chave AUSENTE = servidor antigo: não mexe no gravado.
          if (array_key_exists('is_discontinued', $entry) && $hasDiscontinuedColumn) {

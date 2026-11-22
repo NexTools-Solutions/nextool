@@ -1,12 +1,12 @@
 <?php
 declare(strict_types=1);
 /**
- * Rodapé da configuração do NexTool: ficha técnica deste ambiente e links fixos. Desenhado por
+ * Rodapé da configuração do NexTool: links fixos (a ficha técnica do ambiente saiu em 2026-11-22). Desenhado por
  * PluginNextoolMainConfig::displayTabContentForItem() no fim de TODA aba da página (as da base e as
  * de configuração dos módulos); nasceu na aba Sobre e foi para todas em 2026-10-13.
  * Autossuficiente: não depende das variáveis do config.form.php (as abas de módulo não passam por ele).
- * Quem não tem acesso às abas administrativas (perfil só de módulo) não vê o código do ambiente nem
- * o link "Minhas licenças", que leva a uma aba que ele não abre.
+ * Quem não tem acesso às abas administrativas (perfil só de módulo) não vê o link "Minhas licenças",
+ * que leva a uma aba que ele não abre.
  * mt-3: a linha separadora precisa de distância do que vem antes. Nas abas da base o conteúdo já termina com
  * margem (colapsa, nada muda); nas abas de módulo ele termina no card, e sem isso a linha some colada nele.
  *
@@ -19,26 +19,18 @@ if (!defined('GLPI_ROOT')) {
 }
 
 require_once NEXTOOL_PHP_DIR . '/inc/compat.class.php';
-require_once NEXTOOL_PHP_DIR . '/inc/config.class.php';
 
 $nextoolFooterEsc   = static fn($v): string => (string) PluginNextoolCompat::escape((string) $v);
-// Identificador do ambiente e atalho das licenças: mesmo bit da aba Licenciamento ("Ver licença").
+// Atalho das licenças: mesmo bit da aba Licenciamento ("Ver licença").
 $nextoolFooterAdmin = PluginNextoolPermissionManager::canViewLicense();
 $nextoolFooterWeb   = PluginNextoolCompat::webDir() . '/front/nextoolconfig.form.php?id=1&forcetab=';
-$nextoolFooterGlpi  = defined('GLPI_VERSION') ? (string) GLPI_VERSION : '-';
 ?>
 <?php // Sem a classe `small` no bloco: o GLPI 10 tem `#page .small { width: 1% }`, que espremia o rodapé numa
-      // coluna de 9px (versão, ambiente e links empilhados). A fonte menor vem do estilo próprio. ?>
+      // coluna de 9px. A fonte menor vem do estilo próprio.
+      // Só os links (owner, 2026-11-22): versão da base, GLPI/PHP e código do ambiente saíram daqui, porque em tela
+      // menor empilhavam e o rodapé ficava feio. A versão segue no topo da página e o código do ambiente, na aba
+      // Licenciamento. ?>
 <div class="nextool-config-footer d-flex flex-wrap align-items-center gap-3 text-muted border-top pt-3 mt-3 mx-3 mb-3" style="font-size: .875em;">
-   <span title="NexTool"><i class="ti ti-tool me-1"></i><strong>v<?php echo $nextoolFooterEsc(PLUGIN_NEXTOOL_VERSION); ?></strong></span>
-   <span><i class="ti ti-server me-1"></i>GLPI <strong><?php echo $nextoolFooterEsc($nextoolFooterGlpi); ?></strong> · PHP <?php echo $nextoolFooterEsc(PHP_VERSION); ?></span>
-   <?php if ($nextoolFooterAdmin):
-      $nextoolFooterId = trim((string) (PluginNextoolConfig::getDistributionSettings()['client_identifier'] ?? ''));
-   ?>
-   <span title="<?php echo $nextoolFooterEsc(__('Ambiente', 'nextool')); ?>"><i class="ti ti-fingerprint me-1"></i><?php echo $nextoolFooterId !== '' ? '<code>' . $nextoolFooterEsc($nextoolFooterId) . '</code>' : '<em>' . $nextoolFooterEsc(__('não identificado', 'nextool')) . '</em>'; ?></span>
-   <?php endif; ?>
-   <?php // Links ocupam o que sobra da linha e quebram o texto dentro do bloco; sem isto o bloco inteiro (largura
-         // do texto todo) descia para a linha de baixo em tela menor. Só desce inteiro abaixo de 16rem. ?>
    <span class="ms-auto text-end" style="flex: 1 1 0; min-width: 16rem;">
       <?php if ($nextoolFooterAdmin): ?>
       <a href="<?php echo $nextoolFooterEsc($nextoolFooterWeb . rawurlencode('PluginNextoolMainConfig$3')); ?>" class="text-decoration-underline"><?php echo __('Minhas licenças', 'nextool'); ?></a> ·
