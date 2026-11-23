@@ -12,6 +12,7 @@ declare(strict_types=1);
  *  - encode condicional JSON para campos que aceitam array
  *  - truncamento null-safe para campos com tamanho fixo
  *  - emissão de Log::history quando o GLPI tiver a API disponível
+ *  - de-para de ação administrativa: computeChanges() / logChanges() (#327)
  *
  * As subclasses continuam responsáveis por declarar `getTable()` e
  * implementar seu próprio `log()` (cada trilha tem colunas distintas).
@@ -99,6 +100,109 @@ trait PluginNextoolBaseAuditLogBody {
          return null;
       }
       return substr((string)$value, 0, $max);
+   }
+
+   /**
+    * De-para entre dois estados: devolve só o que mudou, como
+    * `chave => ['from' => antigo, 'to' => novo]`.
+    *
+    * - Só as chaves de `$after` entram (o que a ação gravou); ausente em `$before` vira `null`.
+    * - Compara pelo texto: `10` e `"10"` são iguais, `null` e `''` também. Array e objeto são
+    *   comparados pelo JSON.
+    *
+    * @param array<string|int, mixed> $before estado antes de gravar
+    * @param array<string|int, mixed> $after  estado gravado
+    * @return array<string, array{from: mixed, to: mixed}>
+    */
+   public static function computeChanges(array $before, array $after): array {
+      $changes = [];
+      foreach ($after as $key => $to) {
+         $from = $before[$key] ?? null;
+         if (self::changeComparable($from) !== self::changeComparable($to)) {
+            $changes[(string)$key] = ['from' => $from, 'to' => $to];
+         }
+      }
+      return $changes;
+   }
+
+   /**
+    * Registra uma ação administrativa com o de-para do que mudou. O detalhe gravado é
+    * `$extra + ['changes' => {...}]`; salvar sem mudança também fica no log (quem e quando),
+    * com `changes` vazio e `no_changes: true`.
+    *
+    * A gravação passa por writeChangeLog(): a trilha cujo `log()` não tem a forma
+    * `log(string $action, $detail)` sobrescreve aquele método, não este.
+    *
+    * @param array<string|int, mixed> $before estado antes de gravar
+    * @param array<string|int, mixed> $after  estado gravado
+    * @param array<string, mixed>     $extra  contexto (ex.: itilcategories_id), vem antes do diff
+    */
+   public static function logChanges(string $action, array $before, array $after, array $extra = []): bool {
+      return static::writeChangeLog($action, static::buildChangesDetail($before, $after, $extra));
+   }
+
+   /**
+    * Monta o detalhe do registro de de-para: `$extra + ['changes' => {...}]`, com
+    * `no_changes: true` quando nada mudou. Fonte única do formato, usada pelo logChanges()
+    * daqui e pelo da PluginNextoolBaseObservability.
+    *
+    * @param array<string|int, mixed> $before
+    * @param array<string|int, mixed> $after
+    * @param array<string, mixed>     $extra
+    * @return array<string, mixed>
+    */
+   public static function buildChangesDetail(array $before, array $after, array $extra = []): array {
+      $changes = static::computeChanges($before, $after);
+      // `changes` e `no_changes` são do helper: chave igual em $extra é descartada.
+      unset($extra['changes'], $extra['no_changes']);
+      // (object): `changes` vazio sai como {} no JSON, não como [].
+      $detail = $extra + ['changes' => (object)$changes];
+      if ($changes === []) {
+         $detail['no_changes'] = true;
+      }
+      return $detail;
+   }
+
+   /**
+    * Ponto único de gravação do logChanges(). Padrão: `static::log($action, $detail)`, a forma
+    * mais comum nas trilhas de módulo. Trilha com outro gravador (`record()`, `logActivity()`,
+    * `log(array $data)`...) sobrescreve este método e repassa para o seu.
+    *
+    * Sem gravador compatível, não grava e avisa no log do plugin: log que falha não pode
+    * derrubar a ação do administrador, mas também não pode sumir calado.
+    *
+    * @param array<string, mixed> $detail
+    */
+   protected static function writeChangeLog(string $action, array $detail): bool {
+      if (method_exists(static::class, 'log')) {
+         $params = (new ReflectionMethod(static::class, 'log'))->getParameters();
+         $type   = isset($params[0]) ? $params[0]->getType() : null;
+         $first  = $type instanceof ReflectionNamedType ? $type->getName() : 'mixed';
+         if (count($params) >= 2 && in_array($first, ['string', 'mixed'], true)) {
+            return (bool) static::log($action, $detail);
+         }
+      }
+      if (class_exists('Toolbox')) {
+         Toolbox::logInFile('plugin_nextool', sprintf(
+            "[auditlog] %s::logChanges('%s') sem gravador: sobrescreva writeChangeLog().\n",
+            static::class,
+            $action
+         ));
+      }
+      return false;
+   }
+
+   /**
+    * Forma comparável de um valor para o de-para (texto; array/objeto pelo JSON).
+    */
+   private static function changeComparable(mixed $value): string {
+      if ($value === null) {
+         return '';
+      }
+      if (is_array($value) || is_object($value)) {
+         return (string) json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      }
+      return (string) $value;
    }
 
    /**

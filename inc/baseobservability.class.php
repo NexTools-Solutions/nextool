@@ -187,6 +187,20 @@ abstract class PluginNextoolBaseObservability {
       static::log(static::LEVEL_ERROR, $action, $detail);
    }
 
+   /**
+    * Registra uma ação administrativa com o de-para do que mudou (nível INFO): o detalhe é
+    * `$extra + ['changes' => {chave: {from, to}}]`, e salvar sem mudança também fica no log,
+    * com `no_changes: true`. Formato e regra de comparação: PluginNextoolBaseAuditLog (#327).
+    *
+    * @param array<string|int, mixed> $before estado antes de gravar
+    * @param array<string|int, mixed> $after  estado gravado (só as chaves daqui entram)
+    * @param array<string, mixed>     $extra  contexto (ex.: itilcategories_id), vem antes do diff
+    */
+   public static function logChanges(string $action, array $before, array $after, array $extra = []): void {
+      require_once NEXTOOL_PHP_DIR . '/inc/baseauditlog.class.php';
+      static::info($action, PluginNextoolBaseAuditLog::buildChangesDetail($before, $after, $extra));
+   }
+
    /** Só grava com log_level=debug. Detail: IDs/chaves/portas, nunca conteúdo. */
    public static function debug(string $action, $detail = null): void {
       static::log(static::LEVEL_DEBUG, $action, $detail);
