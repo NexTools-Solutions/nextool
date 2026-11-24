@@ -20,6 +20,7 @@ if (!defined('GLPI_ROOT')) {
 }
 
 require_once __DIR__ . '/validationexception.class.php';
+require_once __DIR__ . '/systemmarker.class.php';
 
 class PluginNextoolHookDispatcher {
 
@@ -136,7 +137,8 @@ class PluginNextoolHookDispatcher {
     * @return mixed
     */
    public static function dispatchPreItemAddTicket($input) {
-      $out = $input;
+      // Marca de sistema vinda da própria requisição não isenta ninguém (nextool-dev#317).
+      $out = PluginNextoolSystemMarker::stripForged($input);
       foreach (self::$preItemAdd['Ticket'] ?? [] as $cb) {
          try {
             $ret = call_user_func($cb, $out);
@@ -232,6 +234,7 @@ class PluginNextoolHookDispatcher {
     * nunca travar o chamado por um bug de validador).
     */
    public static function dispatchPreItemUpdate(string $itemType, CommonDBTM $item): CommonDBTM {
+      PluginNextoolSystemMarker::stripForged($item);
       foreach (self::$preItemUpdate[$itemType] ?? [] as $cb) {
          try {
             call_user_func($cb, $item);
@@ -333,6 +336,7 @@ class PluginNextoolHookDispatcher {
     * (que faz rethrow, compat com pendingsurvey) -- registries compartilhados, sem conflito.
     */
    public static function dispatchPreItemAddBlocking(string $itemType, CommonDBTM $item): CommonDBTM {
+      PluginNextoolSystemMarker::stripForged($item);
       foreach (self::$preItemAdd[$itemType] ?? [] as $cb) {
          try {
             call_user_func($cb, $item);
